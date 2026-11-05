@@ -4,21 +4,12 @@ export const purposes = [
   "ad_user_data",
   "ad_personalization",
 ] as const;
-export type Consent = Record<
-  (typeof purposes)[number],
-  "granted" | "denied" | "unknown"
->;
+export type Consent = Record<(typeof purposes)[number], "granted" | "denied" | "unknown">;
 /** Missing, malformed and unknown values always deny. For the three-state view see consentSnapshot. */
 export function normalizeConsent(value: unknown): Consent {
-  const source =
-    value && typeof value === "object"
-      ? (value as Record<string, unknown>)
-      : {};
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   return Object.fromEntries(
-    purposes.map((key) => [
-      key,
-      source[key] === "granted" ? "granted" : "denied",
-    ]),
+    purposes.map((key) => [key, source[key] === "granted" ? "granted" : "denied"]),
   ) as Consent;
 }
 export function intersect(a: Consent, b: Consent): Consent {
@@ -30,10 +21,7 @@ export function intersect(a: Consent, b: Consent): Consent {
   ) as Consent;
 }
 export function consentSnapshot(value: unknown): Consent {
-  const source =
-    value && typeof value === "object"
-      ? (value as Record<string, unknown>)
-      : {};
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
   return Object.fromEntries(
     purposes.map((k) => [
       k,
@@ -62,8 +50,7 @@ export function sanitizeUrl(value: string) {
     for (const key of [...url.searchParams.keys()]) {
       if (!key.startsWith("utm_")) url.searchParams.delete(key);
     }
-    if (input.startsWith("//"))
-      return `//${url.host}${url.pathname}${url.search}`;
+    if (input.startsWith("//")) return `//${url.host}${url.pathname}${url.search}`;
     if (!/^https?:/i.test(input)) return `${url.pathname}${url.search}`;
     return url.href;
   } catch {
@@ -82,16 +69,13 @@ export function cleanUrls(value: unknown, key = ""): unknown {
   return isUrlField || /^https?:\/\//i.test(value.trim()) ? sanitizeUrl(value) : value;
 }
 export function analyticsOnly(value: unknown, key = ""): unknown {
-  if (Array.isArray(value))
-    return value.map((entry) => analyticsOnly(entry, key));
+  if (Array.isArray(value)) return value.map((entry) => analyticsOnly(entry, key));
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value)
         .filter(
           ([name]) =>
-            !/^(user_id|user_data|user_agent|ip|ip_address|ip_override|client_id)$/i.test(
-              name,
-            ),
+            !/^(user_id|user_data|user_agent|ip|ip_address|ip_override|client_id)$/i.test(name),
         )
         .map(([name, entry]) => [name, analyticsOnly(entry, name)]),
     );
@@ -102,8 +86,7 @@ export function analyticsOnly(value: unknown, key = ""): unknown {
 export function jsonSnapshot<T>(value: T): T {
   const ancestors = new Set<object>();
   function visit(entry: unknown, depth: number) {
-    if (depth > 30 || typeof entry === "bigint")
-      throw new Error("Unsupported event data");
+    if (depth > 30 || typeof entry === "bigint") throw new Error("Unsupported event data");
     if (!entry || typeof entry !== "object") return;
     if (ancestors.has(entry)) throw new Error("Cyclic event data");
     ancestors.add(entry);
@@ -127,16 +110,13 @@ export function redactAds(value: unknown): unknown {
   if (typeof value !== "string") return value;
   // Handle absolute and relative URLs; strip query IDs including in fragment routes.
   return value
-    .replace(
-      /([?&#])([^?&#=]+)=([^&#]*)/g,
-      (all, separator: string, key: string) => {
-        try {
-          return adKey.test(decodeURIComponent(key)) ? separator : all;
-        } catch {
-          return separator;
-        }
-      },
-    )
+    .replace(/([?&#])([^?&#=]+)=([^&#]*)/g, (all, separator: string, key: string) => {
+      try {
+        return adKey.test(decodeURIComponent(key)) ? separator : all;
+      } catch {
+        return separator;
+      }
+    })
     .replace(/([?&#])&+/g, "$1")
     .replace(/[?&]+(?=#|$)/g, "");
 }

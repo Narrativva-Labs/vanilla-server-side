@@ -13,18 +13,19 @@ const full = normalizeConsent({
   ad_user_data: "granted",
   ad_personalization: "granted",
 });
-const destination = { cookieSecret: "s".repeat(64), measurementId: "G-TEST", apiSecret: "test-secret" };
+const destination = {
+  cookieSecret: "s".repeat(64),
+  measurementId: "G-TEST",
+  apiSecret: "test-secret",
+};
 const now = Date.now();
 function fixture(
   mode: "cookie" | "cookieless" = "cookie",
-  fetcher = vi.fn<typeof fetch>(
-    async () => new Response(null, { status: 204 }),
-  ),
+  fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 })),
 ) {
   let clock = now;
   const runtime: Runtime = {
-    href: () =>
-      "https://shop.example/product?gclid=secret&email=private&utm_source=test#secret",
+    href: () => "https://shop.example/product?gclid=secret&email=private&utm_source=test#secret",
     referrer: () => "",
     now: () => clock,
     uuid: () => crypto.randomUUID(),
@@ -45,8 +46,7 @@ function fixture(
       clock += 2001;
       return tracker.flush();
     },
-    event: () =>
-      JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as TrackingEvent,
+    event: () => JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)) as TrackingEvent,
   };
 }
 async function settle() {
@@ -55,11 +55,7 @@ async function settle() {
 describe("Google updates and banner categories", () => {
   it("partial updates preserve explicit denials and regional defaults never grant", () => {
     const o = createConsentObserver();
-    o.observe([
-      "consent",
-      "default",
-      { analytics_storage: "granted", region: ["US"] },
-    ]);
+    o.observe(["consent", "default", { analytics_storage: "granted", region: ["US"] }]);
     expect(o.snapshot().analytics_storage).toBe("unknown");
     o.observe(["consent", "update", { analytics_storage: "denied" }]);
     o.observe(["consent", "update", { ad_storage: "granted" }]);

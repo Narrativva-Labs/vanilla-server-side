@@ -6,12 +6,25 @@ import { normalizeEventItem } from "../src/client/data-layer.js";
 
 type Page = ReturnType<typeof page>;
 type Choice = "undecided" | "granted" | "denied";
-const allGranted = { analytics_storage: "granted", ad_storage: "granted", ad_user_data: "granted", ad_personalization: "granted" };
-const allDenied = { analytics_storage: "denied", ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied" };
-const settle = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
+const allGranted = {
+  analytics_storage: "granted",
+  ad_storage: "granted",
+  ad_user_data: "granted",
+  ad_personalization: "granted",
+};
+const allDenied = {
+  analytics_storage: "denied",
+  ad_storage: "denied",
+  ad_user_data: "denied",
+  ad_personalization: "denied",
+};
+const settle = async () => {
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+};
 const poll = (p: Page) => (p.host.setInterval.mock.calls[0]![0] as () => void)();
 const paths = (p: Page) => p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname);
-const bodies = (p: Page) => p.fetcher.mock.calls.map(([, options]) => JSON.parse(String(options?.body)));
+const bodies = (p: Page) =>
+  p.fetcher.mock.calls.map(([, options]) => JSON.parse(String(options?.body)));
 
 // Each banner as captured live; `state.choice` changes when the visitor decides.
 const banners = {
@@ -19,7 +32,11 @@ const banners = {
     Object.assign(p.host, {
       getCkyConsent: () => ({
         activeLaw: "gdpr",
-        categories: { necessary: true, analytics: state.choice === "granted", advertisement: state.choice === "granted" },
+        categories: {
+          necessary: true,
+          analytics: state.choice === "granted",
+          advertisement: state.choice === "granted",
+        },
         isUserActionCompleted: state.choice !== "undecided",
         consentID: "id",
         languageCode: "en",
@@ -29,11 +46,13 @@ const banners = {
   },
   Shoptet(p: Page, state: { choice: Choice }) {
     Object.assign(p.host, {
-      shoptet: { consent: {
-        isSet: () => state.choice !== "undecided",
-        isAccepted: () => state.choice === "granted",
-        onAccept() {},
-      } },
+      shoptet: {
+        consent: {
+          isSet: () => state.choice !== "undecided",
+          isAccepted: () => state.choice === "granted",
+          onAccept() {},
+        },
+      },
     });
     return () => poll(p);
   },
@@ -107,7 +126,8 @@ for (const kind of ["CookieYes", "Shoptet"] as const) {
     poll(p);
     await settle();
     expect(p.fetcher).not.toHaveBeenCalled();
-    const adapter = kind === "CookieYes" ? cookieyes(p.host as never, p.doc) : shoptet(p.host as never);
+    const adapter =
+      kind === "CookieYes" ? cookieyes(p.host as never, p.doc) : shoptet(p.host as never);
     expect(adapter.read()?.analytics_storage).toBe("unknown");
   });
   it(`${kind}: cookieless still sends for an undecided visitor after the wait`, async () => {
@@ -214,10 +234,16 @@ for (const kind of ["CookieYes", "Shoptet"] as const) {
 
 it("CookieYes: categories map to Google purposes separately", () => {
   const host = Object.assign(new EventTarget(), {
-    getCkyConsent: () => ({ isUserActionCompleted: true, categories: { analytics: false, advertisement: true } }),
+    getCkyConsent: () => ({
+      isUserActionCompleted: true,
+      categories: { analytics: false, advertisement: true },
+    }),
   });
   expect(cookieyes(host, new EventTarget()).read()).toEqual({
-    analytics_storage: "denied", ad_storage: "granted", ad_user_data: "granted", ad_personalization: "granted",
+    analytics_storage: "denied",
+    ad_storage: "granted",
+    ad_user_data: "granted",
+    ad_personalization: "granted",
   });
 });
 it("CookieYes: no script or no data gives no answer", () => {
@@ -228,9 +254,11 @@ it("CookieYes: no script or no data gives no answer", () => {
 it("CookieYes: the on-load update event listing rejected categories is not a refusal", async () => {
   const p = page("cookie");
   banners.CookieYes(p, { choice: "undecided" });
-  p.doc.dispatchEvent(new CustomEvent("cookieyes_consent_update", {
-    detail: { accepted: ["necessary"], rejected: ["analytics", "advertisement"] },
-  }));
+  p.doc.dispatchEvent(
+    new CustomEvent("cookieyes_consent_update", {
+      detail: { accepted: ["necessary"], rejected: ["analytics", "advertisement"] },
+    }),
+  );
   await settle();
   expect(p.fetcher).not.toHaveBeenCalled();
 });
@@ -248,33 +276,66 @@ it("Shoptet: analytics and personalisation map separately", () => {
     shoptet: { consent: { isSet: () => true, isAccepted: (name: string) => name === "analytics" } },
   });
   expect(shoptet(host).read()).toEqual({
-    analytics_storage: "granted", ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied",
+    analytics_storage: "granted",
+    ad_storage: "denied",
+    ad_user_data: "denied",
+    ad_personalization: "denied",
   });
 });
 it("Shoptet: documented dataLayer works without shoptet.consent", () => {
-  const read = (dataLayer: unknown[]) => shoptet(Object.assign(new EventTarget(), { dataLayer })).read();
+  const read = (dataLayer: unknown[]) =>
+    shoptet(Object.assign(new EventTarget(), { dataLayer })).read();
   const denied = { analytics: "denied", marketing: "denied" };
   // Default state before any choice is not a refusal.
   expect(read([{ cookie_consent: denied }])).toBeUndefined();
   expect(read([{ event: "gtm.js" }])).toBeUndefined();
-  expect(read([{ cookie_consent: denied }, { cookie_consent: denied, event: "cookie_consent" }])).toEqual({
-    analytics_storage: "denied", ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied",
+  expect(
+    read([{ cookie_consent: denied }, { cookie_consent: denied, event: "cookie_consent" }]),
+  ).toEqual({
+    analytics_storage: "denied",
+    ad_storage: "denied",
+    ad_user_data: "denied",
+    ad_personalization: "denied",
   });
   expect(read([{ cookie_consent: { analytics: "granted", marketing: "denied" } }])).toEqual({
-    analytics_storage: "granted", ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied",
+    analytics_storage: "granted",
+    ad_storage: "denied",
+    ad_user_data: "denied",
+    ad_personalization: "denied",
   });
-  expect(read([{ cookie_consent: denied }, { cookie_consent: { analytics: "granted", marketing: "granted" }, event: "cookie_consent" }])).toEqual({
-    analytics_storage: "granted", ad_storage: "granted", ad_user_data: "granted", ad_personalization: "granted",
+  expect(
+    read([
+      { cookie_consent: denied },
+      { cookie_consent: { analytics: "granted", marketing: "granted" }, event: "cookie_consent" },
+    ]),
+  ).toEqual({
+    analytics_storage: "granted",
+    ad_storage: "granted",
+    ad_user_data: "granted",
+    ad_personalization: "granted",
   });
 });
 it("Shoptet: a changed or failing interface gives no answer and deletes nothing", async () => {
   const broken = [
     {},
     { consent: {} },
-    { consent: { isSet: () => { throw Error("Malformed cookie"); } } },
+    {
+      consent: {
+        isSet: () => {
+          throw Error("Malformed cookie");
+        },
+      },
+    },
     { consent: { isSet: () => true } },
     { consent: { isSet: () => true, isAccepted: () => undefined } },
-    { consent: { isSet: () => true, isAccepted: () => { throw Error("Malformed cookie"); } } },
+    {
+      consent: {
+        isSet: () => true,
+        isAccepted: () => {
+          throw Error("Malformed cookie");
+        },
+      },
+    },
   ];
   for (const api of broken) {
     expect(shoptet(Object.assign(new EventTarget(), { shoptet: api })).read()).toBeUndefined();
@@ -285,14 +346,28 @@ it("Shoptet: a changed or failing interface gives no answer and deletes nothing"
     expect(p.fetcher).not.toHaveBeenCalled();
   }
   const change = vi.fn();
-  const throwing = { shoptet: { consent: { onAccept() { throw Error("Changed"); } } } };
+  const throwing = {
+    shoptet: {
+      consent: {
+        onAccept() {
+          throw Error("Changed");
+        },
+      },
+    },
+  };
   expect(() => shoptet(Object.assign(new EventTarget(), throwing)).subscribe(change)).not.toThrow();
 });
 it("Shoptet: onAccept notifies immediately when present", () => {
   const change = vi.fn();
   let listener: () => void = () => {};
   const host = Object.assign(new EventTarget(), {
-    shoptet: { consent: { onAccept(fn: () => void) { listener = fn; } } },
+    shoptet: {
+      consent: {
+        onAccept(fn: () => void) {
+          listener = fn;
+        },
+      },
+    },
   });
   shoptet(host).subscribe(change);
   listener();
@@ -300,7 +375,10 @@ it("Shoptet: onAccept notifies immediately when present", () => {
 });
 it("Shoptet: cookie_consent objects are never events, not even when allowlisted", async () => {
   const pending = { cookie_consent: { marketing: "denied", analytics: "denied" } };
-  const decided = { cookie_consent: { marketing: "granted", analytics: "granted" }, event: "cookie_consent" };
+  const decided = {
+    cookie_consent: { marketing: "granted", analytics: "granted" },
+    event: "cookie_consent",
+  };
   expect(normalizeEventItem(pending)).toBeUndefined();
   expect(normalizeEventItem(decided)).toBeUndefined();
   const p = page("cookie", [["consent", "update", { analytics_storage: "granted" }], pending]);
@@ -345,7 +423,11 @@ it("traffic shape: per-key updates merge into one state", async () => {
   const p = page("cookie", [["consent", "default", { ...allDenied, wait_for_update: 500 }]]);
   p.command("consent", "update", { analytics_storage: "granted" });
   await settle();
-  p.command("consent", "update", { ad_storage: "granted", ad_user_data: "granted", ad_personalization: "granted" });
+  p.command("consent", "update", {
+    ad_storage: "granted",
+    ad_user_data: "granted",
+    ad_personalization: "granted",
+  });
   p.host.dataLayer.push({ event: "generate_lead" });
   await settle();
   const [view, lead] = bodies(p);
@@ -362,11 +444,16 @@ it("traffic shape: a regional default stays unresolved until an update", async (
   await settle();
   expect(paths(p)).toEqual(["/e"]);
 });
-for (const [shape, region] of [["default", {}], ["regional default", { region: ["CZ", "DE"] }]] as const) {
+for (const [shape, region] of [
+  ["default", {}],
+  ["regional default", { region: ["CZ", "DE"] }],
+] as const) {
   it(`traffic shape: CookieYes on WordPress, accepting over a ${shape} sends with no Google update`, async () => {
     vi.useFakeTimers();
     try {
-      const p = page("cookie", [["consent", "default", { ...allDenied, ...region, wait_for_update: 500 }]]);
+      const p = page("cookie", [
+        ["consent", "default", { ...allDenied, ...region, wait_for_update: 500 }],
+      ]);
       const state: { choice: Choice } = { choice: "undecided" };
       const notify = banners.CookieYes(p, state);
       notify();
@@ -406,7 +493,13 @@ it("a banner change noticed only when a Google command arrives still counts as o
 });
 for (const [name, history] of [
   ["default denied", [["consent", "default", allDenied]]],
-  ["default and update denied at load", [["consent", "default", allDenied], ["consent", "update", allDenied]]],
+  [
+    "default and update denied at load",
+    [
+      ["consent", "default", allDenied],
+      ["consent", "update", allDenied],
+    ],
+  ],
   ["update denied alone", [["consent", "update", allDenied]]],
 ] as const) {
   it(`traffic shape: cookieless sends nothing with ${name}`, async () => {
@@ -463,10 +556,20 @@ it("traffic shape: a stored refusal repeats its denied update and sends no event
 const consentWarning = expect.stringContaining("No resolved analytics consent");
 const warningTimer = (p: Page) => (p.host.setTimeout.mock.calls[0]![0] as () => void)();
 const undecided: Record<string, (p: Page) => void> = {
-  CookieYes: (p) => { banners.CookieYes(p, { choice: "undecided" }); },
-  Shoptet: (p) => { banners.Shoptet(p, { choice: "undecided" }); },
-  Cookiebot: (p) => { Object.assign(p.host, { Cookiebot: { hasResponse: false } }); },
-  CookieConsent: (p) => { Object.assign(p.host, { CookieConsent: { validConsent: () => false, acceptedCategory: () => false } }); },
+  CookieYes: (p) => {
+    banners.CookieYes(p, { choice: "undecided" });
+  },
+  Shoptet: (p) => {
+    banners.Shoptet(p, { choice: "undecided" });
+  },
+  Cookiebot: (p) => {
+    Object.assign(p.host, { Cookiebot: { hasResponse: false } });
+  },
+  CookieConsent: (p) => {
+    Object.assign(p.host, {
+      CookieConsent: { validConsent: () => false, acceptedCategory: () => false },
+    });
+  },
 };
 for (const [kind, install] of Object.entries(undecided)) {
   it(`${kind}: an undecided visitor on a recognized banner raises no consent warning`, () => {
@@ -477,7 +580,9 @@ for (const [kind, install] of Object.entries(undecided)) {
   });
 }
 it("CookieYes: a regional default with an undecided banner raises no consent warning", () => {
-  const p = page("cookie", [["consent", "default", { analytics_storage: "denied", region: ["CZ"] }]]);
+  const p = page("cookie", [
+    ["consent", "default", { analytics_storage: "denied", region: ["CZ"] }],
+  ]);
   banners.CookieYes(p, { choice: "undecided" });
   warningTimer(p);
   expect(p.warnings).not.toHaveBeenCalled();
@@ -506,7 +611,9 @@ it("the consent warning stays when no banner or Google command can be read", () 
   expect(p.warnings).toHaveBeenCalledWith(consentWarning);
 });
 it("the consent warning stays for an unresolved regional default without a recognized banner", () => {
-  const p = page("cookie", [["consent", "default", { analytics_storage: "denied", region: ["CZ"] }]]);
+  const p = page("cookie", [
+    ["consent", "default", { analytics_storage: "denied", region: ["CZ"] }],
+  ]);
   warningTimer(p);
   expect(p.warnings).toHaveBeenCalledWith(consentWarning);
 });

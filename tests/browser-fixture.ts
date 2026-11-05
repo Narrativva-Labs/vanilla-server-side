@@ -12,15 +12,21 @@ const bundle = buildSync({
 export function page(mode: "cookie" | "cookieless", history: unknown[] = []) {
   let cookieReads = 0;
   const doc = Object.assign(new EventTarget(), {
-    title: "Shop", visibilityState: "visible",
-    currentScript: { src: "https://kx7qpa.example.com/s.js",
-      dataset: { mode, measurementId: "G-TEST", events: DEFAULT_EVENTS } },
+    title: "Shop",
+    visibilityState: "visible",
+    currentScript: {
+      src: "https://kx7qpa.example.com/s.js",
+      dataset: { mode, measurementId: "G-TEST", events: DEFAULT_EVENTS },
+    },
     referrer: "",
   });
-  Object.defineProperty(doc, "cookie", { get() { cookieReads++; throw Error("Cookie access prohibited"); } });
-  const fetcher = vi.fn<typeof fetch>(
-    async () => new Response(null, { status: 204 }),
-  );
+  Object.defineProperty(doc, "cookie", {
+    get() {
+      cookieReads++;
+      throw Error("Cookie access prohibited");
+    },
+  });
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const host = Object.assign(new EventTarget(), {
     dataLayer: history,
     fetch: fetcher,
@@ -28,8 +34,14 @@ export function page(mode: "cookie" | "cookieless", history: unknown[] = []) {
     setTimeout: vi.fn(),
     navigator: { language: "en-US", userAgent: "desktop" },
     screen: { width: 1920, height: 1080 },
-    history: { pushState(_data: unknown, _title: string, url?: string | URL | null) { if (url) host.location.href = String(url); },
-      replaceState(_data: unknown, _title: string, url?: string | URL | null) { if (url) host.location.href = String(url); } },
+    history: {
+      pushState(_data: unknown, _title: string, url?: string | URL | null) {
+        if (url) host.location.href = String(url);
+      },
+      replaceState(_data: unknown, _title: string, url?: string | URL | null) {
+        if (url) host.location.href = String(url);
+      },
+    },
     location: { href: "https://shop.example/?email=private&utm_source=test" },
   });
   for (const key of ["localStorage", "sessionStorage", "indexedDB"])

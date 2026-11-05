@@ -2,7 +2,11 @@
 export function deviceModel(agent: string) {
   if (/iPad/i.test(agent)) return "iPad";
   if (/iPhone/i.test(agent)) return "iPhone";
-  const android = agent.match(/Android[^;)]*;\s*(?:[a-z]{2}(?:[-_][A-Z]{2})?;\s*)?([^;)]+?)(?:\s+Build\/[^;)]*|\))/i)?.[1]?.trim();
+  const android = agent
+    .match(
+      /Android[^;)]*;\s*(?:[a-z]{2}(?:[-_][A-Z]{2})?;\s*)?([^;)]+?)(?:\s+Build\/[^;)]*|\))/i,
+    )?.[1]
+    ?.trim();
   if (android) return Array.from(android).slice(0, 100).join("");
   if (/Macintosh|Mac OS/i.test(agent)) return "Mac";
   if (/Windows/i.test(agent)) return "Windows PC";

@@ -58,7 +58,9 @@ it("collector drops a stale event after consent withdrawal", async () => {
 
 it("concurrent duplicate requests share the failed delivery result", async () => {
   let finish!: (response: Response) => void;
-  const upstream = new Promise<Response>(resolve => { finish = resolve; });
+  const upstream = new Promise<Response>((resolve) => {
+    finish = resolve;
+  });
   const google = vi.fn<typeof fetch>(() => upstream);
   const app = createApp(config, google);
   try {
@@ -66,10 +68,10 @@ it("concurrent duplicate requests share the failed delivery result", async () =>
     const first = post(app, payload);
     await vi.waitFor(() => expect(google).toHaveBeenCalledTimes(1));
     const duplicate = post(app, payload);
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
     finish(new Response(null, { status: 503 }));
     const responses = await Promise.all([first, duplicate]);
-    expect(responses.map(response => response.statusCode)).toEqual([503, 503]);
+    expect(responses.map((response) => response.statusCode)).toEqual([503, 503]);
     expect(google).toHaveBeenCalledTimes(1);
   } finally {
     await app.close();
@@ -79,14 +81,19 @@ it("concurrent duplicate requests share the failed delivery result", async () =>
 it("cookieless tracker renews an old session instead of stopping after 24 hours", async () => {
   let now = Date.now();
   const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-  const tracker = createTracker("https://collector.example/e", {
-    href: () => "https://shop.example/",
-    referrer: () => "",
-    now: () => now,
-    uuid: () => crypto.randomUUID(),
-    fetch: fetcher,
-    warn: vi.fn(),
-  }, new Set(["generate_lead"]), "cookieless");
+  const tracker = createTracker(
+    "https://collector.example/e",
+    {
+      href: () => "https://shop.example/",
+      referrer: () => "",
+      now: () => now,
+      uuid: () => crypto.randomUUID(),
+      fetch: fetcher,
+      warn: vi.fn(),
+    },
+    new Set(["generate_lead"]),
+    "cookieless",
+  );
   tracker.update(consent);
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
   const first = JSON.parse(String(fetcher.mock.calls[0]![1]!.body));
@@ -99,15 +106,19 @@ it("cookieless tracker renews an old session instead of stopping after 24 hours"
 
 it("duplicate purchase does not consume measured engagement", async () => {
   const engagement = vi.fn(() => 1000);
-  const tracker = createTracker("https://collector.example/e", {
-    href: () => "https://shop.example/",
-    referrer: () => "",
-    now: () => Date.now(),
-    uuid: () => crypto.randomUUID(),
-    fetch: vi.fn<typeof fetch>(async () => new Response(null, { status: 204 })),
-    engagement,
-    warn: vi.fn(),
-  }, new Set(["purchase"]));
+  const tracker = createTracker(
+    "https://collector.example/e",
+    {
+      href: () => "https://shop.example/",
+      referrer: () => "",
+      now: () => Date.now(),
+      uuid: () => crypto.randomUUID(),
+      fetch: vi.fn<typeof fetch>(async () => new Response(null, { status: 204 })),
+      engagement,
+      warn: vi.fn(),
+    },
+    new Set(["purchase"]),
+  );
   tracker.update(consent);
   await vi.waitFor(() => expect(engagement).toHaveBeenCalledTimes(1));
   tracker.track("purchase", { transaction_id: "one" });

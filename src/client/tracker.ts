@@ -9,7 +9,13 @@ import {
   sanitizeUrl,
   type Consent,
 } from "../shared/consent.js";
-import { PAGE_TEXT_BYTES, SESSION_MS, shortenBytes, timely, type TrackingEvent } from "../shared/event.js";
+import {
+  PAGE_TEXT_BYTES,
+  SESSION_MS,
+  shortenBytes,
+  timely,
+  type TrackingEvent,
+} from "../shared/event.js";
 import type { TrackingMode } from "../shared/settings.js";
 import { campaignDetails } from "./campaign.js";
 export interface Runtime {
@@ -54,11 +60,11 @@ export function createTracker(
   const active = new Set<AbortController>();
   function update(value: unknown, waitMs = 0, explicitDenial = false) {
     const next = consentSnapshot(value);
-    const withdrawal = consent.analytics_storage === "granted" && next.analytics_storage === "denied";
+    const withdrawal =
+      consent.analytics_storage === "granted" && next.analytics_storage === "denied";
     waitUntil = runtime.now() + Math.min(2000, Math.max(0, waitMs));
     if (waitMs > 0) {
-      for (const item of waiting)
-        item.deadline = Math.min(item.deadline, waitUntil);
+      for (const item of waiting) item.deadline = Math.min(item.deadline, waitUntil);
     }
     if (
       !explicitDenial &&
@@ -82,38 +88,30 @@ export function createTracker(
       waiting.length = 0;
       const withdrawnClient = memory?.clientId;
       memory = undefined;
-      if (mode === "cookie" && (explicitDenial || withdrawal)) void runtime.fetch(new URL("./p", endpoint).href, {
-        method: "POST", credentials: "include", keepalive: true,
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ client_id: withdrawnClient }),
-      }).catch(() => {});
+      if (mode === "cookie" && (explicitDenial || withdrawal))
+        void runtime
+          .fetch(new URL("./p", endpoint).href, {
+            method: "POST",
+            credentials: "include",
+            keepalive: true,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ client_id: withdrawnClient }),
+          })
+          .catch(() => {});
       if (mode === "cookie") pageSent = false;
       pageScheduled = false;
     }
-    if (
-      canTrack(consent, mode) &&
-      !pageSent &&
-      !pageScheduled
-    ) {
+    if (canTrack(consent, mode) && !pageSent && !pageScheduled) {
       pageScheduled = true;
       track("page_view", {}, true);
     }
     void flush();
   }
-  function track(
-    name: string,
-    params: Record<string, unknown> = {},
-    automatic = false,
-  ) {
-    const automaticPage =
-      name === "page_view" && automatic;
+  function track(name: string, params: Record<string, unknown> = {}, automatic = false) {
+    const automaticPage = name === "page_view" && automatic;
     const blockedPage = name === "page_view" && !automaticPage;
     const allowedName = allowed.has(name) || automaticPage || name === "page_engagement";
-    if (
-      !allowedName ||
-      blockedPage ||
-      !/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(name)
-    )
-      return;
+    if (!allowedName || blockedPage || !/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(name)) return;
     if (consent.analytics_storage === "denied") return;
     const transaction =
       name === "purchase" && typeof params.transaction_id === "string"
@@ -124,7 +122,9 @@ export function createTracker(
     const pageReferrer = sanitizeUrl(runtime.referrer());
     params = jsonSnapshot({
       page_title: runtime.title?.() ?? "",
-      page_location: pageLocation, page_referrer: pageReferrer, ...params,
+      page_location: pageLocation,
+      page_referrer: pageReferrer,
+      ...params,
       engagement_time_msec: Math.max(0, Math.round(runtime.engagement?.() ?? 0)),
     });
     const campaign = campaignDetails(runtime.href(), runtime.referrer(), mode === "cookie");
@@ -189,11 +189,14 @@ export function createTracker(
       session_started_ms: Math.min(id.started, timestamp),
       session_expires_ms: timestamp + SESSION_MS,
       timestamp_ms: timestamp,
-      consent: originalConsent
-        ? intersect(originalConsent, consent)
-        : { ...consent },
+      consent: originalConsent ? intersect(originalConsent, consent) : { ...consent },
       device: runtime.device?.(),
-      ...(mode === "cookie" || !campaignSent ? { campaign: campaign ?? campaignDetails(runtime.href(), runtime.referrer(), mode === "cookie") } : {}),
+      ...(mode === "cookie" || !campaignSent
+        ? {
+            campaign:
+              campaign ?? campaignDetails(runtime.href(), runtime.referrer(), mode === "cookie"),
+          }
+        : {}),
       params: {
         page_location: sanitizeUrl(runtime.href()),
         page_referrer: sanitizeUrl(runtime.referrer()),
@@ -208,20 +211,29 @@ export function createTracker(
     campaignSent = true;
     const snapshot = redactAds(jsonSnapshot(event)) as TrackingEvent;
     if (transaction) {
-      if (purchases.size >= 1000)
-        purchases.delete(purchases.values().next().value!);
+      if (purchases.size >= 1000) purchases.delete(purchases.values().next().value!);
       purchases.add(transaction);
     }
     if (immediate) {
       // One small best-effort request; never wait for or retry the ordinary event queue.
-      if (mode === "cookieless") snapshot.consent = {
-        ...snapshot.consent, ad_storage: "denied", ad_user_data: "denied", ad_personalization: "denied",
-      };
+      if (mode === "cookieless")
+        snapshot.consent = {
+          ...snapshot.consent,
+          ad_storage: "denied",
+          ad_user_data: "denied",
+          ad_personalization: "denied",
+        };
       const body = requestBody(snapshot);
-      if (body) void runtime.fetch(endpoint, {
-        method: "POST", credentials: mode === "cookie" ? "include" : "omit", keepalive: true,
-        headers: { "Content-Type": "application/json" }, body,
-      }).catch(() => {});
+      if (body)
+        void runtime
+          .fetch(endpoint, {
+            method: "POST",
+            credentials: mode === "cookie" ? "include" : "omit",
+            keepalive: true,
+            headers: { "Content-Type": "application/json" },
+            body,
+          })
+          .catch(() => {});
       return;
     }
     if (queue.length >= 50) queue.shift();
@@ -231,7 +243,9 @@ export function createTracker(
   function requestBody(event: TrackingEvent) {
     const body = JSON.stringify(event);
     if (new TextEncoder().encode(body).byteLength > 32 * 1024) {
-      runtime.warn("[Vanilla Server-Side] Event skipped: UTF-8 payload exceeds the collector's 32 KiB limit. Reduce the event payload or number of items.");
+      runtime.warn(
+        "[Vanilla Server-Side] Event skipped: UTF-8 payload exceeds the collector's 32 KiB limit. Reduce the event payload or number of items.",
+      );
       return undefined;
     }
     return body;
@@ -289,7 +303,10 @@ export function createTracker(
           continue;
         }
         const body = requestBody({ ...item.event, consent: effective });
-        if (!body) { queue.splice(queue.indexOf(item), 1); continue; }
+        if (!body) {
+          queue.splice(queue.indexOf(item), 1);
+          continue;
+        }
         const controller = new AbortController();
         active.add(controller);
         const epoch = generation;
@@ -302,10 +319,7 @@ export function createTracker(
             keepalive: true,
             headers: { "Content-Type": "application/json" },
             body,
-            signal: AbortSignal.any([
-              controller.signal,
-              AbortSignal.timeout(10_000),
-            ]),
+            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
           });
           if (response.status === 413) {
             runtime.warn(
@@ -326,24 +340,31 @@ export function createTracker(
       }
     } finally {
       flushing = false;
-      if (queue.some(item => item.next <= runtime.now()) && canTrack(consent, mode))
+      if (queue.some((item) => item.next <= runtime.now()) && canTrack(consent, mode))
         void Promise.resolve().then(flush);
     }
   }
   return {
     update,
-    track: (name: string, params?: Record<string, unknown>) =>
-      track(name, params),
+    track: (name: string, params?: Record<string, unknown>) => track(name, params),
     flush,
     exit(elapsed = runtime.engagement?.() ?? 0) {
-      if (!deliveryReady || !canTrack(consent, mode) || runtime.now() < waitUntil || elapsed <= 0) return;
+      if (!deliveryReady || !canTrack(consent, mode) || runtime.now() < waitUntil || elapsed <= 0)
+        return;
       // Fixed automatic fields only: custom ecommerce data cannot inflate the exit request.
-      enqueue("page_engagement", {
-        page_location: shortenBytes(sanitizeUrl(runtime.href()), PAGE_TEXT_BYTES),
-        page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PAGE_TEXT_BYTES),
-        page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
-        engagement_time_msec: Math.max(0, Math.round(elapsed)),
-      }, runtime.now(), undefined, undefined, true);
+      enqueue(
+        "page_engagement",
+        {
+          page_location: shortenBytes(sanitizeUrl(runtime.href()), PAGE_TEXT_BYTES),
+          page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PAGE_TEXT_BYTES),
+          page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
+          engagement_time_msec: Math.max(0, Math.round(elapsed)),
+        },
+        runtime.now(),
+        undefined,
+        undefined,
+        true,
+      );
     },
     page() {
       pageSent = false;

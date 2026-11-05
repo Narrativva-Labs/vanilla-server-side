@@ -24,10 +24,7 @@ it("startup applies recorded withdrawal before beginning delivery", () => {
   expect(p.fetcher.mock.calls.every(([url]) => String(url).endsWith("/p"))).toBe(true);
 });
 it("cookieless sends only one page view across withdrawal and regrant and ignores external page views", async () => {
-  const p = page("cookieless", [
-    ["consent", "update", granted],
-    { event: "page_view" },
-  ]);
+  const p = page("cookieless", [["consent", "update", granted], { event: "page_view" }]);
   await settle();
   p.command("consent", "update", denied);
   p.command("consent", "update", granted);
@@ -35,19 +32,18 @@ it("cookieless sends only one page view across withdrawal and regrant and ignore
   p.host.dataLayer.push({ event: "page_view" });
   await flushPage(p);
   expect(
-    p.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/e")).map(([, o]) => JSON.parse(String(o!.body)).name),
+    p.fetcher.mock.calls
+      .filter(([url]) => String(url).endsWith("/e"))
+      .map(([, o]) => JSON.parse(String(o!.body)).name),
   ).toEqual(["page_view"]);
 });
 for (const original of ["denied", "granted"] as const)
   it(`ad updates preserve retry and never expand ${original} original permissions`, async () => {
     let now = Date.now();
-    const fetcher = vi.fn<typeof fetch>(
-      async () => new Response(null, { status: 503 }),
-    );
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 503 }));
     const tracker = createTracker(
       "https://kx7qpa.example.com/e",
-        {
-        
+      {
         now: () => now,
         uuid: () => crypto.randomUUID(),
         href: () => "https://shop.example/",
@@ -100,9 +96,7 @@ it("URL fields are sanitized at the client and independently at the Google bound
     "first_location",
     "previous_referrer",
   ];
-  const fetcher = vi.fn<typeof fetch>(
-    async () => new Response(null, { status: 204 }),
-  );
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const app = createApp(
     {
       cookieSecret: "s".repeat(64),
@@ -143,8 +137,7 @@ it("URL fields are sanitized at the client and independently at the Google bound
           })
         ).statusCode,
       ).toBe(204);
-      const server = JSON.parse(String(fetcher.mock.calls.at(-1)![1]!.body))
-        .events[0].params;
+      const server = JSON.parse(String(fetcher.mock.calls.at(-1)![1]!.body)).events[0].params;
       for (const field of fields) {
         expect(client.params[field]).not.toMatch(/private|email|secret|#/);
         expect(server[field]).toBe(client.params[field]);
@@ -167,9 +160,7 @@ it("oversized events are explained before fetch and independently rejected by th
   await flushPage(p);
   expect(p.fetcher).toHaveBeenCalledTimes(1);
   expect(p.warnings).toHaveBeenCalledWith(expect.stringContaining("32 KiB"));
-  const fetcher = vi.fn<typeof fetch>(
-    async () => new Response(null, { status: 204 }),
-  );
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const app = createApp(
     {
       cookieSecret: "s".repeat(64),
@@ -186,14 +177,15 @@ it("oversized events are explained before fetch and independently rejected by th
           method: "POST",
           url: "/e",
           headers: { origin: "https://shop.example" },
-          payload: { ...JSON.parse(String(p.fetcher.mock.calls[0]![1]!.body)), params: { items: [{ item_name: "x".repeat(40000) }] } },
+          payload: {
+            ...JSON.parse(String(p.fetcher.mock.calls[0]![1]!.body)),
+            params: { items: [{ item_name: "x".repeat(40000) }] },
+          },
         })
       ).statusCode,
     ).toBe(413);
     expect(fetcher).not.toHaveBeenCalled();
-    expect(
-      (await app.inject({ method: "GET", url: "/health" })).statusCode,
-    ).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
   } finally {
     await app.close();
   }
@@ -211,7 +203,9 @@ it("withdrawal drops waiting purchases in either mode without replaying them", a
     vi.advanceTimersByTime(2000);
     await flushPage(p);
     expect(
-      p.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/e")).map(([, o]) => JSON.parse(String(o!.body)).name),
+      p.fetcher.mock.calls
+        .filter(([url]) => String(url).endsWith("/e"))
+        .map(([, o]) => JSON.parse(String(o!.body)).name),
     ).toEqual(["page_view"]);
   }
 });
@@ -219,11 +213,7 @@ it("withdrawal drops waiting purchases in either mode without replaying them", a
 it("resolving unknown analytics never expands the waiting event advertising permissions", async () => {
   vi.useFakeTimers();
   const p = page("cookie", [
-    [
-      "consent",
-      "default",
-      { ad_user_data: "denied", ad_personalization: "denied" },
-    ],
+    ["consent", "default", { ad_user_data: "denied", ad_personalization: "denied" }],
     { event: "generate_lead" },
   ]);
   vi.advanceTimersByTime(100);
@@ -235,7 +225,13 @@ it("resolving unknown analytics never expands the waiting event advertising perm
   });
   await flushPage(p);
   expect(p.fetcher).toHaveBeenCalledTimes(2);
-  const consent = JSON.parse(String(p.fetcher.mock.calls.find(([, o]) => JSON.parse(String(o?.body)).name === "generate_lead")![1]!.body)).consent;
+  const consent = JSON.parse(
+    String(
+      p.fetcher.mock.calls.find(
+        ([, o]) => JSON.parse(String(o?.body)).name === "generate_lead",
+      )![1]!.body,
+    ),
+  ).consent;
   expect(consent.analytics_storage).toBe("granted");
   expect(consent.ad_user_data).toBe("denied");
   expect(consent.ad_personalization).toBe("denied");
@@ -245,13 +241,34 @@ it("each delivered event renews the signed cookie and a failed delivery does not
   let status = 204;
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status }));
   const site = "https://www.example.com";
-  const app = createApp({ siteOrigin: site, cookieDomain: "example.com", cookieSecret: "s".repeat(64),
-    measurementId: "G-TEST", apiSecret: "test" }, google);
+  const app = createApp(
+    {
+      siteOrigin: site,
+      cookieDomain: "example.com",
+      cookieSecret: "s".repeat(64),
+      measurementId: "G-TEST",
+      apiSecret: "test",
+    },
+    google,
+  );
   const send = (cookie?: string) => {
     const now = Date.now();
-    return app.inject({ method: "POST", url: "/e", headers: { origin: site, "content-type": "application/json", ...(cookie ? { cookie } : {}) },
-      payload: { event_id: crypto.randomUUID(), name: "generate_lead", client_id: "1.2", session_id: 1, session_started_ms: now,
-        session_expires_ms: now + 1800000, timestamp_ms: now, consent: { analytics_storage: "granted" }, params: {} } });
+    return app.inject({
+      method: "POST",
+      url: "/e",
+      headers: { origin: site, "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+      payload: {
+        event_id: crypto.randomUUID(),
+        name: "generate_lead",
+        client_id: "1.2",
+        session_id: 1,
+        session_started_ms: now,
+        session_expires_ms: now + 1800000,
+        timestamp_ms: now,
+        consent: { analytics_storage: "granted" },
+        params: {},
+      },
+    });
   };
   try {
     const first = String((await send()).headers["set-cookie"]);
@@ -262,5 +279,7 @@ it("each delivered event renews the signed cookie and a failed delivery does not
     const failed = await send(cookie);
     expect(failed.statusCode).toBe(503);
     expect(failed.headers["set-cookie"]).toBeUndefined();
-  } finally { await app.close(); }
+  } finally {
+    await app.close();
+  }
 });

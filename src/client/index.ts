@@ -69,9 +69,7 @@ if (script && !win.__vanillaGA) {
 
   function readBanner() {
     observer.fallback(
-      adapters
-        .map((adapter) => adapter.read())
-        .find((value) => value !== undefined),
+      adapters.map((adapter) => adapter.read()).find((value) => value !== undefined),
     );
   }
   function sync() {
@@ -96,9 +94,7 @@ if (script && !win.__vanillaGA) {
       const event = normalizeEventItem(item);
       if (event) tracker.track(event.name, event.params);
     } catch {
-      warn(
-        "[Vanilla Server-Side] Invalid event skipped. Check for cycles or unsupported values.",
-      );
+      warn("[Vanilla Server-Side] Invalid event skipped. Check for cycles or unsupported values.");
     }
   }
   adapters.forEach((adapter) => adapter.subscribe(sync));
@@ -136,7 +132,10 @@ if (script && !win.__vanillaGA) {
     if (document.visibilityState === "hidden") {
       const elapsed = engagement();
       tracker.exit(elapsed);
-    } else { visibleSince = engagementEnabled ? Date.now() : 0; visibleTime = 0; }
+    } else {
+      visibleSince = engagementEnabled ? Date.now() : 0;
+      visibleTime = 0;
+    }
   });
   window.setInterval(() => {
     sync();

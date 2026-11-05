@@ -16,9 +16,7 @@ export function createApp(
     logger: false,
     // Production uses exactly one private Caddy hop; never expose the tracker port.
     trustProxy:
-      process.env.NODE_ENV === "production"
-        ? (_address: string, hop: number) => hop === 0
-        : false,
+      process.env.NODE_ENV === "production" ? (_address: string, hop: number) => hop === 0 : false,
     bodyLimit: 32 * 1024,
     requestTimeout: 10000,
   });
@@ -34,13 +32,17 @@ export function createApp(
   const seen = new Map<string, number>();
   const inFlight = new Map<string, Promise<"sent" | "retry" | "dropped">>();
   const activeBrowsers = new Map<string, number>();
-  const initialIdentities = new Map<string, { expires: number; identity: ReturnType<typeof serverIdentity> }>();
+  const initialIdentities = new Map<
+    string,
+    { expires: number; identity: ReturnType<typeof serverIdentity> }
+  >();
   const prune = () => {
     for (const [key, expires] of revoked) if (expires <= Date.now()) revoked.delete(key);
-    for (const [id, expires] of seen)
-      if (expires <= Date.now()) seen.delete(id);
-    for (const [key, expires] of activeBrowsers) if (expires <= Date.now()) activeBrowsers.delete(key);
-    for (const [key, value] of initialIdentities) if (value.expires <= Date.now()) initialIdentities.delete(key);
+    for (const [id, expires] of seen) if (expires <= Date.now()) seen.delete(id);
+    for (const [key, expires] of activeBrowsers)
+      if (expires <= Date.now()) activeBrowsers.delete(key);
+    for (const [key, value] of initialIdentities)
+      if (value.expires <= Date.now()) initialIdentities.delete(key);
   };
   const timer = setInterval(prune, 60_000);
   timer.unref();
@@ -56,10 +58,7 @@ export function createApp(
   const status = { sent: 0, errors: 0, botsFiltered: 0, lastSuccess: null as string | null };
   app.get("/health", async () => ({ ok: true, google: status }));
   app.get("/s.js", async (_, reply) => {
-    const source = await readFile(
-      new URL("../public/s.js", import.meta.url),
-      "utf8",
-    );
+    const source = await readFile(new URL("../public/s.js", import.meta.url), "utf8");
     return reply
       .type("text/javascript")
       .header("Cache-Control", "public, max-age=300")
@@ -143,13 +142,22 @@ export function createApp(
             timestamp_ms: { type: "integer", minimum: 1 },
             consent: { type: "object" },
             params: { type: "object", maxProperties: 100 },
-            device: { type: "object", additionalProperties: false, properties: {
-              browser: { type: "string", maxLength: 100 },
-              model: { type: "string", maxLength: 100 },
-              category: { type: "string", maxLength: 32 }, language: { type: "string", maxLength: 32 },
-              screen_resolution: { type: "string", pattern: "^[0-9]{1,6}x[0-9]{1,6}$" }
-            } },
-            campaign: { type: "object", maxProperties: 6, additionalProperties: { type: "string", maxLength: 100 } },
+            device: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                browser: { type: "string", maxLength: 100 },
+                model: { type: "string", maxLength: 100 },
+                category: { type: "string", maxLength: 32 },
+                language: { type: "string", maxLength: 32 },
+                screen_resolution: { type: "string", pattern: "^[0-9]{1,6}x[0-9]{1,6}$" },
+              },
+            },
+            campaign: {
+              type: "object",
+              maxProperties: 6,
+              additionalProperties: { type: "string", maxLength: 100 },
+            },
           },
         },
       },
@@ -164,7 +172,10 @@ export function createApp(
       event.consent = consentSnapshot(event.consent);
       if (!canTrack(event.consent, config.mode ?? "cookie"))
         return reply.code(403).send({ error: "analytics_consent_required" });
-      if (!validEventName(event.name) || (!allowed.has(event.name) && !["page_view", "page_engagement"].includes(event.name)))
+      if (
+        !validEventName(event.name) ||
+        (!allowed.has(event.name) && !["page_view", "page_engagement"].includes(event.name))
+      )
         return reply.code(400).send({ error: "event_not_allowed" });
       if (!timely(event, Date.now(), config.mode === "cookieless" ? undefined : Infinity))
         return reply.code(400).send({ error: "expired_event" });
@@ -211,18 +222,24 @@ export function createApp(
         );
         inFlight.set(event.event_id, delivery);
         let result: "sent" | "retry" | "dropped";
-        try { result = await delivery; }
-        finally { inFlight.delete(event.event_id); }
+        try {
+          result = await delivery;
+        } finally {
+          inFlight.delete(event.event_id);
+        }
         if (result !== "retry") {
           if (seen.size >= 10000) seen.delete(seen.keys().next().value!);
           seen.set(event.event_id, Date.now() + 60_000);
         }
         if (result === "sent") {
-          status.sent++; status.lastSuccess = new Date().toISOString();
+          status.sent++;
+          status.lastSuccess = new Date().toISOString();
           if (identity && !isRevoked("server:" + identity.clientId) && !isRevoked(browserKey))
             reply.header("Set-Cookie", identity.cookie);
+        } else {
+          status.errors++;
+          console.error("Google delivery failed", { outcome: result });
         }
-        else { status.errors++; console.error("Google delivery failed", { outcome: result }); }
         if (result === "retry") {
           seen.delete(event.event_id);
           return reply.code(503).send();

@@ -1,9 +1,6 @@
 /** Process-local protection. Addresses expire after one minute and are never logged. */
 export function createRateLimit() {
-  const visitors = new Map<
-    string,
-    { count: number; active: number; expires: number }
-  >();
+  const visitors = new Map<string, { count: number; active: number; expires: number }>();
   let active = 0;
   return {
     claim(ip: string) {

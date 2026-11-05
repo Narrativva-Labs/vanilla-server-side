@@ -21,10 +21,7 @@ export function buildGoogleRequest(
   event: TrackingEvent,
   current: Consent,
 ) {
-  const consent = intersect(
-    normalizeConsent(event.consent),
-    normalizeConsent(current),
-  );
+  const consent = intersect(normalizeConsent(event.consent), normalizeConsent(current));
   if (
     !canTrack(event.consent, destination.mode ?? "cookie") ||
     !canTrack(current, destination.mode ?? "cookie") ||
@@ -36,15 +33,13 @@ export function buildGoogleRequest(
     return undefined;
   }
   // Click IDs are not a documented MP attribution mechanism. Remove them even from URLs.
-  const raw =
-    destination.mode === "cookieless"
-      ? analyticsOnly(event.params)
-      : event.params;
+  const raw = destination.mode === "cookieless" ? analyticsOnly(event.params) : event.params;
   const params = validateParams({
     ...(redactAds(raw) as Record<string, unknown>),
     session_id: event.session_id,
   });
-  const host = destination.region === "eu" ? "region1.google-analytics.com" : "www.google-analytics.com";
+  const host =
+    destination.region === "eu" ? "region1.google-analytics.com" : "www.google-analytics.com";
   const url = new URL(`https://${host}/mp/collect`);
   url.searchParams.set("measurement_id", destination.measurementId);
   url.searchParams.set("api_secret", destination.apiSecret);
@@ -55,21 +50,37 @@ export function buildGoogleRequest(
       timestamp_micros: event.timestamp_ms * 1000,
       consent: {
         ad_user_data:
-          destination.mode !== "cookieless" &&
-          consent.ad_user_data === "granted"
+          destination.mode !== "cookieless" && consent.ad_user_data === "granted"
             ? "GRANTED"
             : "DENIED",
         ad_personalization:
-          destination.mode !== "cookieless" &&
-          consent.ad_personalization === "granted"
+          destination.mode !== "cookieless" && consent.ad_personalization === "granted"
             ? "GRANTED"
             : "DENIED",
       },
-      ...(event.device ? { device: { ...event.device, browser: event.device.browser?.trim() || "Unknown", model: event.device.model || event.device.category || "Unknown" } } : {}),
-      ...(destination.mode !== "cookieless" && consent.analytics_storage === "granted" && event.ip_override
-        ? { ip_override: event.ip_override } : {}),
+      ...(event.device
+        ? {
+            device: {
+              ...event.device,
+              browser: event.device.browser?.trim() || "Unknown",
+              model: event.device.model || event.device.category || "Unknown",
+            },
+          }
+        : {}),
+      ...(destination.mode !== "cookieless" &&
+      consent.analytics_storage === "granted" &&
+      event.ip_override
+        ? { ip_override: event.ip_override }
+        : {}),
       events: [
-        ...(event.campaign ? [{ name: "campaign_details", params: validateParams({ ...event.campaign, session_id: event.session_id }) }] : []),
+        ...(event.campaign
+          ? [
+              {
+                name: "campaign_details",
+                params: validateParams({ ...event.campaign, session_id: event.session_id }),
+              },
+            ]
+          : []),
         { name: event.name, params },
       ],
     },

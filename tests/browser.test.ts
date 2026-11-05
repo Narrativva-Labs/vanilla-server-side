@@ -4,7 +4,10 @@ it("cookie mode accepts gtag Arguments and preserves the original dataLayer", as
   const p = page("cookie", [["consent", "update", { analytics_storage: "granted" }]]);
   p.command("event", "generate_lead", { value: 10 });
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  expect(p.fetcher.mock.calls.map(([, o]) => JSON.parse(String(o?.body)).name)).toEqual(["page_view", "generate_lead"]);
+  expect(p.fetcher.mock.calls.map(([, o]) => JSON.parse(String(o?.body)).name)).toEqual([
+    "page_view",
+    "generate_lead",
+  ]);
   expect(p.host.dataLayer).toHaveLength(2);
   expect(p.cookieReads()).toBe(0);
 });
@@ -70,14 +73,26 @@ it("banner withdrawal still deletes the cookie after a fallback grant", async ()
 for (const kind of ["Cookiebot", "CookieConsent"] as const) {
   for (const initial of ["unknown", "denied"] as const) {
     it(`${kind}: a resolved denial without a prior grant deletes once after ${initial} default`, async () => {
-      const p = page("cookie", initial === "denied"
-        ? [["consent", "default", { analytics_storage: "denied" }]] : []);
+      const p = page(
+        "cookie",
+        initial === "denied" ? [["consent", "default", { analytics_storage: "denied" }]] : [],
+      );
       let decided = false;
-      Object.assign(p.host, kind === "Cookiebot" ? {
-        Cookiebot: { get hasResponse() { return decided; }, consent: { statistics: false, marketing: false } },
-      } : {
-        CookieConsent: { validConsent: () => decided, acceptedCategory: () => false },
-      });
+      Object.assign(
+        p.host,
+        kind === "Cookiebot"
+          ? {
+              Cookiebot: {
+                get hasResponse() {
+                  return decided;
+                },
+                consent: { statistics: false, marketing: false },
+              },
+            }
+          : {
+              CookieConsent: { validConsent: () => decided, acceptedCategory: () => false },
+            },
+      );
       const notification = kind === "Cookiebot" ? "CookiebotOnDecline" : "cc:onConsent";
       p.host.dispatchEvent(new Event(notification));
       (p.host.setInterval.mock.calls[0]![0] as () => void)();
@@ -94,11 +109,16 @@ for (const kind of ["Cookiebot", "CookieConsent"] as const) {
   it(`${kind}: the first read of a banner denial does not override an explicit Google grant`, async () => {
     const p = page("cookie", [["consent", "update", { analytics_storage: "granted" }]]);
     for (let i = 0; i < 20; i++) await Promise.resolve();
-    Object.assign(p.host, kind === "Cookiebot" ? {
-      Cookiebot: { hasResponse: true, consent: { statistics: false, marketing: false } },
-    } : {
-      CookieConsent: { validConsent: () => true, acceptedCategory: () => false },
-    });
+    Object.assign(
+      p.host,
+      kind === "Cookiebot"
+        ? {
+            Cookiebot: { hasResponse: true, consent: { statistics: false, marketing: false } },
+          }
+        : {
+            CookieConsent: { validConsent: () => true, acceptedCategory: () => false },
+          },
+    );
     p.host.dispatchEvent(new Event(kind === "Cookiebot" ? "CookiebotOnDecline" : "cc:onConsent"));
     for (let i = 0; i < 20; i++) await Promise.resolve();
     expect(p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(["/e"]);

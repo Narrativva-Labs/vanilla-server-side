@@ -15,7 +15,7 @@ const grant = {
 };
 const dest = {
   cookieSecret: "s".repeat(64),
-      measurementId: "G-TEST",
+  measurementId: "G-TEST",
   apiSecret: "test",
   siteOrigin: "https://shop.example",
 };
@@ -45,7 +45,7 @@ it("independent: purchase 503 -> ad denial -> ad regrant -> 204 keeps restrictiv
     {
       now: () => now,
       uuid: () => crypto.randomUUID(),
-      
+
       href: () => dest.siteOrigin,
       referrer: () => "",
       warn: vi.fn(),
@@ -104,15 +104,8 @@ it("independent: URL variants retain only UTM, ordinary text stays unchanged", a
       items: [{ item_name: "Boots / XL" }],
     });
     await settle();
-    const params = JSON.parse(
-      String(p.fetcher.mock.calls.at(-1)![1]!.body),
-    ).params;
-    for (const key of [
-      "page_location",
-      "page_referrer",
-      "link_url",
-      "checkout_url",
-    ]) {
+    const params = JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]!.body)).params;
+    for (const key of ["page_location", "page_referrer", "link_url", "checkout_url"]) {
       expect(params[key]).not.toMatch(/email|secret|#/);
       expect(params[key]).toContain("utm_source=a");
     }
@@ -124,7 +117,8 @@ it("independent: URL variants retain only UTM, ordinary text stays unchanged", a
 it("automatic URL fields never contain credentials, private query values or fragments in either mode", async () => {
   for (const mode of ["cookie", "cookieless"] as const) {
     const p = page(mode, [["consent", "update", grant]]);
-    p.host.location.href = "https://user:pass@shop.example/reset?token=abc&utm_source=test#access_token=xyz";
+    p.host.location.href =
+      "https://user:pass@shop.example/reset?token=abc&utm_source=test#access_token=xyz";
     p.host.history.pushState({}, "", p.host.location.href);
     p.host.dispatchEvent(new Event("popstate"));
     await settle();
@@ -145,9 +139,7 @@ it("slash-prefixed search and product names stay unchanged on client and server"
   const event = JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]!.body));
   expect(event.params.search_term).toBe(params.search_term);
   expect(event.params.items[0].item_name).toBe(params.items[0]!.item_name);
-  const google = vi.fn<typeof fetch>(
-    async () => new Response(null, { status: 204 }),
-  );
+  const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const app = createApp({ ...dest, mode: "cookieless" }, google);
   try {
     const result = await app.inject({
@@ -157,8 +149,7 @@ it("slash-prefixed search and product names stay unchanged on client and server"
       payload: { ...event, params },
     });
     expect(result.statusCode).toBe(204);
-    const sent = JSON.parse(String(google.mock.calls[0]![1]!.body)).events[0]
-      .params;
+    const sent = JSON.parse(String(google.mock.calls[0]![1]!.body)).events[0].params;
     expect(sent.search_term).toBe(params.search_term);
     expect(sent.items[0].item_name).toBe(params.items[0]!.item_name);
   } finally {
@@ -182,9 +173,7 @@ it("independent: regrant, external page views and changed SPA location emits a s
 
 it("independent: cookie collector rejects missing, unknown and denied analytics even with granted ads", async () => {
   const now = Date.now();
-  const google = vi.fn<typeof fetch>(
-    async () => new Response(null, { status: 204 }),
-  );
+  const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const app = createApp(dest, google);
   try {
     for (const value of [undefined, "unknown", "denied"]) {
@@ -249,9 +238,10 @@ it("relative forms are sanitized only in URL fields while ordinary text is prese
     "previous_referrer",
   ];
   for (const value of urlForms) {
-    const clean = analyticsOnly(
-      Object.fromEntries(fields.map((key) => [key, value])),
-    ) as Record<string, string>;
+    const clean = analyticsOnly(Object.fromEntries(fields.map((key) => [key, value]))) as Record<
+      string,
+      string
+    >;
     for (const key of fields) {
       expect(clean[key]).not.toMatch(/email|secret|#/);
       expect(clean[key]).toContain("utm_source=test");
@@ -264,13 +254,9 @@ it("relative forms are sanitized only in URL fields while ordinary text is prese
   // Clearly absolute URLs are sanitized even in parameters without URL names.
   for (const protocol of ["http", "https"]) {
     const value = `  ${protocol}://shop.example/checkout?email=secret&utm_source=test#secret  `;
-    expect(
-      analyticsOnly({ search_term: value, items: [{ item_name: value }] }),
-    ).toEqual({
+    expect(analyticsOnly({ search_term: value, items: [{ item_name: value }] })).toEqual({
       search_term: `${protocol}://shop.example/checkout?utm_source=test`,
-      items: [
-        { item_name: `${protocol}://shop.example/checkout?utm_source=test` },
-      ],
+      items: [{ item_name: `${protocol}://shop.example/checkout?utm_source=test` }],
     });
   }
 });
@@ -286,7 +272,8 @@ for (const mode of ["cookie", "cookieless"] as const) {
       store_location: "Prague",
     });
     for (let i = 0; i < 30; i++) await Promise.resolve();
-    const lead = p.fetcher.mock.calls.map(([, options]) => JSON.parse(String(options?.body)))
+    const lead = p.fetcher.mock.calls
+      .map(([, options]) => JSON.parse(String(options?.body)))
       .find((body) => body.name === "generate_lead");
     expect(lead.params).toMatchObject({
       page_location: "https://shop.example/thanks?utm_source=x",

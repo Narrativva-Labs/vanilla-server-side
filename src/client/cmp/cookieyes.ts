@@ -1,10 +1,12 @@
 import { consentSnapshot } from "../../shared/consent.js";
 import { categories, type CmpAdapter } from "./types.js";
 type Host = EventTarget & {
-  getCkyConsent?(): {
-    isUserActionCompleted?: boolean;
-    categories?: { analytics?: boolean; advertisement?: boolean };
-  } | undefined;
+  getCkyConsent?():
+    | {
+        isUserActionCompleted?: boolean;
+        categories?: { analytics?: boolean; advertisement?: boolean };
+      }
+    | undefined;
 };
 export function cookieyes(host: Host, events: EventTarget): CmpAdapter {
   return {

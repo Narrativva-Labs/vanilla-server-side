@@ -10,28 +10,67 @@ const destination = { measurementId: "G-TEST", apiSecret: "test" };
 const granted = normalizeConsent({ analytics_storage: "granted" });
 const event = () => {
   const now = Date.now();
-  return { event_id: crypto.randomUUID(), name: "page_engagement", client_id: "1.2",
-    session_id: 123, session_started_ms: now, session_expires_ms: now + 1800000,
-    timestamp_ms: now, consent: granted, params: {} };
+  return {
+    event_id: crypto.randomUUID(),
+    name: "page_engagement",
+    client_id: "1.2",
+    session_id: 123,
+    session_started_ms: now,
+    session_expires_ms: now + 1800000,
+    timestamp_ms: now,
+    consent: granted,
+    params: {},
+  };
 };
 afterEach(() => vi.useRealTimers());
 it("final automatic parameters take precedence, page text keeps 256 bytes, other strings 100 characters", () => {
   const warn = vi.fn();
-  const params = validateParams({ ...Object.fromEntries(Array.from({ length: 26 }, (_, i) => ["field_" + i, i])),
-    session_id: 123, engagement_time_msec: 1200, page_location: "x".repeat(300),
-    page_referrer: "r".repeat(300), page_title: "😀".repeat(101) }, warn);
+  const params = validateParams(
+    {
+      ...Object.fromEntries(Array.from({ length: 26 }, (_, i) => ["field_" + i, i])),
+      session_id: 123,
+      engagement_time_msec: 1200,
+      page_location: "x".repeat(300),
+      page_referrer: "r".repeat(300),
+      page_title: "😀".repeat(101),
+    },
+    warn,
+  );
   expect(Object.keys(params)).toHaveLength(25);
-  expect(params).toMatchObject({ session_id: 123, engagement_time_msec: 1200,
-    page_location: "x".repeat(256), page_referrer: "r".repeat(256), page_title: "😀".repeat(64) });
+  expect(params).toMatchObject({
+    session_id: 123,
+    engagement_time_msec: 1200,
+    page_location: "x".repeat(256),
+    page_referrer: "r".repeat(256),
+    page_title: "😀".repeat(64),
+  });
   expect(warn).toHaveBeenCalled();
-  const invalid = validateParams({ "bad-name": "x", ["n".repeat(41)]: "x", _private: 1,
-    firebase_conversion: 1, google_value: 1, ga_value: 1, firebase_value: 1,
-    long: "x".repeat(101), nested: { x: 1 }, valid: "x".repeat(100) }, warn);
+  const invalid = validateParams(
+    {
+      "bad-name": "x",
+      ["n".repeat(41)]: "x",
+      _private: 1,
+      firebase_conversion: 1,
+      google_value: 1,
+      ga_value: 1,
+      firebase_value: 1,
+      long: "x".repeat(101),
+      nested: { x: 1 },
+      valid: "x".repeat(100),
+    },
+    warn,
+  );
   expect(invalid).toEqual({ valid: "x".repeat(100) });
 });
 it("page text is cut by UTF-8 bytes on whole characters and never ends in a partial percent escape", () => {
-  const params = validateParams({ page_title: "č".repeat(200), page_location: "https://shop.example/" + "a".repeat(233) + "%C4%8D",
-    page_referrer: "x".repeat(256) }, vi.fn());
+  const params = validateParams(
+    {
+      page_title: "č".repeat(200),
+      page_location: "https://shop.example/" + "a".repeat(233) + "%C4%8D",
+      page_referrer: "x".repeat(256),
+    },
+    vi.fn(),
+  );
   expect(params.page_title).toBe("č".repeat(128));
   expect(params.page_location).toBe("https://shop.example/" + "a".repeat(233));
   expect(params.page_referrer).toBe("x".repeat(256));
@@ -40,17 +79,22 @@ it("page text is cut by UTF-8 bytes on whole characters and never ends in a part
 });
 it("ecommerce items retain standard fields plus 27 custom parameters", () => {
   const custom = Object.fromEntries(Array.from({ length: 28 }, (_, i) => [`custom_${i}`, i]));
-  const params = validateParams({ items: [{ item_id: "sku", item_name: "Boot", price: 10, quantity: 2, ...custom }] });
+  const params = validateParams({
+    items: [{ item_id: "sku", item_name: "Boot", price: 10, quantity: 2, ...custom }],
+  });
   const item = (params.items as Record<string, unknown>[])[0]!;
   expect(item).toMatchObject({ item_id: "sku", item_name: "Boot", price: 10, quantity: 2 });
-  expect(Object.keys(item).filter(key => key.startsWith("custom_"))).toHaveLength(27);
+  expect(Object.keys(item).filter((key) => key.startsWith("custom_"))).toHaveLength(27);
 });
 it("reserved events are rejected; custom page engagement and measured time are valid", () => {
   expect(validEventName("user_engagement")).toBe(false);
   expect(validEventName("session_start")).toBe(false);
   const e = { ...event(), params: { engagement_time_msec: 1200, session_id: 999 } };
   const request = buildGoogleRequest(destination, e, granted)!;
-  expect(request.body.events.at(-1)).toEqual({ name: "page_engagement", params: { session_id: 123, engagement_time_msec: 1200 } });
+  expect(request.body.events.at(-1)).toEqual({
+    name: "page_engagement",
+    params: { session_id: 123, engagement_time_msec: 1200 },
+  });
 });
 it("device model uses available browser hints with generic fallbacks", () => {
   expect(deviceModel("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")).toBe("iPhone");
@@ -58,16 +102,42 @@ it("device model uses available browser hints with generic fallbacks", () => {
   expect(deviceModel("Mozilla/5.0 (Windows NT 10.0)")).toBe("Windows PC");
   expect(deviceModel("")).toBe("Desktop");
 });
-for (const [status, expected] of [[204, "sent"], [400, "dropped"], [401, "dropped"], [403, "dropped"], [404, "dropped"], [413, "dropped"], [429, "retry"], [500, "retry"], [503, "retry"]] as const) {
+for (const [status, expected] of [
+  [204, "sent"],
+  [400, "dropped"],
+  [401, "dropped"],
+  [403, "dropped"],
+  [404, "dropped"],
+  [413, "dropped"],
+  [429, "retry"],
+  [500, "retry"],
+  [503, "retry"],
+] as const) {
   it(`Google HTTP ${status} is ${expected}`, async () => {
-    expect(await sendGoogle(destination, event(), () => granted, new AbortController().signal,
-      vi.fn<typeof fetch>(async () => new Response(null, { status })))).toBe(expected);
+    expect(
+      await sendGoogle(
+        destination,
+        event(),
+        () => granted,
+        new AbortController().signal,
+        vi.fn<typeof fetch>(async () => new Response(null, { status })),
+      ),
+    ).toBe(expected);
   });
 }
 it("network and timeout failures remain retryable", async () => {
   for (const error of [new TypeError("offline"), new DOMException("timeout", "TimeoutError")]) {
-    expect(await sendGoogle(destination, event(), () => granted, new AbortController().signal,
-      vi.fn<typeof fetch>(async () => { throw error; }))).toBe("retry");
+    expect(
+      await sendGoogle(
+        destination,
+        event(),
+        () => granted,
+        new AbortController().signal,
+        vi.fn<typeof fetch>(async () => {
+          throw error;
+        }),
+      ),
+    ).toBe("retry");
   }
 });
 it("keepalive byte guard counts UTF-8, not UTF-16 characters", async () => {
@@ -106,11 +176,16 @@ it("browser family detection distinguishes shared engine signatures and provides
     ["Mozilla/5.0 EdgiOS/130.0 Mobile Safari/605.1", "Edge"],
     ["", "Unknown"],
     ["unrecognized browser", "Unknown"],
-  ]) expect(deviceBrowser(agent!)).toBe(browser);
+  ])
+    expect(deviceBrowser(agent!)).toBe(browser);
 });
 it("MP always includes browser when device is present, with a fallback for missing or blank values", () => {
   for (const browser of [undefined, "", "   ", "Firefox"]) {
-    const request = buildGoogleRequest(destination, { ...event(), device: { browser, model: "Desktop" } }, granted)!;
+    const request = buildGoogleRequest(
+      destination,
+      { ...event(), device: { browser, model: "Desktop" } },
+      granted,
+    )!;
     expect(request.body.device?.browser).toBe(browser === "Firefox" ? "Firefox" : "Unknown");
   }
   expect(buildGoogleRequest(destination, event(), granted)!.body).not.toHaveProperty("device");
@@ -128,10 +203,19 @@ it("browser entry sends a detected browser family in its device object", async (
 it("the exit event cuts page text like the collector: bytes, whole characters, no dangling escape", async () => {
   const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const href = "https://x.example/?utm_source=" + "a".repeat(224) + "%C3%A1";
-  const tracker = createTracker("https://collector.example/e", {
-    href: () => href, referrer: () => "", title: () => "😀".repeat(100),
-    now: () => Date.now(), uuid: () => crypto.randomUUID(), fetch: fetcher, warn: vi.fn(),
-  }, new Set());
+  const tracker = createTracker(
+    "https://collector.example/e",
+    {
+      href: () => href,
+      referrer: () => "",
+      title: () => "😀".repeat(100),
+      now: () => Date.now(),
+      uuid: () => crypto.randomUUID(),
+      fetch: fetcher,
+      warn: vi.fn(),
+    },
+    new Set(),
+  );
   tracker.update({ analytics_storage: "granted" });
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
   tracker.exit(100);

@@ -45,9 +45,10 @@ async function fakeGoogle(url, init) {
 
 const reasons = {
   denied: "the visitor refused, so nothing left the browser",
-  unknown: mode === "cookie"
-    ? "no decision within 2 seconds, so the event was dropped from memory"
-    : "it never reached the collector",
+  unknown:
+    mode === "cookie"
+      ? "no decision within 2 seconds, so the event was dropped from memory"
+      : "it never reached the collector",
   granted: "it never reached the collector",
 };
 
@@ -111,18 +112,30 @@ const page = `<!doctype html>
 </body>
 </html>`;
 
-const app = createApp({ mode, siteOrigin: origin, cookieDomain: "localhost", cookieSecret: "demo-only-".repeat(4),
-  measurementId: "G-DEMO", apiSecret: "demo" }, fakeGoogle);
+const app = createApp(
+  {
+    mode,
+    siteOrigin: origin,
+    cookieDomain: "localhost",
+    cookieSecret: "demo-only-".repeat(4),
+    measurementId: "G-DEMO",
+    apiSecret: "demo",
+  },
+  fakeGoogle,
+);
 app.get("/", (_, reply) => reply.type("text/html").send(page));
 app.get("/page-:number", (_, reply) => reply.type("text/html").send(page));
 app.post("/demo/attempt", (req, reply) => {
   const { name, consent, opened } = req.body ?? {};
   if (opened) line("PAGE", `opened in ${mode} mode: consent undecided, no identity yet`);
   if (typeof name === "string") {
-    const attempt = { name, timer: setTimeout(() => {
-      attempts.splice(attempts.indexOf(attempt), 1);
-      line("BLOCKED", `${name}: ${reasons[consent] ?? reasons.granted}`);
-    }, HOLD_MS) };
+    const attempt = {
+      name,
+      timer: setTimeout(() => {
+        attempts.splice(attempts.indexOf(attempt), 1);
+        line("BLOCKED", `${name}: ${reasons[consent] ?? reasons.granted}`);
+      }, HOLD_MS),
+    };
     attempts.push(attempt);
   }
   return reply.code(204).send();
@@ -133,18 +146,32 @@ app.addHook("onSend", async (req, reply) => {
   if (typeof cookie !== "string") return;
   reply.removeHeader("set-cookie");
   reply.header("set-cookie", cookie.replace(/; Domain=[^;]+/, "").replace("; Secure", ""));
-  line("COOKIE", req.url === "/p" ? "vanilla_session deleted" : "vanilla_session set: signed, HttpOnly");
+  line(
+    "COOKIE",
+    req.url === "/p" ? "vanilla_session deleted" : "vanilla_session set: signed, HttpOnly",
+  );
 });
 app.addHook("onResponse", async (req, reply) => {
   if (req.method !== "POST") return;
-  if (req.url === "/p") line("CONSENT", "refused or withdrawn: the tracker cleared its queue and asked the server to delete the cookie");
+  if (req.url === "/p")
+    line(
+      "CONSENT",
+      "refused or withdrawn: the tracker cleared its queue and asked the server to delete the cookie",
+    );
   if (req.url !== "/e") return;
   const name = req.body?.name ?? "event";
-  if (isObviousBot(req.headers["user-agent"])) line("BLOCKED", `${name}: obvious bot by User-Agent, nothing sent to Google`);
-  else if (reply.statusCode >= 400) line("BLOCKED", `${name}: the collector answered HTTP ${reply.statusCode}`);
+  if (isObviousBot(req.headers["user-agent"]))
+    line("BLOCKED", `${name}: obvious bot by User-Agent, nothing sent to Google`);
+  else if (reply.statusCode >= 400)
+    line("BLOCKED", `${name}: the collector answered HTTP ${reply.statusCode}`);
 });
 
 await app.listen({ host: "localhost", port });
-console.log(`Vanilla Server-Side demo, ${mode} mode. Google is a local stub: nothing leaves this computer.`);
+console.log(
+  `Vanilla Server-Side demo, ${mode} mode. Google is a local stub: nothing leaves this computer.`,
+);
 console.log(`Open ${origin} and press Ctrl+C here to stop.\n`);
-for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => { void app.close().then(() => process.exit(0)); });
+for (const signal of ["SIGTERM", "SIGINT"])
+  process.on(signal, () => {
+    void app.close().then(() => process.exit(0));
+  });

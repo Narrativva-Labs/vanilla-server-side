@@ -17,8 +17,7 @@ export function createConsentObserver() {
       const isConsent = command?.[0] === "consent";
       const isDefault = command?.[1] === "default";
       const isUpdate = command?.[1] === "update";
-      if (!isConsent || !(isDefault || isUpdate) || !isObject(command[2]))
-        return false;
+      if (!isConsent || !(isDefault || isUpdate) || !isObject(command[2])) return false;
       refresh?.();
       const settings = command[2];
       if (isUpdate && settings.analytics_storage === "denied") analyticsDenialUpdate = true;
@@ -28,8 +27,7 @@ export function createConsentObserver() {
         typeof settings.wait_for_update === "number" &&
         Number.isFinite(settings.wait_for_update)
       ) {
-        waitUntil =
-          Date.now() + Math.min(2000, Math.max(0, settings.wait_for_update));
+        waitUntil = Date.now() + Math.min(2000, Math.max(0, settings.wait_for_update));
       }
       for (const key of purposes) {
         if (!Object.hasOwn(settings, key)) continue;
@@ -52,7 +50,8 @@ export function createConsentObserver() {
       // replaces older Google updates for those keys; a newer update replaces it in turn.
       if (value !== undefined) {
         for (const key of purposes)
-          if (lastRead && read[key] !== "unknown" && read[key] !== lastRead[key]) delete updates[key];
+          if (lastRead && read[key] !== "unknown" && read[key] !== lastRead[key])
+            delete updates[key];
         lastRead = read;
       }
       fallback = value;
@@ -66,9 +65,7 @@ export function createConsentObserver() {
       return Math.max(0, waitUntil - Date.now());
     },
     snapshot(): Consent {
-      const unresolved = Object.fromEntries(
-        [...regional].map((key) => [key, "unknown"]),
-      );
+      const unresolved = Object.fromEntries([...regional].map((key) => [key, "unknown"]));
       // An undecided banner adds nothing; a decided one outranks every kind of default.
       const banner = Object.fromEntries(
         Object.entries(consentSnapshot(fallback)).filter(([, state]) => state !== "unknown"),
