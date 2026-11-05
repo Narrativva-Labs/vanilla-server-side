@@ -15,5 +15,5 @@ jobs:
       - run: npm run build
       - run: bash -n install.sh update.sh
       - run: shellcheck install.sh update.sh
-      - run: TRACKER_DOMAIN=kx7qpa.example.com docker compose config --quiet
+      - run: cp .env.example .env && docker compose config --quiet
       - run: docker build -t vanilla-server-side .
