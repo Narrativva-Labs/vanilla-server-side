@@ -1,0 +1,90 @@
+import { expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, statSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { spawnSync } from "node:child_process";
+it("installer validates inputs, preserves existing env and uses compose with a fake Docker", () => {
+  // Adapt only privileged host setup; exercise prompts, DNS, env, compose and health unchanged.
+  const root = mkdtempSync(resolve(".install-test-"));
+  const bin = join(root, "bin");
+  mkdirSync(bin);
+  const script = readFileSync("install.sh", "utf8")
+    .replace(/if \[\[ \$\{EUID\} -ne 0 \]\]; then[\s\S]*?\nfi/, "")
+    .replace("source /etc/os-release", 'ID=ubuntu\nVERSION_CODENAME=noble');
+  writeFileSync(join(root, "install.sh"), script);
+  const command = (name: string, body: string) => writeFileSync(join(bin, name), "#!/bin/bash\n" + body, { mode: 0o755 });
+  command("docker", 'printf "%s\\n" "$*" >> "$TEST_LOG"\nexit 0\n');
+  command("curl", 'if [[ "$*" == *ipify* ]]; then echo "192.0.2.10"; else echo \'{"ok":true}\'; fi\n');
+  command("getent", 'echo "192.0.2.10 STREAM kx7qpa.example.com"\n');
+  command("apt-get", 'echo "Unexpected privileged install" >&2; exit 99\n');
+  const env = { ...process.env, PATH: bin + ":" + process.env.PATH, TEST_LOG: join(root, "docker.log") };
+  try {
+    const first = spawnSync("bash", [join(root, "install.sh")], { env,
+      input: "\nhttps://bad-domain\nkx7qpa.example.com\nhttp://wrong.example.com\nhttps://www.example.com\nBAD\nG-TEST\nshort\nabcdefghijklmnop\n", encoding: "utf8" });
+    expect(first.status, first.stderr).toBe(0);
+    expect(first.stdout).toContain('<script defer src="https://kx7qpa.example.com/s.js"></script>');
+    const initial = readFileSync(join(root, ".env"), "utf8");
+    expect(initial).toContain("TRACKING_MODE=cookie");
+    expect(initial).toContain("COOKIE_DOMAIN=example.com");
+    expect(initial).toMatch(/COOKIE_SECRET=[a-f0-9]{64}/);
+    expect(statSync(join(root, ".env")).mode & 0o777).toBe(0o600);
+    const second = spawnSync("bash", [join(root, "install.sh")], { env, input: "", encoding: "utf8" });
+    expect(second.status, second.stderr).toBe(0);
+    expect(readFileSync(join(root, ".env"), "utf8")).toBe(initial);
+    expect(readFileSync(join(root, "docker.log"), "utf8")).toContain("compose up -d --build");
+    command("getent", "exit 2\n");
+    const missing = spawnSync("bash", [join(root, "install.sh")], { env, encoding: "utf8" });
+    expect(missing.status).toBe(1);
+    expect(missing.stdout).toContain("DNS does not yet match");
+    expect(readFileSync(join(root, ".env"), "utf8")).toBe(initial);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+for (const [mode, tracker, site, domain, succeeds] of [
+  ["cookie", "kx7qpa.eu.example.com", "https://www.example.com", "example.com", true],
+  ["cookie", "kx7qpa.eu.example.co.uk", "https://www.example.co.uk", "example.co.uk", true],
+  ["cookie", "example.co.uk", "https://www.example.co.uk", "example.co.uk", true],
+  ["cookie", "kx7qpa.other.example", "https://www.example.com", "example.com", false],
+  ["cookieless", "kx7qpa.other.example", "https://www.example.com", "example.com", true],
+] as const) {
+  it(`installer ${mode}: ${tracker} for ${site}`, () => {
+    const root = mkdtempSync(resolve(".install-test-"));
+    const bin = join(root, "bin"); mkdirSync(bin);
+    const command = (name: string, body: string) => writeFileSync(join(bin, name), "#!/bin/bash\n" + body, { mode: 0o755 });
+    const script = readFileSync("install.sh", "utf8")
+      .replace(/if \[\[ \$\{EUID\} -ne 0 \]\]; then[\s\S]*?\nfi/, "")
+      .replace("source /etc/os-release", "ID=ubuntu\nVERSION_CODENAME=noble");
+    writeFileSync(join(root, "install.sh"), script);
+    command("docker", "exit 0");
+    command("curl", 'if [[ "$*" == *ipify* ]]; then echo "192.0.2.10"; else echo \'{"ok":true}\'; fi');
+    command("getent", 'echo "192.0.2.10 STREAM example.com"');
+    command("apt-get", "exit 99");
+    try {
+      const result = spawnSync("bash", [join(root, "install.sh")], {
+        env: { ...process.env, PATH: bin + ":" + process.env.PATH },
+        input: `${mode}\n${tracker}\n${site}\nG-TEST\nabcdefghijklmnop\n`, encoding: "utf8",
+      });
+      expect(result.status, result.stderr).toBe(succeeds ? 0 : 1);
+      if (succeeds) expect(readFileSync(join(root, ".env"), "utf8")).toContain("COOKIE_DOMAIN=" + domain);
+      else expect(result.stdout).toContain("or rerun with cookieless mode");
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+}
+it("update enforces owner-only permissions on both existing env and backup", () => {
+  const root = mkdtempSync(resolve(".update-test-"));
+  const bin = join(root, "bin"); mkdirSync(bin);
+  const command = (name: string, body: string) => writeFileSync(join(bin, name), "#!/bin/bash\n" + body, { mode: 0o755 });
+  writeFileSync(join(root, "update.sh"), readFileSync("update.sh", "utf8")
+    .replace(/if \[\[ \$\{EUID\} -ne 0 \]\]; then[\s\S]*?\nfi/, ""));
+  writeFileSync(join(root, ".env"), "TEST_SECRET=keep-private\n", { mode: 0o644 });
+  command("git", "exit 0");
+  command("docker", "exit 0");
+  command("date", "echo 20261105000000");
+  try {
+    const result = spawnSync("bash", [join(root, "update.sh")], { env: { ...process.env, PATH: bin + ":" + process.env.PATH }, encoding: "utf8" });
+    expect(result.status, result.stderr).toBe(0);
+    for (const file of [".env", ".env.backup.20261105000000"]) {
+      expect(statSync(join(root, file)).mode & 0o777).toBe(0o600);
+      expect(readFileSync(join(root, file), "utf8")).toBe("TEST_SECRET=keep-private\n");
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

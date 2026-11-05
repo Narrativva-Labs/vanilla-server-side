@@ -1,0 +1,3 @@
+{$TRACKER_DOMAIN} {
+    reverse_proxy tracker:3000
+}
