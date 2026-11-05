@@ -1,0 +1,130 @@
+name: Install test
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Reserved .test names and fictional GA4 values. Nothing here reaches Google:
+      # the job only requests /health and /s.js and sends no events.
+      TRACKER: kx7qpa.vanilla-ci.test
+      SITE: https://www.vanilla-ci.test
+      MEASUREMENT_ID: G-CITEST0000
+      API_SECRET: ci-fictional-secret
+    steps:
+      # A normal clone, as on a server: full history, no stored token.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The runner image ships Docker, which would skip the part of install.sh
+      # that installs it on a fresh server.
+      - name: Remove the preinstalled Docker
+        run: |
+          sudo systemctl stop docker.socket docker.service containerd.service || true
+          packages=$(dpkg-query -W -f='${Package}\n' | grep -E '^(docker|moby|containerd)' || true)
+          if [[ -n $packages ]]; then
+            # shellcheck disable=SC2086
+            sudo apt-get purge -y --allow-change-held-packages $packages
+          fi
+          { sudo grep -rlZ download.docker.com /etc/apt/sources.list.d || true; } | sudo xargs -0r rm -f
+          sudo rm -rf /etc/apt/keyrings/docker.* /etc/docker /var/lib/docker /var/lib/containerd \
+            /usr/libexec/docker /usr/local/lib/docker
+          if command -v docker; then
+            echo "Docker is still present."
+            exit 1
+          fi
+
+      # install.sh compares the tracker's DNS with the public IPv4 from ipify, so
+      # the hosts entry uses that same address. The runner sits behind NAT and
+      # cannot reach its public address from inside, so the address also goes on
+      # the loopback interface. This keeps the DNS check and the HTTPS wait in
+      # install.sh unchanged. Public DNS itself is not tested.
+      - name: Point the test domain at this runner
+        run: |
+          public_ip=$(curl -4fsS --retry 5 --retry-all-errors --max-time 10 https://api.ipify.org)
+          sudo ip addr add "$public_ip/32" dev lo
+          echo "$public_ip $TRACKER" | sudo tee -a /etc/hosts
+          getent ahostsv4 "$TRACKER"
+
+      # A public certificate cannot be issued here: the .test domain does not
+      # exist and the runner accepts no inbound traffic. Caddy therefore uses a
+      # test certificate that this runner trusts, so the unmodified curl in
+      # install.sh still verifies HTTPS through Caddy. The only difference from a
+      # real install is one added tls line, loaded through compose.override.yaml,
+      # which Compose reads automatically and which exists only in this job.
+      # ACME issuance and renewal are NOT tested.
+      - name: Replace the public certificate with a test certificate
+        run: |
+          dir="$RUNNER_TEMP/install-test"
+          mkdir -p "$dir"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=$TRACKER" \
+            -addext "subjectAltName=DNS:$TRACKER" \
+            -keyout "$dir/tracker.key" -out "$dir/tracker.crt"
+          sudo cp "$dir/tracker.crt" /usr/local/share/ca-certificates/vanilla-install-test.crt
+          sudo update-ca-certificates
+          awk 'NR == 1 { print; print "    tls /install-test/tracker.crt /install-test/tracker.key"; next } 1' \
+            Caddyfile > "$dir/Caddyfile"
+          cat > compose.override.yaml <<YAML
+          services:
+            caddy:
+              volumes:
+                - $dir/Caddyfile:/etc/caddy/Caddyfile:ro
+                - $dir:/install-test:ro
+          YAML
+
+      # apt passes stdin on to dpkg and can swallow answers sent too early, so
+      # they are written only once install.sh has finished installing Docker.
+      - name: First install
+        run: |
+          answer_when_ready() {
+            for _ in $(seq 1 150); do
+              if docker compose version >/dev/null 2>&1 && ! pgrep -x apt-get >/dev/null; then
+                printf '%s\n' cookie "$TRACKER" "$SITE" "$MEASUREMENT_ID" "$API_SECRET"
+                return
+              fi
+              sleep 2
+            done
+            echo "Docker was not installed in time." >&2
+            return 1
+          }
+          answer_when_ready | ./install.sh 2>&1 | tee "$RUNNER_TEMP/install-1.log"
+
+      - name: Check the first install
+        run: |
+          dpkg-query -W docker-ce docker-compose-plugin
+          grep -F "<script defer src=\"https://$TRACKER/s.js\"></script>" "$RUNNER_TEMP/install-1.log"
+          bash .github/install-test/verify.sh
+          sudo sha256sum .env > "$RUNNER_TEMP/env.sha256"
+
+      # No stdin: a second run must not ask for anything.
+      - name: Second install keeps .env
+        run: |
+          ./install.sh </dev/null 2>&1 | tee "$RUNNER_TEMP/install-2.log"
+          grep -F "Keeping the existing .env" "$RUNNER_TEMP/install-2.log"
+          grep -F "<script defer src=\"https://$TRACKER/s.js\"></script>" "$RUNNER_TEMP/install-2.log"
+          sudo sha256sum -c "$RUNNER_TEMP/env.sha256"
+          bash .github/install-test/verify.sh
+
+      - name: Update
+        run: |
+          ./update.sh </dev/null
+          sudo sha256sum -c "$RUNNER_TEMP/env.sha256"
+          [[ $(stat -c '%a' .env.backup.*) == 600 ]]
+          bash .github/install-test/verify.sh
+
+      - name: Show logs after a failure
+        if: failure() || cancelled()
+        run: |
+          sudo docker compose ps -a || true
+          sudo docker compose logs --no-color --tail=200 || true
+          sudo journalctl -u docker --no-pager -n 50 || true

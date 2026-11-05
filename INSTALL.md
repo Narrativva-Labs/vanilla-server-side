@@ -69,6 +69,8 @@ The tracker sends page views, final engagement time and the events named in `TRA
 
 The installer generates a signing secret, writes .env with owner-only permissions, checks DNS, starts the services and waits up to three minutes for HTTPS, including health request timeouts. Caddy obtains and renews certificates. Rerunning preserves .env. For manual changes, run sudo nano .env then sudo docker compose up -d --build. Never share or commit .env.
 
+The installation is tested on a clean Ubuntu in CI; the certificate and public DNS are not verified there.
+
 In cookie mode, the installer sets COOKIE_DOMAIN to the hostname of SITE_ORIGIN with a leading www removed. The tracker must be that domain or any subdomain of it. For https://www.example.co.uk, both example.co.uk and kx7qpa.eu.example.co.uk work; the cookie domain stays example.co.uk. For https://eu.example.com, use kx7qpa.eu.example.com (a tracker at kx7qpa.example.com is outside the derived cookie domain). An incompatible domain stops installation with advice. Cookieless mode does not apply this restriction. The installer preserves this configuration when rerun.
 
 ## 6. Add the script once
