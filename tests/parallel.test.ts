@@ -132,7 +132,7 @@ for (const mode of ["cookie", "cookieless"] as const) {
     for (const e of events.slice(1)) expect(e.params).toMatchObject(ecommerce);
   });
 }
-it("supported banner fallback yields to explicit Google denial", async () => {
+it("a newer Google denial beats a banner grant that has not changed", async () => {
   const p = page("cookie");
   Object.assign(p.host, { Cookiebot: { hasResponse: true, consent: { statistics: true, marketing: false } } });
   p.host.dispatchEvent(new Event("CookiebotOnConsentReady"));

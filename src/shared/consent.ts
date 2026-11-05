@@ -8,7 +8,7 @@ export type Consent = Record<
   (typeof purposes)[number],
   "granted" | "denied" | "unknown"
 >;
-/** Missing, malformed and unknown values always deny. Each update is a full snapshot. */
+/** Missing, malformed and unknown values always deny. For the three-state view see consentSnapshot. */
 export function normalizeConsent(value: unknown): Consent {
   const source =
     value && typeof value === "object"
@@ -70,6 +70,17 @@ export function sanitizeUrl(value: string) {
     return "";
   }
 }
+/** Clean URL fields and absolute URLs at any depth. Plain text in a URL field has nothing to remove. */
+export function cleanUrls(value: unknown, key = ""): unknown {
+  if (Array.isArray(value)) return value.map((entry) => cleanUrls(entry, key));
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([name, entry]) => [name, cleanUrls(entry, name)]),
+    );
+  if (typeof value !== "string") return value;
+  const isUrlField = /(?:^|_)(url|location|referrer)$/i.test(key) && /[/\\?#]/.test(value);
+  return isUrlField || /^https?:\/\//i.test(value.trim()) ? sanitizeUrl(value) : value;
+}
 export function analyticsOnly(value: unknown, key = ""): unknown {
   if (Array.isArray(value))
     return value.map((entry) => analyticsOnly(entry, key));
@@ -85,12 +96,7 @@ export function analyticsOnly(value: unknown, key = ""): unknown {
         .map(([name, entry]) => [name, analyticsOnly(entry, name)]),
     );
   }
-  const isUrlField = /(?:^|_)(url|location|referrer)$/i.test(key);
-  const isAbsoluteUrl =
-    typeof value === "string" && /^https?:\/\//i.test(value.trim());
-  return typeof value === "string" && (isUrlField || isAbsoluteUrl)
-    ? sanitizeUrl(value)
-    : value;
+  return cleanUrls(value, key);
 }
 /** Reject cycles, unsupported JSON values and excessive nesting before recursive filters. */
 export function jsonSnapshot<T>(value: T): T {

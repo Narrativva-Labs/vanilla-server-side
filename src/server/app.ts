@@ -2,10 +2,9 @@ import { validEventName } from "./mp-validation.js";
 import { COOKIE_NAME, cookieHeader, serverIdentity, type CookieConfig } from "./identity.js";
 import { isObviousBot } from "./bots.js";
 import { createRateLimit } from "./rate-limit.js";
-import { jsonSnapshot } from "../shared/consent.js";
 import Fastify from "fastify";
 import { readFile } from "node:fs/promises";
-import { consentSnapshot, canTrack } from "../shared/consent.js";
+import { consentSnapshot, canTrack, jsonSnapshot } from "../shared/consent.js";
 import { DEFAULT_EVENTS } from "../shared/settings.js";
 import { timely, type TrackingEvent } from "../shared/event.js";
 import { sendGoogle, type Destination } from "./google.js";
@@ -90,25 +89,25 @@ export function createApp(
     reply
       .header("Access-Control-Allow-Origin", config.siteOrigin)
       .header("Access-Control-Allow-Credentials", "true")
-        .header("Vary", "Origin");
+      .header("Vary", "Origin");
   });
   app.post<{ Body: { client_id?: string } }>("/p", async (req, reply) => {
     const release = limiter.claim(req.ip);
     if (!release) return reply.code(429).send({ error: "rate_limit" });
     try {
-    if (config.mode !== "cookieless") {
-      prune();
-      if (req.headers.cookie?.includes(`${COOKIE_NAME}=`))
-        revoke("server:" + serverIdentity(config, req.headers.cookie).clientId);
-      if (
-        typeof req.body?.client_id === "string" &&
-        /^\d{1,20}\.\d{1,20}$/.test(req.body.client_id) &&
-        activeBrowsers.has(req.body.client_id)
-      )
-        revoke("browser:" + req.body.client_id);
-      reply.header("Set-Cookie", cookieHeader(config, "", true));
-    }
-    return reply.code(204).send();
+      if (config.mode !== "cookieless") {
+        prune();
+        if (req.headers.cookie?.includes(`${COOKIE_NAME}=`))
+          revoke("server:" + serverIdentity(config, req.headers.cookie).clientId);
+        if (
+          typeof req.body?.client_id === "string" &&
+          /^\d{1,20}\.\d{1,20}$/.test(req.body.client_id) &&
+          activeBrowsers.has(req.body.client_id)
+        )
+          revoke("browser:" + req.body.client_id);
+        reply.header("Set-Cookie", cookieHeader(config, "", true));
+      }
+      return reply.code(204).send();
     } finally {
       release();
     }

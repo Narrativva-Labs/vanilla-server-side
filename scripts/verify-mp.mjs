@@ -5,11 +5,13 @@
  * events sent there do not appear in reports, and nothing is ever sent to /mp/collect.
  *
  * Usage: GA4_MEASUREMENT_ID=... GA4_API_SECRET=... npm run verify:mp
- * The two values are also read from .env. They are never printed.
+ * The two values are also read from .env. They are never printed. GA4_REGION=eu is honored.
  */
 import { buildGoogleRequest } from "../dist/server/google.js";
 
-const VALIDATION_URL = "https://www.google-analytics.com/debug/mp/collect";
+// Same host choice as the collector: GA4_REGION=eu moves to Google's EU endpoint.
+const VALIDATION_HOST = process.env.GA4_REGION === "eu" ? "region1.google-analytics.com" : "www.google-analytics.com";
+const VALIDATION_URL = `https://${VALIDATION_HOST}/debug/mp/collect`;
 const STRICT = "ENFORCE_RECOMMENDATIONS";
 const RELAXED = "RELAXED";
 // Reserved names from the reference, plus the three the reference allows for App streams only.

@@ -4,7 +4,7 @@ Where the documentation, the validation server and the reports disagree, and wha
 
 Every row has a source:
 
-- **Tested**: run by this project, with date and method. `npm run verify:mp` reruns all validator rows. It needs `GA4_MEASUREMENT_ID` and `GA4_API_SECRET` and calls `https://www.google-analytics.com/debug/mp/collect` only.
+- **Tested**: run by this project, with date and method. `npm run verify:mp` reruns all validator rows. It needs `GA4_MEASUREMENT_ID` and `GA4_API_SECRET` and calls `https://www.google-analytics.com/debug/mp/collect` only, or the same path on `region1.google-analytics.com` with `GA4_REGION=eu`. The results below come from the default endpoint.
 - **Google docs**: the linked page, read on 2026-11-05.
 - **Not verified**: not confirmed by this project.
 
@@ -61,7 +61,7 @@ Tested, 2026-11-05: events sent to `/mp/collect` of a test property, then read i
 | Event | Realtime |
 | --- | --- |
 | `ip_override` 8.8.8.8 | Country: United States |
-| `ip_override` 194.228.32.3 | Country: Czechia |
+| `ip_override` a Czech public IPv4 address | Country: Czechia |
 | No `ip_override` | Country empty |
 | `device.category` `mobile`, `tablet`, `desktop` | Shown correctly |
 | City, in all of the above | Empty |
@@ -81,7 +81,7 @@ Single runs on a live website, 2026-11-05. They show what happened in one setup,
 | Check | Result | Method |
 | --- | --- | --- |
 | Safari 26.6.2 on macOS, server-set `vanilla_session`, tracker subdomain on a different IPv4 /16 than the website | Stored expiry 7.0 days, the server requested 400 | Tested: real Safari profile, expiry read from `Cookies.binarycookies` |
-| Same Safari visit, JavaScript-set `_ga` | Stored expiry 400 days | Tested: same file. Why this cookie was not shortened is Not verified |
+| Same Safari visit, `_ga` set by the regular Google tag through GTM, no server container | Stored expiry 400 days. This contradicts WebKit's [published 7-day cap](https://webkit.org/blog/8613/intelligent-tracking-prevention-2-1/) for cookies set with `document.cookie` | Tested: same file, one measurement. The cause is Not verified |
 | uBlock Origin Lite with default lists, Chromium | GTM was neutralised and `_ga` was not created. `s.js` loaded, `/e` returned 204 and `vanilla_session` was set | Tested: one run, consent accepted. Other blockers, stricter lists and other browsers are Not verified |
 
 ## Pending

@@ -52,7 +52,7 @@ function fixture(
 async function settle() {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
-describe("CMP fallback, Google always takes precedence", () => {
+describe("Google updates and banner categories", () => {
   it("partial updates preserve explicit denials and regional defaults never grant", () => {
     const o = createConsentObserver();
     o.observe([

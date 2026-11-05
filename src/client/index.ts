@@ -67,12 +67,15 @@ if (script && !win.__vanillaGA) {
     shoptet(window),
   ];
 
-  function sync() {
+  function readBanner() {
     observer.fallback(
       adapters
         .map((adapter) => adapter.read())
         .find((value) => value !== undefined),
     );
+  }
+  function sync() {
+    readBanner();
     const state = observer.snapshot();
     const waitMs = observer.waitMs();
     // Count only visible time after the effective analytics grant; unknown stays at zero.
@@ -86,7 +89,7 @@ if (script && !win.__vanillaGA) {
   }
   function process(item: unknown) {
     try {
-      if (observer.observe(item)) {
+      if (observer.observe(item, readBanner)) {
         sync();
         return;
       }

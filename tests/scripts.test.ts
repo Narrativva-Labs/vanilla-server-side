@@ -114,6 +114,22 @@ it("verify:mp calls only the validation server and never prints the credentials"
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+it("verify:mp follows GA4_REGION to the EU validation server", () => {
+  const root = mkdtempSync(join(tmpdir(), "verify-mp-"));
+  const log = join(root, "urls.log");
+  const stub = join(root, "stub.mjs");
+  writeFileSync(stub, `import { appendFileSync } from "node:fs";
+    globalThis.fetch = async (url) => { appendFileSync(${JSON.stringify(log)}, url + "\\n");
+      return new Response(JSON.stringify({ validationMessages: [] })); };`);
+  try {
+    const result = spawnSync(process.execPath, ["--import", stub, "scripts/verify-mp.mjs"],
+      { env: { ...clean, ...credentials, GA4_REGION: "eu" }, encoding: "utf8" });
+    expect(result.status, result.stderr).toBe(0);
+    for (const url of readFileSync(log, "utf8").trim().split("\n"))
+      expect(new URL(url).origin + new URL(url).pathname).toBe("https://region1.google-analytics.com/debug/mp/collect");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 it("verify:mp exits with failure when Google rejects a repository payload", () => {
   const root = mkdtempSync(join(tmpdir(), "verify-mp-"));
   const stub = join(root, "stub.mjs");

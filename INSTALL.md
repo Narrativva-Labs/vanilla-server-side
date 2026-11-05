@@ -30,7 +30,7 @@ Some providers supply an ubuntu user instead of root: use their instructions. Ch
 
 ## 4. Point DNS to the server
 
-Choose a subdomain for the tracker. This guide uses kx7qpa.example.com as a placeholder; any name works and the name has no technical effect. It is not a way around content blockers, and this project makes no such promise ([why](docs/technical-overview.md#content-blockers)).
+Choose a subdomain for the tracker. This guide uses kx7qpa.example.com as a placeholder; any name works. A neutral random name lowers the chance of a filter list match but guarantees nothing, and first-party does not mean unblockable ([details](docs/technical-overview.md#content-blockers)).
 
 In your domain provider's DNS panel add an **A** record named kx7qpa, pointing to the VPS IPv4 address. For a website at www.example.com this gives kx7qpa.example.com. Use DNS-only mode, without a CDN proxy, for this setup. Remove conflicting A/AAAA records for that subdomain.
 
@@ -61,9 +61,11 @@ The installer uses root or sudo. It supports Ubuntu and Debian, installs Docker 
 3. Measurement ID from the second property.
 4. Measurement Protocol API secret.
 
-Cookie mode waits for analytics permission. Cookieless uses page-memory identity and sends when analytics consent is unresolved, with advertising denied; explicit denial stops it. Choose and disclose the appropriate behavior for your site.
+Cookie mode waits for analytics permission. Cookieless uses page-memory identity and, when there is no consent signal, sends after up to 2 seconds with advertising denied. A `default` or `update` of denied sends nothing, in both modes. Most banners set `default` denied, so with those cookieless measures nothing until the visitor decides. Choose and disclose the appropriate behavior for your site.
 
 To send through Google's [EU collection endpoint](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), set `GA4_REGION=eu` in .env after installation and rebuild as described below. Leave it empty for the default endpoint.
+
+The tracker sends page views, final engagement time and the events named in `TRACKED_EVENTS`. Without that setting it uses the list in [.env.example](.env.example): common ecommerce events plus `generate_lead`, `sign_up`, `login` and `search`. To change it, set `TRACKED_EVENTS` in .env to a comma-separated list, which replaces the default, and rebuild as described below. Other events are ignored. `page_view` is automatic and must not be listed.
 
 The installer generates a signing secret, writes .env with owner-only permissions, checks DNS, starts the services and waits up to three minutes for HTTPS, including health request timeouts. Caddy obtains and renews certificates. Rerunning preserves .env. For manual changes, run sudo nano .env then sudo docker compose up -d --build. Never share or commit .env.
 
@@ -83,7 +85,7 @@ Replace the example domain. If the site has a Content Security Policy, allow you
 
 Cookie mode sends nothing until analytics_storage is granted. Use your banner's actual choice; do not grant consent merely because the tracker has loaded.
 
-Cookiebot, CookieConsent, CookieYes and Shoptet are read automatically. Complianz in GTM mode and other banners installed through a GTM template are not supported. For CookieConsent custom categories, add data-cc-analytics-category="stats" and optionally data-cc-ads-categories="ads,marketing" to the script tag.
+Cookiebot, CookieConsent by Orest Bida, CookieYes and the Shoptet cookie bar are read automatically. Complianz in GTM mode and other banners installed through a GTM template are not supported. A Shoptet store with the cookie bar turned off stays undecided, so cookie mode sends nothing there. For CookieConsent custom categories, add data-cc-analytics-category="stats" and optionally data-cc-ads-categories="ads,marketing" to the script tag.
 
 If your banner already issues direct Google consent commands into dataLayer, Vanilla reads them too. Otherwise connect its callback to a command like this, using the actual choice:
 
@@ -100,7 +102,7 @@ gtag("consent", "update", {
 // On withdrawal send analytics_storage: "denied" plus the actual ad choices.
 ```
 
-A direct Google consent state takes precedence over banner fallbacks. GTM's internal consent API alone is not readable by this tracker. Region-dependent defaults require a direct Google consent update. A banner fallback cannot resolve a regional default or a Google default of denied; connect the banner callback to a direct update as shown above. Pending events wait in RAM for at most two seconds.
+Decisions merge per purpose. A banner that has decided beats any Google `default`, including a regional one. A Google `update` beats what the banner reports when it is first read at load. After that the newest decision wins: a later change in the banner replaces an older `update`, and a later `update` replaces the banner's choice. An undecided banner changes nothing. Without a supported banner, a regional default stays unresolved until a direct update. GTM's internal consent API alone is not readable by this tracker. Pending events wait in RAM for at most two seconds.
 
 After denial the tracker requests deletion of its cookie and clears pending analytics. In cookieless mode there is no cookie or browser storage to delete. The normal tag has its own consent handling.
 
@@ -124,7 +126,7 @@ Send that only after the required consent, remove debug flags after testing, and
 - Console warning "No resolved analytics consent": the tracker found neither a Google consent command nor a supported banner. It stays silent while a supported banner is waiting for the visitor.
 - Cookie absent after grant: check both hosts are HTTPS and COOKIE_DOMAIN covers both; use sibling hosts under your own domain.
 - HTTP 429: the collector limits each IP to 300 requests/minute and 10 simultaneous deliveries, with 100 simultaneous deliveries globally. Check for repeated script installs or an event loop.
-- Google errors: run sudo docker compose logs --tail=50 tracker. Check outbound HTTPS, ID and secret. Logs omit visitor details. On a machine with Node, `npm run verify:mp` checks the payloads against Google's validation server.
+- Google errors: run sudo docker compose logs --tail=50 tracker. Check outbound HTTPS, ID and secret. Logs omit visitor details. On a machine with Node 22.12 or 24, in a copy of this repository, set GA4_MEASUREMENT_ID and GA4_API_SECRET in the environment or in .env, then run `npm ci` and `npm run verify:mp`. It checks the payloads against Google's validation server, on the EU endpoint when `GA4_REGION=eu` is set.
 - Docker package conflict on an existing machine: follow the official Docker instructions for [Ubuntu](https://docs.docker.com/engine/install/ubuntu/) or [Debian](https://docs.docker.com/engine/install/debian/) before rerunning; use a fresh VPS if unsure.
 
 ## Updates and maintenance
@@ -135,9 +137,9 @@ From the repository folder run:
 ./update.sh
 ```
 
-It requires a clean tracked checkout, backs up .env privately, pulls only a fast-forward update, refreshes the Caddy and Node base images, rebuilds the tracker and waits for healthy containers. Git runs as the checkout owner; only Docker is elevated when required. Verify the public /health endpoint and Realtime afterward. Keep a secure off-server backup of .env and your domain/provider access. Backups contain secrets; never attach them to support messages. Rotate the API secret in Google Analytics and .env if exposed. Changing COOKIE_SECRET invalidates existing visitor cookies.
+It requires a clean tracked checkout on a branch, backs up .env privately, pulls only a fast-forward update, refreshes the Caddy and Node base images, rebuilds the tracker and waits for healthy containers. Git runs as the checkout owner; only Docker and the handling of .env, which the installer creates as root, are elevated when required. Verify the public /health endpoint and Realtime afterward. Keep a secure off-server backup of .env and your domain/provider access. Backups contain secrets; never attach them to support messages. Rotate the API secret in Google Analytics and .env if exposed. Changing COOKIE_SECRET invalidates existing visitor cookies.
 
-Use tagged releases in production rather than an arbitrary branch revision. Before updating, record `git rev-parse HEAD`. To roll back, restore the previous revision with Git, restore the matching private .env backup if its format changed, then run `sudo docker compose build --pull tracker && sudo docker compose up -d --wait --wait-timeout 180`. Never roll back by deleting Caddy volumes.
+Before updating, record `git rev-parse HEAD`. To roll back, run `git checkout` with that revision, restore the matching private .env backup if its format changed, then run `sudo docker compose build --pull tracker && sudo docker compose up -d --wait --wait-timeout 180`. That leaves the checkout off its branch, and `./update.sh` stops until you run `git switch main`. Never roll back by deleting Caddy volumes.
 
 Install Ubuntu security updates regularly and reboot when required. Docker and Caddy restart automatically. Logs rotate to three 10 MB files per service. Application logs omit visitor values, but Caddy may include client and request metadata in error logs when proxying fails. Restrict server access, set a retention policy appropriate for your disclosure, and check disk space with df -h.
 

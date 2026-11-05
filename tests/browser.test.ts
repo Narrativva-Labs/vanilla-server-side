@@ -91,7 +91,7 @@ for (const kind of ["Cookiebot", "CookieConsent"] as const) {
       expect(p.cookieReads()).toBe(0);
     });
   }
-  it(`${kind}: a fallback denial cannot override an explicit Google grant`, async () => {
+  it(`${kind}: the first read of a banner denial does not override an explicit Google grant`, async () => {
     const p = page("cookie", [["consent", "update", { analytics_storage: "granted" }]]);
     for (let i = 0; i < 20; i++) await Promise.resolve();
     Object.assign(p.host, kind === "Cookiebot" ? {

@@ -2,13 +2,14 @@ import {
   consentSnapshot,
   canTrack,
   analyticsOnly,
+  cleanUrls,
   intersect,
   jsonSnapshot,
   redactAds,
   sanitizeUrl,
   type Consent,
 } from "../shared/consent.js";
-import { SESSION_MS, timely, type TrackingEvent } from "../shared/event.js";
+import { PAGE_TEXT_BYTES, SESSION_MS, shortenBytes, timely, type TrackingEvent } from "../shared/event.js";
 import type { TrackingMode } from "../shared/settings.js";
 import { campaignDetails } from "./campaign.js";
 export interface Runtime {
@@ -199,12 +200,11 @@ export function createTracker(
         ...params,
       },
     };
+    // A page_location set by the site is cleaned like the automatic one, in both modes.
+    event.params = (mode === "cookieless" ? analyticsOnly : cleanUrls)(
+      jsonSnapshot(event.params),
+    ) as Record<string, unknown>;
     // Never retain click IDs in the queue, even when consent permits advertising.
-    if (mode === "cookieless")
-      event.params = analyticsOnly(jsonSnapshot(event.params)) as Record<
-        string,
-        unknown
-      >;
     campaignSent = true;
     const snapshot = redactAds(jsonSnapshot(event)) as TrackingEvent;
     if (transaction) {
@@ -339,9 +339,9 @@ export function createTracker(
       if (!deliveryReady || !canTrack(consent, mode) || runtime.now() < waitUntil || elapsed <= 0) return;
       // Fixed automatic fields only: custom ecommerce data cannot inflate the exit request.
       enqueue("page_engagement", {
-        page_location: Array.from(sanitizeUrl(runtime.href())).slice(0, 256).join(""),
-        page_referrer: Array.from(sanitizeUrl(runtime.referrer())).slice(0, 256).join(""),
-        page_title: Array.from(runtime.title?.() ?? "").slice(0, 256).join(""),
+        page_location: shortenBytes(sanitizeUrl(runtime.href()), PAGE_TEXT_BYTES),
+        page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PAGE_TEXT_BYTES),
+        page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
         engagement_time_msec: Math.max(0, Math.round(elapsed)),
       }, runtime.now(), undefined, undefined, true);
     },

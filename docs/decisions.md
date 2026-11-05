@@ -34,7 +34,7 @@ Each decision names the alternative, the reason and the source. Source labels ar
 
 **Source:** Tested 2026-11-05: `tests/parallel.test.ts`, `tests/consent-races-and-validation.test.ts`.
 
-Safari may cap the cookie at 7 days, and a default install probably falls under that. See [Safari](technical-overview.md#safari) and [WebKit](https://webkit.org/blog/15697/private-browsing-2-0/).
+Safari capped the cookie at 7 days in one measured run: Safari 26.6.2 stored 7.0 days for the server-set cookie with the tracker on a different IPv4 /16 from the website. Tested 2026-11-05, one run. Keeping the identity through renewal on return, and avoiding the cap with a same-origin proxy: Not verified. See [Safari](technical-overview.md#safari) and [WebKit](https://webkit.org/blog/15697/private-browsing-2-0/).
 
 A same-origin reverse proxy can serve `/kx7qpa/s.js` and strip `/kx7qpa/` before forwarding: the tracker resolves `e` and `p` relative to its script URL, `SITE_ORIGIN` must match the website origin, and `COOKIE_DOMAIN` must cover the website host. Tested 2026-11-05: `tests/path-proxy.test.ts`.
 
@@ -44,7 +44,9 @@ A same-origin reverse proxy can serve `/kx7qpa/s.js` and strip `/kx7qpa/` before
 
 **Alternative:** the common two-state model, where anything not granted counts as denied.
 
-**Why:** banners send `denied` long before anyone decides: as a `default`, and in some cases as an `update` at load. A two-state model would treat every new visitor as having refused, fire deletion logic for them, and leave cookieless mode nothing to act on. A regional default cannot be resolved by the script at all. Conservative still holds: in cookie mode `unknown` sends nothing.
+**Why:** banners send `denied` long before anyone decides: as a `default`, and in some cases as an `update` at load. A two-state model would treat every new visitor as having refused and fire deletion logic for them. The script cannot resolve a regional default by itself; only an update or a decided banner does. Conservative still holds: in cookie mode `unknown` sends nothing. In cookieless mode `unknown` sends after the wait, but `default` denied and `update` denied send nothing, so with most banners, which set `default` denied, nothing is measured before a decision.
+
+Google state does not always win. A decided banner beats every `default`, because some banners send no `update` after the click. Between a banner and an `update` the newest decision wins, and the banner's first read at load does not count as new. See the [consent state machine](technical-overview.md#consent-state-machine).
 
 **Source:** Live checks in [cookie banners](cookie-banners.md), 2026-11-05. Tested 2026-11-05: `tests/browser.test.ts`, `tests/cmp-adapters.test.ts`.
 
@@ -88,6 +90,16 @@ A same-origin reverse proxy can serve `/kx7qpa/s.js` and strip `/kx7qpa/` before
 
 **Source:** Tested 2026-11-05: `tests/region-and-bots.test.ts`.
 
+## Neutral names
+
+**Decision:** a default install uses a neutral random subdomain and the neutral paths `/s.js`, `/e` and `/p`.
+
+**Alternative:** a descriptive name such as an analytics subdomain, or a vendor domain.
+
+**Why:** the main purpose of this project is control over data and consent. Fewer blocked requests are a side benefit, not the reason it exists. Neutral names lower the chance of a filter list match. They guarantee nothing, and first-party does not mean unblockable. A blocker does not overrule the visitor's decision in the cookie banner: cookie mode sends nothing without consent, and a refusal stops both modes. Simo Ahava disagrees with this approach; see [content blockers](technical-overview.md#content-blockers).
+
+**Source:** Tested 2026-11-05, one run with uBlock Origin Lite: [notes](measurement-protocol-notes.md#browser-checks). Other blockers: Not verified.
+
 ## Deliberately left out
 
 | Left out | Why |
@@ -98,4 +110,3 @@ A same-origin reverse proxy can serve `/kx7qpa/s.js` and strip `/kx7qpa/` before
 | Browser fingerprinting | Contrary to the purpose of the consent gates |
 | Multi-site routing, account service, general tag platform | One server, one site, one destination keeps behavior inspectable |
 | Automatic enhanced measurement | Only page views and engagement are automatic. Everything else is an explicit event |
-| Getting past content blockers | Not a goal. See [content blockers](technical-overview.md#content-blockers) |

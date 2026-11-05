@@ -275,6 +275,28 @@ it("relative forms are sanitized only in URL fields while ordinary text is prese
   }
 });
 
+for (const mode of ["cookie", "cookieless"] as const) {
+  it(`${mode}: URLs set by the site are cleaned like automatic ones`, async () => {
+    const p = page(mode, [["consent", "update", { analytics_storage: "granted" }]]);
+    p.host.dataLayer.push({
+      event: "generate_lead",
+      page_location: "https://shop.example/thanks?email=a@b.cz&utm_source=x#frag",
+      page_referrer: "https://x.example/?token=secret",
+      link_url: "/next?email=a@b.cz",
+      store_location: "Prague",
+    });
+    for (let i = 0; i < 30; i++) await Promise.resolve();
+    const lead = p.fetcher.mock.calls.map(([, options]) => JSON.parse(String(options?.body)))
+      .find((body) => body.name === "generate_lead");
+    expect(lead.params).toMatchObject({
+      page_location: "https://shop.example/thanks?utm_source=x",
+      page_referrer: "https://x.example/",
+      link_url: "/next",
+      store_location: "Prague",
+    });
+  });
+}
+
 it("an empty referrer stays empty instead of becoming a root path", () => {
   expect(sanitizeUrl("")).toBe("");
   expect(sanitizeUrl("   ")).toBe("");

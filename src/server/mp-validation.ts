@@ -1,3 +1,4 @@
+import { PAGE_TEXT_BYTES, shortenBytes } from "../shared/event.js";
 /** Standard-property MP limits. Diagnostics deliberately omit visitor values and custom names. */
 const reservedEvents = new Set(("ad_activeview ad_click ad_exposure ad_query ad_reward adunit_exposure app_clear_data app_exception app_install app_remove app_store_refund app_update app_upgrade dynamic_link_app_open dynamic_link_app_update dynamic_link_first_open error firebase_campaign firebase_in_app_message_action firebase_in_app_message_dismiss firebase_in_app_message_impression first_open first_visit notification_dismiss notification_foreground notification_open notification_receive notification_send os_update session_start user_engagement ad_impression in_app_purchase screen_view").split(" "));
 export function validName(name: string) {
@@ -6,22 +7,7 @@ export function validName(name: string) {
 }
 export function validEventName(name: string) { return validName(name) && !reservedEvents.has(name); }
 const automatic = ["session_id", "engagement_time_msec", "page_location", "page_referrer", "page_title"];
-// Measured with npm run verify:mp: the validation server allows 256 UTF-8 bytes for these fields.
-export const PAGE_TEXT_BYTES = 256;
 const pageText = new Set(["page_location", "page_referrer", "page_title"]);
-const encoder = new TextEncoder();
-/** Whole characters only, and never a dangling percent escape at the end of a URL. */
-export function shortenBytes(value: string, limit: number) {
-  if (encoder.encode(value).byteLength <= limit) return value;
-  let bytes = 0;
-  let output = "";
-  for (const character of value) {
-    bytes += encoder.encode(character).byteLength;
-    if (bytes > limit) break;
-    output += character;
-  }
-  return output.replace(/%[0-9a-f]?$/i, "");
-}
 const itemStandard = new Set(("item_id item_name affiliation coupon discount index item_brand item_category item_category2 item_category3 item_category4 item_category5 item_list_id item_list_name item_variant location_id price quantity creative_name creative_slot promotion_id promotion_name").split(" "));
 function validateItem(input: Record<string, unknown>, diagnose: (reason: string) => void) {
   const output: Record<string, unknown> = {};

@@ -1,8 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { shortenBytes, validateParams, validEventName } from "../src/server/mp-validation.js";
+import { validateParams, validEventName } from "../src/server/mp-validation.js";
+import { shortenBytes } from "../src/shared/event.js";
 import { buildGoogleRequest, sendGoogle } from "../src/server/google.js";
 import { deviceModel, deviceBrowser } from "../src/client/device.js";
 import { normalizeConsent } from "../src/shared/consent.js";
+import { createTracker } from "../src/client/tracker.js";
 import { page } from "./browser-fixture.js";
 const destination = { measurementId: "G-TEST", apiSecret: "test" };
 const granted = normalizeConsent({ analytics_storage: "granted" });
@@ -121,4 +123,20 @@ it("browser entry sends a detected browser family in its device object", async (
   p.command("event", "generate_lead");
   for (let i = 0; i < 20; i++) await Promise.resolve();
   expect(JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]?.body)).device.browser).toBe("Chrome");
+});
+
+it("the exit event cuts page text like the collector: bytes, whole characters, no dangling escape", async () => {
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+  const href = "https://x.example/?utm_source=" + "a".repeat(224) + "%C3%A1";
+  const tracker = createTracker("https://collector.example/e", {
+    href: () => href, referrer: () => "", title: () => "😀".repeat(100),
+    now: () => Date.now(), uuid: () => crypto.randomUUID(), fetch: fetcher, warn: vi.fn(),
+  }, new Set());
+  tracker.update({ analytics_storage: "granted" });
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  tracker.exit(100);
+  const exit = JSON.parse(String(fetcher.mock.calls.at(-1)![1]!.body));
+  expect(exit.name).toBe("page_engagement");
+  expect(exit.params.page_location).toBe(href.slice(0, 254));
+  expect(exit.params.page_title).toBe("😀".repeat(64));
 });

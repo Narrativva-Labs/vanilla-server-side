@@ -6,17 +6,20 @@ export function createConsentObserver() {
   const updates: Record<string, unknown> = {};
   const regional = new Set<string>();
   let fallback: unknown;
+  let lastRead: Consent | undefined;
   let waitUntil = 0;
   let analyticsDenialUpdate = false;
 
   return {
-    observe(item: unknown) {
+    /** `refresh` runs first, so a banner change made before this command counts as older. */
+    observe(item: unknown, refresh?: () => void) {
       const command = toCommandArray(item);
       const isConsent = command?.[0] === "consent";
       const isDefault = command?.[1] === "default";
       const isUpdate = command?.[1] === "update";
       if (!isConsent || !(isDefault || isUpdate) || !isObject(command[2]))
         return false;
+      refresh?.();
       const settings = command[2];
       if (isUpdate && settings.analytics_storage === "denied") analyticsDenialUpdate = true;
       if (isUpdate) waitUntil = 0;
@@ -36,7 +39,8 @@ export function createConsentObserver() {
       return true;
     },
     fallback(value: unknown) {
-      const analytics = consentSnapshot(value).analytics_storage;
+      const read = consentSnapshot(value);
+      const analytics = read.analytics_storage;
       // CookieYes pushes a denied update on load: an undecided adapter means nobody refused yet.
       // A later refusal still deletes through the transition below.
       if (value !== undefined && analytics === "unknown") analyticsDenialUpdate = false;
@@ -44,6 +48,13 @@ export function createConsentObserver() {
       // Consume this transition once so polling does not repeat cookie deletion.
       if (analytics === "denied" && consentSnapshot(fallback).analytics_storage !== "denied")
         analyticsDenialUpdate = true;
+      // The first read only reports a stored state. A later change is a new decision, so it
+      // replaces older Google updates for those keys; a newer update replaces it in turn.
+      if (value !== undefined) {
+        for (const key of purposes)
+          if (lastRead && read[key] !== "unknown" && read[key] !== lastRead[key]) delete updates[key];
+        lastRead = read;
+      }
       fallback = value;
     },
     takeAnalyticsDenialUpdate() {
@@ -58,10 +69,14 @@ export function createConsentObserver() {
       const unresolved = Object.fromEntries(
         [...regional].map((key) => [key, "unknown"]),
       );
+      // An undecided banner adds nothing; a decided one outranks every kind of default.
+      const banner = Object.fromEntries(
+        Object.entries(consentSnapshot(fallback)).filter(([, state]) => state !== "unknown"),
+      );
       return consentSnapshot({
-        ...consentSnapshot(fallback),
         ...defaults,
         ...unresolved,
+        ...banner,
         ...updates,
       });
     },

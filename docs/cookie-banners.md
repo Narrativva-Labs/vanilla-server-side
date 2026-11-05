@@ -2,11 +2,27 @@
 
 What consent banners really put in `dataLayer`, as opposed to what integration guides suggest. This is why the tracker treats "no decision yet" as its own state.
 
+## Supported banners
+
+| Banner | How the tracker reads it | Checked with the tracker on 2026-11-05 |
+| --- | --- | --- |
+| Direct `gtag("consent", ...)` | `dataLayer` commands | Live: accept, reject, withdraw |
+| [Cookiebot](https://www.cookiebot.com/) | `window.Cookiebot` and its events | Live: accept and decline on cookiebot.com, the vendor's own site, in headless Chromium with an ordinary User-Agent |
+| [CookieConsent by Orest Bida](https://github.com/orestbida/cookieconsent) | `CookieConsent.acceptedCategory()`, `cc:onConsent`, `cc:onChange` | Automated tests. The live site also sends direct gtag commands, so the adapter itself was not isolated there |
+| [CookieYes](https://www.cookieyes.com/) | `getCkyConsent()`, `cookieyes_consent_update` | Live: accept and reject with the WordPress plugin |
+| Shoptet cookie bar | `shoptet.consent`, then the documented `cookie_consent` object in `dataLayer` | Live through `shoptet.consent`: accept and reject. The `dataLayer` fallback has automated tests only |
+
+These tracker runs are separate from the survey in [Findings](#findings), which did not click refusal. They were repeated on 2026-11-05 after a decided banner started to outrank Google defaults: Cookiebot, the CookieYes WordPress plugin and Shoptet accepted and refused as listed. CookieConsent by Orest Bida as an isolated adapter stays covered by automated tests only.
+
+## Findings
+
 Every finding is marked:
 
-- **Live**: seen on production websites on 2026-11-05. Headless Chromium read `dataLayer` before a click on "accept", after it, and after a reload, with analytics and advertising requests blocked. Some runs allowed Google Tag Manager and some blocked it. The sample is small: CookieYes 7 sites, Shoptet 5, Complianz 4, Didomi 2, Borlabs, OneTrust and Usercentrics 1 each. Tested sites are not named. The refusal path was not clicked.
+- **Live**: seen on production websites on 2026-11-05. Headless Chromium read `dataLayer` before a click on "accept", after it, and after a reload, with analytics and advertising requests blocked. Some runs allowed Google Tag Manager and some blocked it. The sample is small: CookieYes 7 sites, Shoptet 5, Complianz 4, Didomi 2, Borlabs, OneTrust and Usercentrics 1 each. Surveyed sites are not named. This survey did not click refusal.
 - **Vendor code**: read in the vendor's published source. CookieYes CDN script as served on 2026-11-05, CookieYes WordPress plugin 3.5.8, Complianz Free 7.5.7, [Shoptet templates](https://github.com/shoptet/templates-assets/blob/master/shared/js/libs/consent.js).
 - **Vendor docs**: the vendor's documentation.
+
+In the labels of the [technical overview](technical-overview.md): Live means Tested, as a single manual run that no command repeats. "Automated tests" means Tested with `npm test`. Vendor code and Vendor docs are sources read on 2026-11-05, like Google docs, and were not run by this project unless Live is also stated. Anything else, including other configurations of these products, is Not verified.
 
 To repeat this on your own site, run the line below in the browser console before and after your choice:
 
@@ -18,9 +34,9 @@ dataLayer.filter(x => x[0] === "consent").map(x => [...x])
 
 | Pattern | Seen with | Evidence | Why it matters | How Vanilla reads it |
 | --- | --- | --- | --- | --- |
-| `update` with `denied` at load, before any click | CookieYes, Complianz in direct mode | Live; CookieYes also vendor code | It looks like a refusal and is not one | Collection stays off either way, the safe side. With a supported banner in its undecided state it is not treated as a refusal: no cookie deletion request. Without one, one deletion request is sent |
-| `default` with `denied` for everyone | CookieYes, Shoptet, Complianz, Borlabs, Usercentrics, Didomi | Live | Default is a starting value, not a choice | Denied, with no cookie deletion request |
-| `default` with `region` | CookieYes on WordPress | Live; vendor code | The script cannot know whether the visitor is in that region | Unknown until a direct update. A banner fallback cannot resolve it |
+| `update` with `denied` at load, before any click | CookieYes, Complianz in direct mode | Live; CookieYes also vendor code | It looks like a refusal and is not one | Collection stays off until a later decision, the safe side. With a supported banner in its undecided state it is not treated as a refusal: no cookie deletion request. Without one, one deletion request is sent |
+| `default` with `denied` for everyone | CookieYes, Shoptet, Complianz, Borlabs, Usercentrics, Didomi | Live | Default is a starting value, not a choice | Denied, with no cookie deletion request, until a decided banner or an update |
+| `default` with `region` | CookieYes on WordPress | Live; vendor code | The script cannot know whether the visitor is in that region | Unknown until a direct update or a decided banner |
 | `update` without any `default` | CookieYes CDN, OneTrust | Live | Consent appears from nothing, so a tool waiting for a default waits forever | The update is applied |
 | Partial `update`, one or a few keys at a time | Borlabs; CookieYes next to the WP Consent API | Live | `analytics_storage` and the ad keys arrive in separate commands | Merged key by key |
 | `default` already carrying `granted` on return visits | Shoptet, Usercentrics, Borlabs | Live | The stored decision travels in the default | Granted |
@@ -32,7 +48,7 @@ dataLayer.filter(x => x[0] === "consent").map(x => [...x])
 ### CookieYes
 
 - **CDN script:** `gtag` update is sent only when `dataLayer` already exists. Vendor code: the update function returns early when `window.dataLayer` is not an array. Live: a site with no `dataLayer` got no command; after creating one first, the commands appeared. Vanilla creates `dataLayer` if it is missing.
-- **WordPress plugin without the web app connection:** no `gtag` update after the click. Vendor code: `gcm.js` sends `default`, and sends `update` only at load from an existing cookie; `script.js` contains no `gtag` call and fires `cookieyes_consent_update` on the document. Live: the same on a site with Google Tag Manager blocked.
+- **WordPress plugin without the web app connection:** no `gtag` update after the click. Vendor code: `gcm.js` sends `default`, and sends `update` only at load from an existing cookie; `script.js` contains no `gtag` call and fires `cookieyes_consent_update` on the document. Live: the same on a site with Google Tag Manager blocked. Vanilla takes the choice from `getCkyConsent()`: it beats the default, and a later change beats the `update` from `gcm.js`.
 - **`getCkyConsent()`** works in both. Live: `isUserActionCompleted` is `false` before a choice while every category reads as rejected, so only that flag separates undecided from refused. Vanilla uses it.
 
 ### Complianz

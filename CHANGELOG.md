@@ -12,5 +12,9 @@
 - `page_location`, `page_referrer` and `page_title` are trimmed to the 256 UTF-8 bytes measured on the validator, instead of 100 characters.
 - An empty referrer stays empty instead of becoming `/`.
 - The console warning about unresolved consent stays silent while a supported banner waits for the visitor.
+- A decided banner beats Google defaults, and a later change in the banner beats an older Google update.
+- URLs set by the site are cleaned in cookie mode too.
+- `update.sh` works when root owns .env and explains a checkout that is not on a branch.
+- `npm run verify:mp` follows `GA4_REGION`.
 
-Release tags are the source of versioned deployments. Changes on the default branch are unreleased until a tag and release notes exist.
+No release is tagged yet. Install and update follow the default branch.

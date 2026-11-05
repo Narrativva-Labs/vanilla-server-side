@@ -364,14 +364,11 @@ it("production trusts only the immediate private proxy hop for IP limits", async
   }
 });
 
-it("regional defaults require a direct consent update even with a granted CMP fallback", async () => {
+it("a decided banner resolves a regional default without a direct consent update", async () => {
   const p = page("cookie", [["consent", "default", { analytics_storage: "denied", region: ["CZ"] }]]);
   Object.assign(p.host, { Cookiebot: { hasResponse: true, consent: { statistics: true, marketing: false } } });
   p.host.dispatchEvent(new Event("CookiebotOnConsentReady"));
   p.command("event", "generate_lead");
-  await Promise.resolve();
-  expect(p.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/e"))).toHaveLength(0);
-  p.command("consent", "update", { analytics_storage: "granted" });
   for (let i = 0; i < 30; i++) await Promise.resolve();
   expect(p.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/e")).length).toBeGreaterThan(0);
 });

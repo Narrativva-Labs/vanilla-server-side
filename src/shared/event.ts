@@ -1,6 +1,21 @@
 import type { Consent } from "./consent.js";
 export const SESSION_MS = 30 * 60 * 1000;
 export const MAX_EVENT_AGE_MS = 72 * 60 * 60 * 1000;
+// Measured with npm run verify:mp: the validation server allows 256 UTF-8 bytes for these fields.
+export const PAGE_TEXT_BYTES = 256;
+const encoder = new TextEncoder();
+/** Whole characters only, and never a dangling percent escape at the end of a URL. */
+export function shortenBytes(value: string, limit: number) {
+  if (encoder.encode(value).byteLength <= limit) return value;
+  let bytes = 0;
+  let output = "";
+  for (const character of value) {
+    bytes += encoder.encode(character).byteLength;
+    if (bytes > limit) break;
+    output += character;
+  }
+  return output.replace(/%[0-9a-f]?$/i, "");
+}
 export interface TrackingEvent {
   event_id: string;
   name: string;
