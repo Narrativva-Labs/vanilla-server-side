@@ -88,3 +88,5 @@ The tracker reads these banners by itself, without integration code, and a decid
 - [Design decisions](docs/decisions.md): each decision with its alternative and source
 
 For development on Node 24: `npm ci && npm test && npm run typecheck && npm run build`. `npm run verify:mp` checks real payloads against Google's validation server and sends nothing to reports.
+
+Found a security issue? See [SECURITY.md](SECURITY.md).
