@@ -57,8 +57,11 @@ export function createApp(
   });
   const status = { sent: 0, errors: 0, botsFiltered: 0, lastSuccess: null as string | null };
   app.get("/health", async () => ({ ok: true, google: status }));
+  // The tracker never changes while the process runs, so public requests do not touch the disk.
+  let tracker: Promise<string> | undefined;
   app.get("/s.js", async (_, reply) => {
-    const source = await readFile(new URL("../public/s.js", import.meta.url), "utf8");
+    tracker ??= readFile(new URL("../public/s.js", import.meta.url), "utf8");
+    const source = await tracker;
     return reply
       .type("text/javascript")
       .header("Cache-Control", "public, max-age=300")
