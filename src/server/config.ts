@@ -13,13 +13,10 @@ export function configFromEnv(env = process.env) {
   }
   const port = Number(env.PORT ?? 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");
-  const mode = env.TRACKING_MODE ?? "cookie";
-  if (mode !== "cookie" && mode !== "cookieless")
-    throw new Error("TRACKING_MODE must be cookie or cookieless");
   const region = env.GA4_REGION || undefined;
   if (region !== undefined && region !== "eu") throw new Error("GA4_REGION must be eu or unset");
   const cookieSecret = env.COOKIE_SECRET ?? "";
-  if (mode === "cookie" && (cookieSecret.length < 32 || cookieSecret.startsWith("replace-")))
+  if (cookieSecret.length < 32 || cookieSecret.startsWith("replace-"))
     throw new Error("COOKIE_SECRET must contain at least 32 characters");
   const cookieDomain = env.COOKIE_DOMAIN || new URL(siteOrigin).hostname.replace(/^www\./, "");
   if (!/^[a-z0-9.-]+$/i.test(cookieDomain)) throw new Error("Invalid COOKIE_DOMAIN");
@@ -33,7 +30,6 @@ export function configFromEnv(env = process.env) {
   )
     throw new Error("Invalid TRACKED_EVENTS (page_view is managed automatically)");
   return {
-    mode: mode as "cookie" | "cookieless",
     region: region as "eu" | undefined,
     allowedEvents,
     cookieSecret,

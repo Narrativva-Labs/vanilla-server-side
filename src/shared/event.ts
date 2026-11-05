@@ -36,17 +36,12 @@ export interface TrackingEvent {
   ip_override?: string;
   params: Record<string, unknown>;
 }
-export function timely(
-  event: TrackingEvent,
-  now = Date.now(),
-  maxSessionAgeMs = 24 * 60 * 60 * 1000,
-) {
+export function timely(event: TrackingEvent, now = Date.now()) {
   return (
     event.timestamp_ms <= now + 5000 &&
     now - event.timestamp_ms <= MAX_EVENT_AGE_MS &&
     event.timestamp_ms >= event.session_started_ms &&
     event.timestamp_ms <= event.session_expires_ms &&
-    event.session_expires_ms <= event.timestamp_ms + SESSION_MS &&
-    now - event.session_started_ms <= maxSessionAgeMs
+    event.session_expires_ms <= event.timestamp_ms + SESSION_MS
   );
 }

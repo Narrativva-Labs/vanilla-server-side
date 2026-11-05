@@ -9,14 +9,14 @@ const bundle = buildSync({
   format: "iife",
   target: "es2022",
 }).outputFiles[0]!.text;
-export function page(mode: "cookie" | "cookieless", history: unknown[] = []) {
+export function page(history: unknown[] = []) {
   let cookieReads = 0;
   const doc = Object.assign(new EventTarget(), {
     title: "Shop",
     visibilityState: "visible",
     currentScript: {
       src: "https://kx7qpa.example.com/s.js",
-      dataset: { mode, measurementId: "G-TEST", events: DEFAULT_EVENTS },
+      dataset: { measurementId: "G-TEST", events: DEFAULT_EVENTS },
     },
     referrer: "",
   });

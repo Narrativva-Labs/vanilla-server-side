@@ -31,9 +31,6 @@ command -v curl >/dev/null || { apt-get update; apt-get install -y curl; }
 if [[ -f .env ]]; then
   echo "Keeping the existing .env. Back it up before making manual changes."
 else
-  read -r -p "Mode [cookie/cookieless] (default cookie): " mode
-  mode=${mode:-cookie}
-  [[ $mode == cookie || $mode == cookieless ]] || { echo "Invalid mode."; exit 1; }
   while true; do
     read -r -p "Tracker domain (e.g. kx7qpa.example.com): " tracker
     [[ $tracker =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$ ]] && break
@@ -49,9 +46,9 @@ else
   website_host=$(printf '%s' "$website_host" | tr '[:upper:]' '[:lower:]')
   tracker=$(printf '%s' "$tracker" | tr '[:upper:]' '[:lower:]')
   cookie_domain=${website_host#www.}
-  if [[ $mode == cookie && $tracker != "$cookie_domain" && $tracker != *".$cookie_domain" ]]; then
-    echo "Cookie mode requires the tracker at $cookie_domain or a subdomain of it."
-    echo "Use kx7qpa.$cookie_domain, change the website origin, or rerun with cookieless mode."
+  if [[ $tracker != "$cookie_domain" && $tracker != *".$cookie_domain" ]]; then
+    echo "The tracker must be at $cookie_domain or a subdomain of it, to share the cookie."
+    echo "Use kx7qpa.$cookie_domain or change the website origin."
     exit 1
   fi
   while true; do
@@ -74,7 +71,6 @@ TRACKER_DOMAIN=$tracker
 SITE_ORIGIN=$site
 GA4_MEASUREMENT_ID=$measurement
 GA4_API_SECRET=$api_secret
-TRACKING_MODE=$mode
 COOKIE_SECRET=$secret
 COOKIE_DOMAIN=$cookie_domain
 ENV

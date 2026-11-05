@@ -1,9 +1,5 @@
 /** Deliberately small attribution model; click identifiers never leave the browser. */
-export function campaignDetails(
-  href: string,
-  referrer: string,
-  allowClick = true,
-): Record<string, string> {
+export function campaignDetails(href: string, referrer: string): Record<string, string> {
   const url = new URL(href);
   const campaign: Record<string, string> = {};
   for (const [utm, field] of Object.entries({
@@ -18,7 +14,7 @@ export function campaignDetails(
     if (value) campaign[field] = value.slice(0, 100);
   }
   if (Object.keys(campaign).length) return campaign;
-  if (allowClick && url.searchParams.has("gclid")) return { source: "google", medium: "cpc" };
+  if (url.searchParams.has("gclid")) return { source: "google", medium: "cpc" };
   try {
     const ref = new URL(referrer);
     if (ref.hostname === url.hostname) return { source: "(direct)", medium: "(none)" };

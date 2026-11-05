@@ -117,45 +117,42 @@ it("first Google 503 does not confirm a session; retry preserves campaign_detail
   }
 });
 
-for (const mode of ["cookie", "cookieless"] as const) {
-  it(`${mode} pagehide dispatches engagement immediately while another fetch is pending`, async () => {
-    vi.useFakeTimers();
-    const p = page(mode, [["consent", "update", granted]]);
-    await settle();
-    let finish!: (value: Response) => void;
-    p.fetcher.mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          finish = resolve;
-        }),
-    );
-    p.command("event", "generate_lead");
-    vi.advanceTimersByTime(1200);
-    p.doc.visibilityState = "hidden";
-    p.doc.dispatchEvent(new Event("visibilitychange"));
-    p.host.dispatchEvent(new Event("pagehide"));
-    await settle();
-    expect(p.fetcher).toHaveBeenCalledTimes(3);
-    expect(
-      p.fetcher.mock.calls.map(([, options]) => JSON.parse(String(options!.body)).name),
-    ).toEqual(["page_view", "generate_lead", "page_engagement"]);
-    const exit = p.fetcher.mock.calls[2]![1]!;
-    expect(exit.keepalive).toBe(true);
-    expect(Buffer.byteLength(String(exit.body))).toBeLessThan(2048);
-    expect(JSON.parse(String(exit.body)).params.engagement_time_msec).toBe(1200);
-    finish(new Response(null, { status: 204 }));
-    await settle();
-    expect(
-      p.fetcher.mock.calls.some(
-        ([, options]) => JSON.parse(String(options!.body)).name === "page_engagement",
-      ),
-    ).toBe(true);
-  });
-}
-
+it("pagehide dispatches engagement immediately while another fetch is pending", async () => {
+  vi.useFakeTimers();
+  const p = page([["consent", "update", granted]]);
+  await settle();
+  let finish!: (value: Response) => void;
+  p.fetcher.mockImplementationOnce(
+    () =>
+      new Promise<Response>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  p.command("event", "generate_lead");
+  vi.advanceTimersByTime(1200);
+  p.doc.visibilityState = "hidden";
+  p.doc.dispatchEvent(new Event("visibilitychange"));
+  p.host.dispatchEvent(new Event("pagehide"));
+  await settle();
+  expect(p.fetcher).toHaveBeenCalledTimes(3);
+  expect(p.fetcher.mock.calls.map(([, options]) => JSON.parse(String(options!.body)).name)).toEqual(
+    ["page_view", "generate_lead", "page_engagement"],
+  );
+  const exit = p.fetcher.mock.calls[2]![1]!;
+  expect(exit.keepalive).toBe(true);
+  expect(Buffer.byteLength(String(exit.body))).toBeLessThan(2048);
+  expect(JSON.parse(String(exit.body)).params.engagement_time_msec).toBe(1200);
+  finish(new Response(null, { status: 204 }));
+  await settle();
+  expect(
+    p.fetcher.mock.calls.some(
+      ([, options]) => JSON.parse(String(options!.body)).name === "page_engagement",
+    ),
+  ).toBe(true);
+});
 it("a waiting SPA page_view retains the old page but keeps the original campaign", async () => {
   vi.useFakeTimers();
-  const p = page("cookie", [["consent", "default", { ...granted, wait_for_update: 500 }]]);
+  const p = page([["consent", "default", { ...granted, wait_for_update: 500 }]]);
   p.host.history.pushState({}, "", "https://shop.example/new?utm_source=wrong");
   vi.advanceTimersByTime(500);
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
@@ -167,7 +164,7 @@ it("a waiting SPA page_view retains the old page but keeps the original campaign
 
 it("time spent denied is excluded from engagement after grant", async () => {
   vi.useFakeTimers();
-  const p = page("cookie", [["consent", "update", { analytics_storage: "denied" }]]);
+  const p = page([["consent", "update", { analytics_storage: "denied" }]]);
   await settle();
   vi.advanceTimersByTime(10000);
   p.command("consent", "update", granted);
@@ -225,7 +222,7 @@ it("malformed non-ASCII cookie signature starts a fresh identity", async () => {
 });
 
 it("tracker rejects an oversized keepalive body before fetch with a diagnostic", async () => {
-  const p = page("cookie", [["consent", "update", granted]]);
+  const p = page([["consent", "update", granted]]);
   await settle();
   p.command("event", "generate_lead", { note: "x".repeat(70 * 1024) });
   await settle();

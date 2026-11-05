@@ -26,10 +26,10 @@ const until = async (check: () => boolean, ms = 8000) => {
 };
 /** Fails any real outgoing request, which proves the demo does not need the network. */
 const noNetwork = `data:text/javascript,globalThis.fetch=()=>{throw new Error("network used")}`;
-async function startDemo(mode = "cookie") {
+async function startDemo() {
   const port = await freePort();
   const child = spawn(process.execPath, ["--import", noNetwork, "scripts/demo.mjs"], {
-    env: { ...process.env, PORT: String(port), TRACKING_MODE: mode },
+    env: { ...process.env, PORT: String(port) },
   });
   children.push(child);
   let output = "";
@@ -109,13 +109,12 @@ it("demo serves the page and tracker, prints what would go to Google and what wa
 });
 
 it("demo does not report an event as blocked once it reached the stub", async () => {
-  const demo = await startDemo("cookieless");
-  await demo.post("/demo/attempt", { name: "generate_lead", consent: "unknown" });
-  await demo.post("/e", event("generate_lead", {}));
+  const demo = await startDemo();
+  await demo.post("/demo/attempt", { name: "generate_lead", consent: "granted" });
+  await demo.post("/e", event("generate_lead"));
   await until(() => demo.output().includes("TO GOOGLE  generate_lead"));
   await new Promise((resolve) => setTimeout(resolve, 3200));
   expect(demo.output()).not.toContain("BLOCKED");
-  expect(demo.output()).toContain("ip_override not sent");
 });
 
 const credentials = { GA4_MEASUREMENT_ID: "G-TEST123", GA4_API_SECRET: "super-secret-value" };

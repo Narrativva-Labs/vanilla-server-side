@@ -1,81 +1,80 @@
 import { consentSnapshot, purposes, type Consent } from "../shared/consent.js";
 import { isObject, toCommandArray } from "./data-layer.js";
 
-export function createConsentObserver() {
-  const defaults: Record<string, unknown> = {};
-  const updates: Record<string, unknown> = {};
-  const regional = new Set<string>();
-  let fallback: unknown;
-  let lastRead: Consent | undefined;
-  let waitUntil = 0;
-  let analyticsDenialUpdate = false;
+type Values = Record<string, unknown>;
+export type ConsentSignal =
+  | { kind: "default" | "update"; settings: Values }
+  | { kind: "banner"; read: unknown }
+  | { kind: "refusal-handled" };
+export const noConsent = {
+  defaults: {} as Values,
+  regional: {} as Values,
+  banner: {} as Values,
+  updates: {} as Values,
+  lastRead: undefined as Consent | undefined,
+  refusal: false,
+};
+export type ConsentState = typeof noConsent;
+/** Priority rises from left to right, purpose by purpose. */
+export const effectiveConsent = (state: ConsentState) =>
+  consentSnapshot({ ...state.defaults, ...state.regional, ...state.banner, ...state.updates });
+function layer(state: ConsentState, name: "defaults" | "regional" | "updates", settings: Values) {
+  const named = purposes.filter((key) => Object.hasOwn(settings, key));
+  // The script cannot know the visitor's region, so a regional default stays unresolved.
+  const values = named.map((key) => [key, name === "regional" ? "unknown" : settings[key]]);
+  return { ...state, [name]: { ...state[name], ...Object.fromEntries(values) } };
+}
+function readBanner(state: ConsentState, value: unknown): ConsentState {
+  if (value === undefined) return { ...state, banner: {} };
+  const read = consentSnapshot(value);
+  const analytics = read.analytics_storage;
+  const updates = { ...state.updates };
+  // The first read reports a stored state. A later change is a new decision for those keys.
+  for (const key of purposes)
+    if (state.lastRead && read[key] !== "unknown" && read[key] !== state.lastRead[key])
+      delete updates[key];
+  // A denied read counts once. An undecided one cancels the denied update CookieYes sends on load.
+  const refused = analytics === "denied" && state.banner.analytics_storage !== "denied";
+  const refusal = refused || (state.refusal && analytics !== "unknown");
+  const banner = Object.fromEntries(Object.entries(read).filter(([, v]) => v !== "unknown"));
+  return { ...state, banner, updates, lastRead: read, refusal };
+}
+/** The whole consent logic, without DOM or clock. docs/technical-overview.md lists its rules. */
+export function nextConsent(state: ConsentState, signal: ConsentSignal): ConsentState {
+  if (signal.kind === "refusal-handled") return { ...state, refusal: false };
+  if (signal.kind === "banner") return readBanner(state, signal.read);
+  const { kind, settings } = signal;
+  if (kind === "default")
+    return layer(state, "region" in settings ? "regional" : "defaults", settings);
+  const refusal = state.refusal || settings.analytics_storage === "denied";
+  return { ...layer(state, "updates", settings), refusal };
+}
 
+export function createConsentObserver() {
+  let state = noConsent;
+  let waitUntil = 0;
+  const apply = (signal: ConsentSignal) => void (state = nextConsent(state, signal));
   return {
     /** `refresh` runs first, so a banner change made before this command counts as older. */
     observe(item: unknown, refresh?: () => void) {
-      const command = toCommandArray(item);
-      const isConsent = command?.[0] === "consent";
-      const isDefault = command?.[1] === "default";
-      const isUpdate = command?.[1] === "update";
-      if (!isConsent || !(isDefault || isUpdate) || !isObject(command[2])) return false;
+      const [name, kind, settings] = toCommandArray(item) ?? [];
+      const known = name === "consent" && (kind === "default" || kind === "update");
+      if (!known || !isObject(settings)) return false;
       refresh?.();
-      const settings = command[2];
-      if (isUpdate && settings.analytics_storage === "denied") analyticsDenialUpdate = true;
-      if (isUpdate) waitUntil = 0;
-      if (
-        isDefault &&
-        typeof settings.wait_for_update === "number" &&
-        Number.isFinite(settings.wait_for_update)
-      ) {
-        waitUntil = Date.now() + Math.min(2000, Math.max(0, settings.wait_for_update));
-      }
-      for (const key of purposes) {
-        if (!Object.hasOwn(settings, key)) continue;
-        if (isDefault && "region" in settings) regional.add(key);
-        else (isUpdate ? updates : defaults)[key] = settings[key];
-      }
+      apply({ kind, settings });
+      const wait = settings.wait_for_update;
+      if (kind === "update") waitUntil = 0;
+      else if (typeof wait === "number" && Number.isFinite(wait))
+        waitUntil = Date.now() + Math.min(2000, Math.max(0, wait));
       return true;
     },
-    fallback(value: unknown) {
-      const read = consentSnapshot(value);
-      const analytics = read.analytics_storage;
-      // CookieYes pushes a denied update on load: an undecided adapter means nobody refused yet.
-      // A later refusal still deletes through the transition below.
-      if (value !== undefined && analytics === "unknown") analyticsDenialUpdate = false;
-      // Adapters return denied only for a resolved visitor decision, never a default.
-      // Consume this transition once so polling does not repeat cookie deletion.
-      if (analytics === "denied" && consentSnapshot(fallback).analytics_storage !== "denied")
-        analyticsDenialUpdate = true;
-      // The first read only reports a stored state. A later change is a new decision, so it
-      // replaces older Google updates for those keys; a newer update replaces it in turn.
-      if (value !== undefined) {
-        for (const key of purposes)
-          if (lastRead && read[key] !== "unknown" && read[key] !== lastRead[key])
-            delete updates[key];
-        lastRead = read;
-      }
-      fallback = value;
-    },
+    fallback: (read: unknown) => apply({ kind: "banner", read }),
     takeAnalyticsDenialUpdate() {
-      const pending = analyticsDenialUpdate;
-      analyticsDenialUpdate = false;
-      return pending;
+      const { refusal } = state;
+      apply({ kind: "refusal-handled" });
+      return refusal;
     },
-    waitMs() {
-      return Math.max(0, waitUntil - Date.now());
-    },
-    snapshot(): Consent {
-      const unresolved = Object.fromEntries([...regional].map((key) => [key, "unknown"]));
-      // An undecided banner adds nothing; a decided one outranks every kind of default.
-      const banner = Object.fromEntries(
-        Object.entries(consentSnapshot(fallback)).filter(([, state]) => state !== "unknown"),
-      );
-      return consentSnapshot({
-        ...defaults,
-        ...unresolved,
-        ...banner,
-        ...updates,
-      });
-    },
+    waitMs: () => Math.max(0, waitUntil - Date.now()),
+    snapshot: () => effectiveConsent(state),
   };
 }

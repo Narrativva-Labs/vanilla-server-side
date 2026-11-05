@@ -22,7 +22,7 @@ All rows: Tested, 2026-11-05, `npm run verify:mp`.
 
 | Claim checked | Documentation | Result |
 | --- | --- | --- |
-| Payloads built by this repository | | All accepted: `page_view` with `campaign_details`, device and `ip_override`; `purchase`; `page_engagement`; cookieless `page_view`; 5000-character URL, referrer and title after trimming |
+| Payloads built by this repository | | All accepted: `page_view` with `campaign_details`, device and `ip_override`; `purchase`; `page_engagement`; 5000-character URL, referrer and title after trimming |
 | `device.model` | [Reference](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference): optional | Strict: `VALUE_REQUIRED`, "Device model is required." Also rejected when blank. `RELAXED`: accepted |
 | `device.browser` | Reference: optional | Strict: `VALUE_REQUIRED`, "Device browser is required." A blank string (one space) is accepted. `RELAXED`: accepted |
 | `device` with `category` only | Reference: "We recommend `category` at a minimum" | Strict: rejected. `model` plus `browser` alone: accepted |

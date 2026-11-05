@@ -78,7 +78,7 @@ it("concurrent duplicate requests share the failed delivery result", async () =>
   }
 });
 
-it("cookieless tracker renews an old session instead of stopping after 24 hours", async () => {
+it("the tracker renews an old session instead of stopping after 24 hours", async () => {
   let now = Date.now();
   const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const tracker = createTracker(
@@ -92,7 +92,6 @@ it("cookieless tracker renews an old session instead of stopping after 24 hours"
       warn: vi.fn(),
     },
     new Set(["generate_lead"]),
-    "cookieless",
   );
   tracker.update(consent);
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));

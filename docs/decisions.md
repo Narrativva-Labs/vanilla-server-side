@@ -44,11 +44,21 @@ A same-origin reverse proxy can serve `/kx7qpa/s.js` and strip `/kx7qpa/` before
 
 **Alternative:** the common two-state model, where anything not granted counts as denied.
 
-**Why:** banners send `denied` long before anyone decides: as a `default`, and in some cases as an `update` at load. A two-state model would treat every new visitor as having refused and fire deletion logic for them. The script cannot resolve a regional default by itself; only an update or a decided banner does. Conservative still holds: in cookie mode `unknown` sends nothing. In cookieless mode `unknown` sends after the wait, but `default` denied and `update` denied send nothing, so with most banners, which set `default` denied, nothing is measured before a decision.
+**Why:** banners send `denied` long before anyone decides: as a `default`, and in some cases as an `update` at load. A two-state model would treat every new visitor as having refused and fire deletion logic for them. The script cannot resolve a regional default by itself; only an update or a decided banner does. Conservative still holds: `unknown` sends nothing.
 
 Google state does not always win. A decided banner beats every `default`, because some banners send no `update` after the click. Between a banner and an `update` the newest decision wins, and the banner's first read at load does not count as new. See the [consent state machine](technical-overview.md#consent-state-machine).
 
 **Source:** Live checks in [cookie banners](cookie-banners.md), 2026-11-05. Tested 2026-11-05: `tests/browser.test.ts`, `tests/cmp-adapters.test.ts`.
+
+## One mode, with a cookie
+
+**Decision:** the tracker waits for analytics consent, then uses the signed cookie. The earlier cookieless mode was removed.
+
+**Alternative:** keep cookieless as a second mode, with an identity in page memory and sending before a decision when there was no consent signal.
+
+**Why:** with most banners, which set `default` denied, it measured nothing without a decision anyway. After consent the cookie mode is better: the identity survives a page load and geography works. And the second mode added complexity to every consent, identity and delivery path.
+
+**Source:** Live checks in [cookie banners](cookie-banners.md), 2026-11-05.
 
 ## Retries, against Google's advice
 
@@ -96,7 +106,7 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 **Alternative:** a descriptive name such as an analytics subdomain, or a vendor domain.
 
-**Why:** the main purpose of this project is control over data and consent. Fewer blocked requests are a side benefit, not the reason it exists. Neutral names lower the chance of a filter list match. They guarantee nothing, and first-party does not mean unblockable. A blocker does not overrule the visitor's decision in the cookie banner: cookie mode sends nothing without consent, and a refusal stops both modes. Simo Ahava disagrees with this approach; see [content blockers](technical-overview.md#content-blockers).
+**Why:** the main purpose of this project is control over data and consent. Fewer blocked requests are a side benefit, not the reason it exists. Neutral names lower the chance of a filter list match. They guarantee nothing, and first-party does not mean unblockable. A blocker does not overrule the visitor's decision in the cookie banner: nothing is sent without consent, and a refusal stops collection. Simo Ahava disagrees with this approach; see [content blockers](technical-overview.md#content-blockers).
 
 **Source:** Tested 2026-11-05, one run with uBlock Origin Lite: [notes](measurement-protocol-notes.md#browser-checks). Other blockers: Not verified.
 

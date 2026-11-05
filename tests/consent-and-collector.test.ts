@@ -34,7 +34,7 @@ it("regional purposes remain unknown despite general grants, until explicit upda
   }
 });
 it("inline purchase before the deferred script is delivered once, in order", async () => {
-  const p = page("cookie", [
+  const p = page([
     ["consent", "update", granted],
     {
       event: "purchase",
@@ -50,7 +50,7 @@ it("inline purchase before the deferred script is delivered once, in order", asy
 it("unknown inline purchase waits for a late CMP grant and preserves its timestamp", async () => {
   vi.useFakeTimers();
   const start = Date.now();
-  const p = page("cookie", [{ event: "purchase", transaction_id: "late" }]);
+  const p = page([{ event: "purchase", transaction_id: "late" }]);
   expect(p.fetcher).not.toHaveBeenCalled();
   await tick(p, 500);
   p.command("consent", "update", granted);
@@ -58,9 +58,9 @@ it("unknown inline purchase waits for a late CMP grant and preserves its timesta
   expect(p.fetcher).toHaveBeenCalledTimes(2);
   expect(JSON.parse(String(p.fetcher.mock.calls[1]![1]?.body)).timestamp_ms).toBe(start);
 });
-it("unknown cookie events expire after two seconds without reading cookies or sending", async () => {
+it("unknown events expire after two seconds without reading cookies or sending", async () => {
   vi.useFakeTimers();
-  const p = page("cookie", [{ event: "generate_lead" }]);
+  const p = page([{ event: "generate_lead" }]);
   await tick(p, 2001);
   p.command("consent", "update", granted);
   expect(
@@ -68,19 +68,9 @@ it("unknown cookie events expire after two seconds without reading cookies or se
   ).toBe(true);
   expect(p.cookieReads()).toBe(0);
 });
-it("cookieless wait_for_update holds a page view and a late denial clears it", async () => {
-  vi.useFakeTimers();
-  const p = page("cookieless", [["consent", "default", { wait_for_update: 500 }]]);
-  await tick(p, 499);
-  expect(p.fetcher).not.toHaveBeenCalled();
-  p.command("consent", "update", { analytics_storage: "denied" });
-  await tick(p, 10);
-  expect(p.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/e"))).toHaveLength(0);
-  expect(p.cookieReads()).toBe(0);
-});
 it("granted default also respects wait_for_update; excessive waits are capped", async () => {
   vi.useFakeTimers();
-  const p = page("cookie", [
+  const p = page([
     ["consent", "default", { ...granted, wait_for_update: 99999 }],
     { event: "generate_lead" },
   ]);
@@ -89,23 +79,23 @@ it("granted default also respects wait_for_update; excessive waits are capped", 
   await tick(p, 1);
   expect(p.fetcher).toHaveBeenCalledTimes(2);
 });
-it("unknown cookieless sends only after the wait, and accepts gtag events", async () => {
+it("gtag events reach the collector with relative URL fields cleaned", async () => {
   vi.useFakeTimers();
-  const p = page("cookieless");
-  await tick(p, 2000);
+  const p = page([["consent", "update", granted]]);
+  await tick(p, 0);
   expect(p.fetcher).toHaveBeenCalledTimes(1);
   p.command("event", "generate_lead", {
     page_location: "/checkout?email=private&customer_id=123&utm_source=test#secret",
     page_referrer: "//shop.example/?visitor_id=123#secret",
   });
-  await tick(p, 2000);
+  await tick(p, 0);
   expect(p.fetcher).toHaveBeenCalledTimes(2);
   const body = JSON.parse(String(p.fetcher.mock.calls[1]![1]?.body));
   expect(body.params.page_location).toBe("/checkout?utm_source=test");
   expect(body.params.page_referrer).toBe("//shop.example/");
 });
 it("bad items never break original push or following items", () => {
-  const p = page("cookie", [["consent", "update", granted]]);
+  const p = page([["consent", "update", granted]]);
   const circular: Record<string, unknown> = {};
   circular.self = circular;
   expect(() =>
@@ -145,7 +135,7 @@ function event(): TrackingEvent {
     },
   };
 }
-it("server independently cleans relative URLs and limits a spoofed origin sender without blocking another IP", async () => {
+it("limits a spoofed origin sender without blocking another IP", async () => {
   const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const app = createApp(
     {
@@ -153,7 +143,6 @@ it("server independently cleans relative URLs and limits a spoofed origin sender
       measurementId: "G-TEST",
       apiSecret: "test-secret",
       siteOrigin: "https://shop.example",
-      mode: "cookieless",
     },
     fetcher,
   );
@@ -170,9 +159,6 @@ it("server independently cleans relative URLs and limits a spoofed origin sender
     expect((await post("192.0.2.1")).statusCode).toBe(429);
     expect((await post("192.0.2.2")).statusCode).toBe(204);
     expect(fetcher).toHaveBeenCalledTimes(301);
-    const params = JSON.parse(String(fetcher.mock.calls[0]![1]?.body)).events[0].params;
-    expect(params.page_location).toBe("/checkout?utm_source=test");
-    expect(params.page_referrer).toBe("//shop.example/");
   } finally {
     await app.close();
   }
@@ -279,7 +265,7 @@ it("deep malformed event is rejected without outgoing calls and health stays ava
 
 it("late supported CMP readiness releases pending cookie events", async () => {
   vi.useFakeTimers();
-  const p = page("cookie", [{ event: "generate_lead" }]);
+  const p = page([{ event: "generate_lead" }]);
   await tick(p, 300);
   Object.assign(p.host, {
     Cookiebot: {
@@ -292,7 +278,7 @@ it("late supported CMP readiness releases pending cookie events", async () => {
 });
 
 it("unresolved cookie consent produces a clear diagnostic after two seconds", () => {
-  const p = page("cookie");
+  const p = page();
   (p.host.setTimeout.mock.calls[0]![0] as () => void)();
   expect(p.warnings).toHaveBeenCalledWith(
     expect.stringContaining("GTM Consent API alone is not visible"),
@@ -301,7 +287,7 @@ it("unresolved cookie consent produces a clear diagnostic after two seconds", ()
 
 it("grant after an expired unknown window does not resurrect a cookie event", async () => {
   vi.useFakeTimers();
-  const p = page("cookie", [{ event: "generate_lead" }]);
+  const p = page([{ event: "generate_lead" }]);
   vi.advanceTimersByTime(2001);
   p.command("consent", "update", granted);
   expect(
@@ -345,9 +331,7 @@ it("production trusts only the immediate private proxy hop for IP limits", async
 });
 
 it("a decided banner resolves a regional default without a direct consent update", async () => {
-  const p = page("cookie", [
-    ["consent", "default", { analytics_storage: "denied", region: ["CZ"] }],
-  ]);
+  const p = page([["consent", "default", { analytics_storage: "denied", region: ["CZ"] }]]);
   Object.assign(p.host, {
     Cookiebot: { hasResponse: true, consent: { statistics: true, marketing: false } },
   });

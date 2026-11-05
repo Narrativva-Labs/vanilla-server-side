@@ -37,13 +37,12 @@ it("installer validates inputs, preserves existing env and uses compose with a f
     const first = spawnSync("bash", [join(root, "install.sh")], {
       env,
       input:
-        "\nhttps://bad-domain\nkx7qpa.example.com\nhttp://wrong.example.com\nhttps://www.example.com\nBAD\nG-TEST\nshort\nabcdefghijklmnop\n",
+        "https://bad-domain\nkx7qpa.example.com\nhttp://wrong.example.com\nhttps://www.example.com\nBAD\nG-TEST\nshort\nabcdefghijklmnop\n",
       encoding: "utf8",
     });
     expect(first.status, first.stderr).toBe(0);
     expect(first.stdout).toContain('<script defer src="https://kx7qpa.example.com/s.js"></script>');
     const initial = readFileSync(join(root, ".env"), "utf8");
-    expect(initial).toContain("TRACKING_MODE=cookie");
     expect(initial).toContain("COOKIE_DOMAIN=example.com");
     expect(initial).toMatch(/COOKIE_SECRET=[a-f0-9]{64}/);
     expect(statSync(join(root, ".env")).mode & 0o777).toBe(0o600);
@@ -65,14 +64,13 @@ it("installer validates inputs, preserves existing env and uses compose with a f
   }
 });
 
-for (const [mode, tracker, site, domain, succeeds] of [
-  ["cookie", "kx7qpa.eu.example.com", "https://www.example.com", "example.com", true],
-  ["cookie", "kx7qpa.eu.example.co.uk", "https://www.example.co.uk", "example.co.uk", true],
-  ["cookie", "example.co.uk", "https://www.example.co.uk", "example.co.uk", true],
-  ["cookie", "kx7qpa.other.example", "https://www.example.com", "example.com", false],
-  ["cookieless", "kx7qpa.other.example", "https://www.example.com", "example.com", true],
+for (const [tracker, site, domain, succeeds] of [
+  ["kx7qpa.eu.example.com", "https://www.example.com", "example.com", true],
+  ["kx7qpa.eu.example.co.uk", "https://www.example.co.uk", "example.co.uk", true],
+  ["example.co.uk", "https://www.example.co.uk", "example.co.uk", true],
+  ["kx7qpa.other.example", "https://www.example.com", "example.com", false],
 ] as const) {
-  it(`installer ${mode}: ${tracker} for ${site}`, () => {
+  it(`installer: ${tracker} for ${site}`, () => {
     const root = mkdtempSync(resolve(".install-test-"));
     const bin = join(root, "bin");
     mkdirSync(bin);
@@ -92,13 +90,13 @@ for (const [mode, tracker, site, domain, succeeds] of [
     try {
       const result = spawnSync("bash", [join(root, "install.sh")], {
         env: { ...process.env, PATH: bin + ":" + process.env.PATH },
-        input: `${mode}\n${tracker}\n${site}\nG-TEST\nabcdefghijklmnop\n`,
+        input: `${tracker}\n${site}\nG-TEST\nabcdefghijklmnop\n`,
         encoding: "utf8",
       });
       expect(result.status, result.stderr).toBe(succeeds ? 0 : 1);
       if (succeeds)
         expect(readFileSync(join(root, ".env"), "utf8")).toContain("COOKIE_DOMAIN=" + domain);
-      else expect(result.stdout).toContain("or rerun with cookieless mode");
+      else expect(result.stdout).toContain("or change the website origin");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

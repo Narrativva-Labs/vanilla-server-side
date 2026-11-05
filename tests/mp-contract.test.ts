@@ -141,7 +141,7 @@ it("network and timeout failures remain retryable", async () => {
   }
 });
 it("keepalive byte guard counts UTF-8, not UTF-16 characters", async () => {
-  const p = page("cookie", [["consent", "update", granted]]);
+  const p = page([["consent", "update", granted]]);
   for (let i = 0; i < 20; i++) await Promise.resolve();
   p.command("event", "generate_lead", { note: "😀".repeat(9000) });
   for (let i = 0; i < 20; i++) await Promise.resolve();
@@ -150,7 +150,7 @@ it("keepalive byte guard counts UTF-8, not UTF-16 characters", async () => {
 });
 it("wait_for_update excludes pre-permission visible time", async () => {
   vi.useFakeTimers();
-  const p = page("cookie", [["consent", "default", { ...granted, wait_for_update: 1000 }]]);
+  const p = page([["consent", "default", { ...granted, wait_for_update: 1000 }]]);
   vi.advanceTimersByTime(1000);
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   for (let i = 0; i < 20; i++) await Promise.resolve();
@@ -191,7 +191,7 @@ it("MP always includes browser when device is present, with a fallback for missi
   expect(buildGoogleRequest(destination, event(), granted)!.body).not.toHaveProperty("device");
 });
 it("browser entry sends a detected browser family in its device object", async () => {
-  const p = page("cookie", [["consent", "update", granted]]);
+  const p = page([["consent", "update", granted]]);
   for (let i = 0; i < 20; i++) await Promise.resolve();
   expect(JSON.parse(String(p.fetcher.mock.calls[0]![1]?.body)).device.browser).toBe("Unknown");
   p.host.navigator.userAgent = "Mozilla/5.0 Chrome/130.0 Safari/537.36";

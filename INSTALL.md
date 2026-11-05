@@ -54,14 +54,14 @@ cd vanilla-server-side
 ./install.sh
 ```
 
-The installer uses root or sudo. It supports Ubuntu and Debian, installs Docker Engine and Compose from [Docker's official package repository](https://docs.docker.com/engine/install/ubuntu/), and first asks for the mode: press Enter for cookie or enter cookieless. It then asks for:
+The installer uses root or sudo. It supports Ubuntu and Debian, installs Docker Engine and Compose from [Docker's official package repository](https://docs.docker.com/engine/install/ubuntu/). It then asks for:
 
 1. Tracker domain, without https:// (kx7qpa.example.com).
 2. Website origin, with https:// and no path (https://www.example.com).
 3. Measurement ID from the second property.
 4. Measurement Protocol API secret.
 
-Cookie mode waits for analytics permission. Cookieless uses page-memory identity and, when there is no consent signal, sends after up to 2 seconds with advertising denied. A `default` or `update` of denied sends nothing, in both modes. Most banners set `default` denied, so with those cookieless measures nothing until the visitor decides. Choose and disclose the appropriate behavior for your site.
+The tracker waits for analytics permission: without it nothing is sent and no cookie is set. Choose and disclose the appropriate behavior for your site.
 
 To send through Google's [EU collection endpoint](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), set `GA4_REGION=eu` in .env after installation and rebuild as described below. Leave it empty for the default endpoint.
 
@@ -71,7 +71,7 @@ The installer generates a signing secret, writes .env with owner-only permission
 
 The installation is tested on a clean Ubuntu in CI; the certificate and public DNS are not verified there.
 
-In cookie mode, the installer sets COOKIE_DOMAIN to the hostname of SITE_ORIGIN with a leading www removed. The tracker must be that domain or any subdomain of it. For https://www.example.co.uk, both example.co.uk and kx7qpa.eu.example.co.uk work; the cookie domain stays example.co.uk. For https://eu.example.com, use kx7qpa.eu.example.com (a tracker at kx7qpa.example.com is outside the derived cookie domain). An incompatible domain stops installation with advice. Cookieless mode does not apply this restriction. The installer preserves this configuration when rerun.
+The installer sets COOKIE_DOMAIN to the hostname of SITE_ORIGIN with a leading www removed. The tracker must be that domain or any subdomain of it. For https://www.example.co.uk, both example.co.uk and kx7qpa.eu.example.co.uk work; the cookie domain stays example.co.uk. For https://eu.example.com, use kx7qpa.eu.example.com (a tracker at kx7qpa.example.com is outside the derived cookie domain). An incompatible domain stops installation with advice. The installer preserves this configuration when rerun.
 
 ## 6. Add the script once
 
@@ -85,9 +85,9 @@ Replace the example domain. If the site has a Content Security Policy, allow you
 
 ## Connect your consent banner
 
-Cookie mode sends nothing until analytics_storage is granted. Use your banner's actual choice; do not grant consent merely because the tracker has loaded.
+The tracker sends nothing until analytics_storage is granted. Use your banner's actual choice; do not grant consent merely because the tracker has loaded.
 
-Cookiebot, CookieConsent by Orest Bida, CookieYes and the Shoptet cookie bar are read automatically. Complianz in GTM mode and other banners installed through a GTM template are not supported. A Shoptet store with the cookie bar turned off stays undecided, so cookie mode sends nothing there. For CookieConsent custom categories, add data-cc-analytics-category="stats" and optionally data-cc-ads-categories="ads,marketing" to the script tag.
+Cookiebot, CookieConsent by Orest Bida, CookieYes and the Shoptet cookie bar are read automatically. Complianz in GTM mode and other banners installed through a GTM template are not supported. A Shoptet store with the cookie bar turned off stays undecided, so nothing is sent there. For CookieConsent custom categories, add data-cc-analytics-category="stats" and optionally data-cc-ads-categories="ads,marketing" to the script tag.
 
 If your banner already issues direct Google consent commands into dataLayer, Vanilla reads them too. Otherwise connect its callback to a command like this, using the actual choice:
 
@@ -106,11 +106,11 @@ gtag("consent", "update", {
 
 Decisions merge per purpose. A banner that has decided beats any Google `default`, including a regional one. A Google `update` beats what the banner reports when it is first read at load. After that the newest decision wins: a later change in the banner replaces an older `update`, and a later `update` replaces the banner's choice. An undecided banner changes nothing. Without a supported banner, a regional default stays unresolved until a direct update. GTM's internal consent API alone is not readable by this tracker. Pending events wait in RAM for at most two seconds.
 
-After denial the tracker requests deletion of its cookie and clears pending analytics. In cookieless mode there is no cookie or browser storage to delete. The normal tag has its own consent handling.
+After denial the tracker requests deletion of its cookie and clears pending analytics. The normal tag has its own consent handling.
 
 ## 7. Verify
 
-Open https://kx7qpa.example.com/health. It should show ok, Google delivery counters and `botsFiltered`. Before consent in cookie mode, counters should not increase due to your visit and no vanilla_session cookie should be set. Accept analytics, navigate pages and send a test ecommerce event if available. Inspect the HttpOnly cookie in browser developer tools under Storage/Application; JavaScript cannot read it. Withdraw consent and verify deletion.
+Open https://kx7qpa.example.com/health. It should show ok, Google delivery counters and `botsFiltered`. Before consent, counters should not increase due to your visit and no vanilla_session cookie should be set. Accept analytics, navigate pages and send a test ecommerce event if available. Inspect the HttpOnly cookie in browser developer tools under Storage/Application; JavaScript cannot read it. Withdraw consent and verify deletion.
 
 In the **second property**, open Reports -> Realtime. Then use DebugView with a temporary event carrying debug_mode:
 
@@ -147,4 +147,4 @@ Install Ubuntu security updates regularly and reboot when required. Docker and C
 
 If the VPS goes down, the original GTM measurement continues. Vanilla events during downtime can be lost: there is no durable queue or backfill. Restart the VPS or run sudo docker compose up -d; if replacing the server, clone again, restore .env, update DNS and rerun ./install.sh. Do not delete Caddy volumes during routine updates; they hold certificates.
 
-The project does not provide a hosted service or legal compliance guarantee. Document what you collect, including IP forwarding for geography only in consented cookie mode, and select consent rules appropriate to your site.
+The project does not provide a hosted service or legal compliance guarantee. Document what you collect, including IP forwarding for geography after consent, and select consent rules appropriate to your site.

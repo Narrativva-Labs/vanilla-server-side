@@ -14,6 +14,8 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:e2e
       - run: bash -n install.sh update.sh
       - run: shellcheck install.sh update.sh
       - run: cp .env.example .env && docker compose config --quiet

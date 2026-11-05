@@ -89,7 +89,7 @@ jobs:
           answer_when_ready() {
             for _ in $(seq 1 150); do
               if docker compose version >/dev/null 2>&1 && ! pgrep -x apt-get >/dev/null; then
-                printf '%s\n' cookie "$TRACKER" "$SITE" "$MEASUREMENT_ID" "$API_SECRET"
+                printf '%s\n' "$TRACKER" "$SITE" "$MEASUREMENT_ID" "$API_SECRET"
                 return
               fi
               sleep 2

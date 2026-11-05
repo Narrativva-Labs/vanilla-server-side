@@ -29,10 +29,8 @@ export function consentSnapshot(value: unknown): Consent {
     ]),
   ) as Consent;
 }
-export function canTrack(consent: Consent, mode: "cookie" | "cookieless") {
-  return mode === "cookieless"
-    ? consent.analytics_storage !== "denied"
-    : consent.analytics_storage === "granted";
+export function canTrack(consent: Consent) {
+  return consent.analytics_storage === "granted";
 }
 export function sanitizeUrl(value: string) {
   try {
@@ -67,20 +65,6 @@ export function cleanUrls(value: unknown, key = ""): unknown {
   if (typeof value !== "string") return value;
   const isUrlField = /(?:^|_)(url|location|referrer)$/i.test(key) && /[/\\?#]/.test(value);
   return isUrlField || /^https?:\/\//i.test(value.trim()) ? sanitizeUrl(value) : value;
-}
-export function analyticsOnly(value: unknown, key = ""): unknown {
-  if (Array.isArray(value)) return value.map((entry) => analyticsOnly(entry, key));
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value)
-        .filter(
-          ([name]) =>
-            !/^(user_id|user_data|user_agent|ip|ip_address|ip_override|client_id)$/i.test(name),
-        )
-        .map(([name, entry]) => [name, analyticsOnly(entry, name)]),
-    );
-  }
-  return cleanUrls(value, key);
 }
 /** Reject cycles, unsupported JSON values and excessive nesting before recursive filters. */
 export function jsonSnapshot<T>(value: T): T {

@@ -66,7 +66,7 @@ export function createApp(
       .type("text/javascript")
       .header("Cache-Control", "public, max-age=300")
       .send(
-        `document.currentScript.dataset.events=${JSON.stringify([...allowed].join(","))};document.currentScript.dataset.mode=${JSON.stringify(config.mode ?? "cookie")};\n${source}`,
+        `document.currentScript.dataset.events=${JSON.stringify([...allowed].join(","))};\n${source}`,
       );
   });
   app.addHook("onRequest", async (req, reply) => {
@@ -97,18 +97,16 @@ export function createApp(
     const release = limiter.claim(req.ip);
     if (!release) return reply.code(429).send({ error: "rate_limit" });
     try {
-      if (config.mode !== "cookieless") {
-        prune();
-        if (req.headers.cookie?.includes(`${COOKIE_NAME}=`))
-          revoke("server:" + serverIdentity(config, req.headers.cookie).clientId);
-        if (
-          typeof req.body?.client_id === "string" &&
-          /^\d{1,20}\.\d{1,20}$/.test(req.body.client_id) &&
-          activeBrowsers.has(req.body.client_id)
-        )
-          revoke("browser:" + req.body.client_id);
-        reply.header("Set-Cookie", cookieHeader(config, "", true));
-      }
+      prune();
+      if (req.headers.cookie?.includes(`${COOKIE_NAME}=`))
+        revoke("server:" + serverIdentity(config, req.headers.cookie).clientId);
+      if (
+        typeof req.body?.client_id === "string" &&
+        /^\d{1,20}\.\d{1,20}$/.test(req.body.client_id) &&
+        activeBrowsers.has(req.body.client_id)
+      )
+        revoke("browser:" + req.body.client_id);
+      reply.header("Set-Cookie", cookieHeader(config, "", true));
       return reply.code(204).send();
     } finally {
       release();
@@ -173,15 +171,14 @@ export function createApp(
       }
       const event = req.body;
       event.consent = consentSnapshot(event.consent);
-      if (!canTrack(event.consent, config.mode ?? "cookie"))
+      if (!canTrack(event.consent))
         return reply.code(403).send({ error: "analytics_consent_required" });
       if (
         !validEventName(event.name) ||
         (!allowed.has(event.name) && !["page_view", "page_engagement"].includes(event.name))
       )
         return reply.code(400).send({ error: "event_not_allowed" });
-      if (!timely(event, Date.now(), config.mode === "cookieless" ? undefined : Infinity))
-        return reply.code(400).send({ error: "expired_event" });
+      if (!timely(event)) return reply.code(400).send({ error: "expired_event" });
       try {
         event.params = jsonSnapshot(event.params);
       } catch {
@@ -199,23 +196,19 @@ export function createApp(
           const result = await pending;
           return result === "retry" ? reply.code(503).send() : reply.code(204).send();
         }
-        let identity: ReturnType<typeof serverIdentity> | undefined;
-        if (config.mode !== "cookieless") {
-          const hasCookie = req.headers.cookie?.includes(`${COOKIE_NAME}=`) ?? false;
-          if (!hasCookie) {
-            const existing = initialIdentities.get(browserKey);
-            identity = existing?.identity ?? serverIdentity(config, req.headers.cookie);
-            initialIdentities.set(browserKey, { identity, expires: Date.now() + 60_000 });
-          } else identity = serverIdentity(config, req.headers.cookie);
-          if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey))
-            return reply.code(204).send();
-          event.client_id = identity.clientId;
-          event.session_id = identity.sessionId;
-          event.session_started_ms = Math.min(identity.started, event.timestamp_ms);
-          event.session_expires_ms = event.timestamp_ms + 30 * 60 * 1000;
-          event.ip_override = req.ip;
-          if (!identity.newSession) delete event.campaign;
-        }
+        const hasCookie = req.headers.cookie?.includes(`${COOKIE_NAME}=`) ?? false;
+        const earlier = hasCookie ? undefined : initialIdentities.get(browserKey)?.identity;
+        const identity = earlier ?? serverIdentity(config, req.headers.cookie);
+        if (!hasCookie)
+          initialIdentities.set(browserKey, { identity, expires: Date.now() + 60_000 });
+        if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey))
+          return reply.code(204).send();
+        event.client_id = identity.clientId;
+        event.session_id = identity.sessionId;
+        event.session_started_ms = Math.min(identity.started, event.timestamp_ms);
+        event.session_expires_ms = event.timestamp_ms + 30 * 60 * 1000;
+        event.ip_override = req.ip;
+        if (!identity.newSession) delete event.campaign;
         const delivery = sendGoogle(
           config,
           event,
@@ -237,7 +230,7 @@ export function createApp(
         if (result === "sent") {
           status.sent++;
           status.lastSuccess = new Date().toISOString();
-          if (identity && !isRevoked("server:" + identity.clientId) && !isRevoked(browserKey))
+          if (!isRevoked("server:" + identity.clientId) && !isRevoked(browserKey))
             reply.header("Set-Cookie", identity.cookie);
         } else {
           status.errors++;

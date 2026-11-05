@@ -16,7 +16,6 @@ if (script && !win.__vanillaGA) {
   win.__vanillaGA = true;
   // Some banners, such as CookieYes from its CDN, skip Google commands without a dataLayer.
   const layer = (win.dataLayer = win.dataLayer || []);
-  const mode = script.dataset.mode === "cookieless" ? "cookieless" : "cookie";
   const warn = (message: string) => console.warn(message);
   let engagementEnabled = false;
   let visibleSince = 0;
@@ -49,7 +48,6 @@ if (script && !win.__vanillaGA) {
       warn,
     },
     new Set((script.dataset.events ?? "").split(",")),
-    mode,
     true,
   );
   const observer = createConsentObserver();
@@ -145,7 +143,6 @@ if (script && !win.__vanillaGA) {
   window.setTimeout(() => {
     // A supported banner that is still waiting for the visitor is the normal undecided state.
     if (
-      mode === "cookie" &&
       observer.snapshot().analytics_storage === "unknown" &&
       adapters.every((adapter) => adapter.read() === undefined)
     ) {

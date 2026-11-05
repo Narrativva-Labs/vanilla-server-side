@@ -78,9 +78,9 @@ function trackingEvent(name, params = {}, extra = {}) {
   };
 }
 /** The body the collector would send for this event. */
-function built(name, params, extra, mode = "cookie") {
+function built(name, params, extra) {
   const event = trackingEvent(name, params, extra);
-  const request = buildGoogleRequest({ measurementId, apiSecret, mode }, event, event.consent);
+  const request = buildGoogleRequest({ measurementId, apiSecret }, event, event.consent);
   if (!request) throw new Error(`The repository refused to build ${name}`);
   return request.body;
 }
@@ -172,7 +172,6 @@ await repository(
   "page_engagement with measured time",
   built("page_engagement", { engagement_time_msec: 1200 }),
 );
-await repository("cookieless page_view", built("page_view", {}, {}, "cookieless"));
 await repository(
   "page_view with a 5000-character URL, referrer and title (trimmed by the repository)",
   built("page_view", {

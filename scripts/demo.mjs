@@ -7,7 +7,6 @@ import { createApp } from "../dist/server/app.js";
 import { isObviousBot } from "../dist/server/bots.js";
 
 const port = Number(process.env.PORT ?? 3210);
-const mode = process.env.TRACKING_MODE === "cookieless" ? "cookieless" : "cookie";
 const origin = `http://localhost:${port}`;
 const HOLD_MS = 3000; // Longer than the tracker's 2-second wait plus its 500 ms polling.
 
@@ -36,7 +35,7 @@ async function fakeGoogle(url, init) {
       `client_id ${client_id}  session_id ${params.session_id}`,
       `ad_user_data ${consent.ad_user_data}  ad_personalization ${consent.ad_personalization}`,
       ...(device ? [`device ${device.browser} / ${device.model} / ${device.category}`] : []),
-      `ip_override ${ip_override ?? "not sent"}`,
+      `ip_override ${ip_override}`,
       `params ${JSON.stringify(params)}`,
     ]);
   }
@@ -45,10 +44,7 @@ async function fakeGoogle(url, init) {
 
 const reasons = {
   denied: "the visitor refused, so nothing left the browser",
-  unknown:
-    mode === "cookie"
-      ? "no decision within 2 seconds, so the event was dropped from memory"
-      : "it never reached the collector",
+  unknown: "no decision within 2 seconds, so the event was dropped from memory",
   granted: "it never reached the collector",
 };
 
@@ -70,7 +66,7 @@ const page = `<!doctype html>
 </head>
 <body>
 <h1>Vanilla Server-Side demo</h1>
-<p>Mode: <strong>${mode}</strong>. Watch the terminal: it shows what would go to Google and what was blocked.</p>
+<p>Watch the terminal: it shows what would go to Google and what was blocked.</p>
 <div class="row">
   <button data-event="page_view">page_view</button>
   <button data-event="generate_lead">generate_lead</button>
@@ -114,7 +110,6 @@ const page = `<!doctype html>
 
 const app = createApp(
   {
-    mode,
     siteOrigin: origin,
     cookieDomain: "localhost",
     cookieSecret: "demo-only-".repeat(4),
@@ -127,7 +122,7 @@ app.get("/", (_, reply) => reply.type("text/html").send(page));
 app.get("/page-:number", (_, reply) => reply.type("text/html").send(page));
 app.post("/demo/attempt", (req, reply) => {
   const { name, consent, opened } = req.body ?? {};
-  if (opened) line("PAGE", `opened in ${mode} mode: consent undecided, no identity yet`);
+  if (opened) line("PAGE", "opened: consent undecided, no identity yet");
   if (typeof name === "string") {
     const attempt = {
       name,
@@ -167,9 +162,7 @@ app.addHook("onResponse", async (req, reply) => {
 });
 
 await app.listen({ host: "localhost", port });
-console.log(
-  `Vanilla Server-Side demo, ${mode} mode. Google is a local stub: nothing leaves this computer.`,
-);
+console.log("Vanilla Server-Side demo. Google is a local stub: nothing leaves this computer.");
 console.log(`Open ${origin} and press Ctrl+C here to stop.\n`);
 for (const signal of ["SIGTERM", "SIGINT"])
   process.on(signal, () => {

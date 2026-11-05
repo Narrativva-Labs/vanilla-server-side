@@ -16,15 +16,15 @@ const flushPage = async (p: ReturnType<typeof page>) => {
   await settle();
 };
 it("startup applies recorded withdrawal before beginning delivery", () => {
-  const p = page("cookie", [
+  const p = page([
     ["consent", "update", granted],
     { event: "purchase", transaction_id: "before-withdrawal" },
     ["consent", "update", denied],
   ]);
   expect(p.fetcher.mock.calls.every(([url]) => String(url).endsWith("/p"))).toBe(true);
 });
-it("cookieless sends only one page view across withdrawal and regrant and ignores external page views", async () => {
-  const p = page("cookieless", [["consent", "update", granted], { event: "page_view" }]);
+it("a regrant sends one new page view and external page views are ignored", async () => {
+  const p = page([["consent", "update", granted], { event: "page_view" }]);
   await settle();
   p.command("consent", "update", denied);
   p.command("consent", "update", granted);
@@ -35,7 +35,7 @@ it("cookieless sends only one page view across withdrawal and regrant and ignore
     p.fetcher.mock.calls
       .filter(([url]) => String(url).endsWith("/e"))
       .map(([, o]) => JSON.parse(String(o!.body)).name),
-  ).toEqual(["page_view"]);
+  ).toEqual(["page_view", "page_view"]);
 });
 for (const original of ["denied", "granted"] as const)
   it(`ad updates preserve retry and never expand ${original} original permissions`, async () => {
@@ -81,7 +81,7 @@ for (const original of ["denied", "granted"] as const)
     tracker.update(denied);
     expect(tracker.pending()).toBe(0);
   });
-it("URL fields are sanitized at the client and independently at the Google boundary", async () => {
+it("URL fields are sanitized at the client", async () => {
   const variants = [
     " https://shop.example/checkout?email=private#secret",
     "https:shop.example/checkout?email=private#secret",
@@ -96,59 +96,18 @@ it("URL fields are sanitized at the client and independently at the Google bound
     "first_location",
     "previous_referrer",
   ];
-  const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-  const app = createApp(
-    {
-      cookieSecret: "s".repeat(64),
-      measurementId: "G-TEST",
-      apiSecret: "test-secret",
-      mode: "cookieless",
-      siteOrigin: "https://shop.example",
-    },
-    fetcher,
-  );
-  try {
-    for (const variant of variants) {
-      const params = Object.fromEntries(fields.map((key) => [key, variant]));
-      const p = page("cookieless", [["consent", "update", granted]]);
-      await settle();
-      p.host.dataLayer.push({ event: "generate_lead", ...params });
-      await flushPage(p);
-      const client = JSON.parse(String(p.fetcher.mock.calls[1]![1]!.body));
-      const now = Date.now();
-      const event: TrackingEvent = {
-        event_id: crypto.randomUUID(),
-        name: "generate_lead",
-        client_id: "123.456",
-        session_id: Math.floor(now / 1000),
-        session_started_ms: now - 1000,
-        session_expires_ms: now + 1800000,
-        timestamp_ms: now,
-        consent: normalizeConsent(granted),
-        params,
-      };
-      expect(
-        (
-          await app.inject({
-            method: "POST",
-            url: "/e",
-            headers: { origin: "https://shop.example" },
-            payload: event,
-          })
-        ).statusCode,
-      ).toBe(204);
-      const server = JSON.parse(String(fetcher.mock.calls.at(-1)![1]!.body)).events[0].params;
-      for (const field of fields) {
-        expect(client.params[field]).not.toMatch(/private|email|secret|#/);
-        expect(server[field]).toBe(client.params[field]);
-      }
-    }
-  } finally {
-    await app.close();
+  for (const variant of variants) {
+    const params = Object.fromEntries(fields.map((key) => [key, variant]));
+    const p = page([["consent", "update", granted]]);
+    await settle();
+    p.host.dataLayer.push({ event: "generate_lead", ...params });
+    await flushPage(p);
+    const client = JSON.parse(String(p.fetcher.mock.calls[1]![1]!.body));
+    for (const field of fields) expect(client.params[field]).not.toMatch(/private|email|secret|#/);
   }
 });
 it("oversized events are explained before fetch and independently rejected by the collector", async () => {
-  const p = page("cookie", [["consent", "update", granted]]);
+  const p = page([["consent", "update", granted]]);
   await settle();
   p.fetcher.mockResolvedValueOnce(new Response(null, { status: 413 }));
   p.host.dataLayer.push({
@@ -190,29 +149,27 @@ it("oversized events are explained before fetch and independently rejected by th
     await app.close();
   }
 });
-it("withdrawal drops waiting purchases in either mode without replaying them", async () => {
+it("withdrawal drops waiting purchases without replaying them", async () => {
   vi.useFakeTimers();
-  for (const mode of ["cookie", "cookieless"] as const) {
-    const p = page(mode, [
-      ["consent", "default", { wait_for_update: 500 }],
-      { event: "purchase", transaction_id: "discard" },
-      ["consent", "update", denied],
-    ]);
-    expect(p.fetcher.mock.calls.every(([url]) => String(url).endsWith("/p"))).toBe(true);
-    p.command("consent", "update", granted);
-    vi.advanceTimersByTime(2000);
-    await flushPage(p);
-    expect(
-      p.fetcher.mock.calls
-        .filter(([url]) => String(url).endsWith("/e"))
-        .map(([, o]) => JSON.parse(String(o!.body)).name),
-    ).toEqual(["page_view"]);
-  }
+  const p = page([
+    ["consent", "default", { wait_for_update: 500 }],
+    { event: "purchase", transaction_id: "discard" },
+    ["consent", "update", denied],
+  ]);
+  expect(p.fetcher.mock.calls.every(([url]) => String(url).endsWith("/p"))).toBe(true);
+  p.command("consent", "update", granted);
+  vi.advanceTimersByTime(2000);
+  await flushPage(p);
+  expect(
+    p.fetcher.mock.calls
+      .filter(([url]) => String(url).endsWith("/e"))
+      .map(([, o]) => JSON.parse(String(o!.body)).name),
+  ).toEqual(["page_view"]);
 });
 
 it("resolving unknown analytics never expands the waiting event advertising permissions", async () => {
   vi.useFakeTimers();
-  const p = page("cookie", [
+  const p = page([
     ["consent", "default", { ad_user_data: "denied", ad_personalization: "denied" }],
     { event: "generate_lead" },
   ]);

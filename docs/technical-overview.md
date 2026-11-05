@@ -4,7 +4,7 @@ How Vanilla Server-Side works and why it is built this way, for analysts and eng
 
 Facts carry their source:
 
-- **Tested**: run by this project, with date and method. `npm test` and `npm run verify:mp` can be rerun by anyone. Realtime and browser results are single manual runs and cannot be repeated by a command.
+- **Tested**: run by this project, with date and method. `npm test`, `npm run test:e2e` and `npm run verify:mp` can be rerun by anyone. Realtime results and the [browser checks](measurement-protocol-notes.md#browser-checks) are single manual runs and cannot be repeated by a command.
 - **Google docs** and other linked pages: read on 2026-11-05.
 - **Not verified**: not confirmed by this project.
 
@@ -49,10 +49,10 @@ The one runtime dependency is Fastify. There is no database.
 
 1. The script reads `dataLayer` from the start, in order, so consent and events pushed before it loaded keep their sequence.
 2. An event is blocked, held or queued according to [consent](#consent-state-machine).
-3. URLs are cleaned in the browser, in both modes, including a `page_location` or other URL parameter set by the site: no credentials, no fragments, no query parameters other than `utm_*`. Click IDs do not leave the browser.
+3. URLs are cleaned in the browser, including a `page_location` or other URL parameter set by the site: no credentials, no fragments, no query parameters other than `utm_*`. Click IDs do not leave the browser.
 4. The tracker posts JSON to `/e`, resolved relative to the script URL, so a same-origin path proxy works.
 5. The collector checks origin and content type, the [bot filter](#bot-filter), consent, the event allowlist, freshness and rate limits. The consent check reads the state the browser reports; the server cannot confirm it independently.
-6. In cookie mode it replaces the browser's temporary identity with the signed server identity. It adds `ip_override` only there.
+6. It replaces the browser's temporary identity with the signed server identity and adds `ip_override`.
 7. `buildGoogleRequest` applies the limits and sends one MP request. `campaign_details` goes first in the same request at session start.
 8. The cookie is set or renewed only after Google answered 2xx.
 
@@ -72,8 +72,6 @@ The cookie `vanilla_session` holds `base64url(JSON).base64url(HMAC-SHA256)`. The
 
 Tested 2026-11-05: `tests/parallel.test.ts`, `tests/consent-races-and-validation.test.ts`, `tests/delivery-races.test.ts`, `tests/delivery-and-privacy.test.ts`.
 
-Cookieless mode uses none of this: the IDs live in page memory, no cookie is read or written, and a new page load is a new visitor.
-
 ### Safari
 
 A cookie set in an HTTP response is capped at 7 days when WebKit sees the request as third-party CNAME or IP address cloaking. [WebKit](https://webkit.org/blog/15697/private-browsing-2-0/) describes the IP test: the two IPv4 addresses share less than 16 bits, or the two IPv6 addresses less than 64 bits, or one is IPv4 and the other IPv6. The defense is on in regular browsing too, and WebKit says it may change.
@@ -88,13 +86,11 @@ A same-origin path proxy, or a tracker in the same network as the website, may a
 
 Each purpose has three states, and the tracker works from `analytics_storage`:
 
-| | Meaning | Cookie mode | Cookieless mode |
-| --- | --- | --- | --- |
-| `unknown` | No signal, or an undecided banner with no Google state | Events wait in memory for up to 2 seconds, then are dropped. Nothing is sent and no cookie is set | Events wait up to 2 seconds, then go out with advertising denied |
-| `granted` | The visitor agreed | Send | Send, advertising always denied |
-| `denied` | Default or refusal | Stop and clear the queues | Stop and clear the queues |
-
-So cookieless mode sends before a decision only without a consent signal, or with a `default` limited to a `region`, which stays `unknown`. A `default` denied and an `update` denied both give zero requests. Most banners in [cookie banners](cookie-banners.md) set `default` denied, so with those nothing is measured until the visitor decides. Requests sent before a decision carry the `device` object: browser family, model, category, language and screen size. Tested 2026-11-05: `tests/cmp-adapters.test.ts`.
+| | Meaning | What the tracker does |
+| --- | --- | --- |
+| `unknown` | No signal, or an undecided banner with no Google state | Events wait in memory for up to 2 seconds, then are dropped. Nothing is sent and no cookie is set |
+| `granted` | The visitor agreed | Send |
+| `denied` | Default or refusal | Stop and clear the queues |
 
 | From | Signal | To | Side effect |
 | --- | --- | --- | --- |
@@ -103,7 +99,7 @@ So cookieless mode sends before a decision only without a consent signal, or wit
 | `unknown` | The banner reports a refusal, or `update` denied without an undecided banner | `denied` | One cookie deletion request |
 | `unknown` | `update` denied while a supported banner is undecided | `denied` | None |
 | `granted` | Google `update` denied, or a banner refusal that outranks the grant | `denied` | Queues cleared, requests aborted, cookie deleted |
-| `denied` by an update or a refusal | Google `update` granted, or a banner grant that outranks the denial | `granted` | In cookie mode a page view goes out. The identity is new only if the cookie was deleted; a cookie still in the browser keeps its identity |
+| `denied` by an update or a refusal | Google `update` granted, or a banner grant that outranks the denial | `granted` | A page view goes out. The identity is new only if the cookie was deleted; a cookie still in the browser keeps its identity |
 
 Sources are merged per key, in rising priority: Google `default`, unresolved regional default, decided banner, Google `update`. An undecided banner adds nothing. A partial update changes only its own keys.
 
@@ -116,9 +112,71 @@ Time decides between a banner and an `update`:
 
 Tested 2026-11-05: `tests/browser.test.ts`, `tests/cmp-adapters.test.ts`, `tests/consent-and-collector.test.ts`.
 
+### Consent rules
+
+All of this is one pure function in `src/client/consent.ts`: `nextConsent(state, signal)` returns the new state, with no DOM and no clock. Around it, the observer only reads `dataLayer` and the banners and keeps the `wait_for_update` timer.
+
+The tables below are the rows of `tests/consent-rules.test.ts`, and the test fails if they differ from it. Signals run oldest first. A value is `analytics_storage`, or `analytics_storage/ad_storage`, and `-` leaves a purpose out. `regional` is a `default` limited to a `region`, `banner gone` means no supported banner can be read any more, and `handled` means the tracker has taken the pending refusal.
+
+Which state wins:
+
+| Rule | Signals | Result |
+| --- | --- | --- |
+| With no signal a purpose is unknown | none | `unknown` |
+| A Google default sets the starting value | `default denied` | `denied` |
+| A newer default replaces an older one | `default denied, default granted` | `granted` |
+| A regional default stays unknown, whatever it says | `regional granted` | `unknown` |
+| A regional default beats an older general default | `default granted, regional denied` | `unknown` |
+| A regional default beats a newer general default | `regional denied, default granted` | `unknown` |
+| An undecided banner adds nothing | `default denied, banner undecided` | `denied` |
+| A decided banner beats a Google default | `default denied, banner granted` | `granted` |
+| A decided banner beats a regional default | `regional denied, banner granted` | `granted` |
+| A Google update beats a Google default | `default denied, update granted` | `granted` |
+| A Google update beats a regional default | `regional denied, update granted` | `granted` |
+| A Google update beats the first banner read | `update denied, banner granted` | `denied` |
+| A Google update beats a banner decided earlier | `banner granted, update denied` | `denied` |
+| A banner that repeats itself is no new decision | `banner granted, update denied, banner granted` | `denied` |
+| A later banner change beats an older update | `banner undecided, update denied, banner granted` | `granted` |
+| A later update beats an older banner change | `banner undecided, banner granted, update denied` | `denied` |
+| The newest decision wins, however often it changes | `banner granted, update granted, banner denied, update granted, banner granted, banner denied` | `denied` |
+| A banner change replaces only the purposes it changes | `banner granted/denied, update denied/denied, banner granted/granted` | `denied/granted` |
+| A banner turning undecided keeps the update | `banner granted, update denied, banner undecided` | `denied` |
+| A banner that disappears stops counting | `default denied, banner granted, banner gone` | `denied` |
+| A banner that returns unchanged is no new decision | `banner granted, update denied, banner gone, banner granted` | `denied` |
+| A banner that returns changed is a new decision | `banner denied, update denied, banner gone, banner granted` | `granted` |
+| A partial update changes only the purposes it names | `update granted/denied, update -/granted` | `granted/granted` |
+| A value that is not a decision counts as unknown | `default granted, update maybe` | `unknown` |
+
+Whether the tracker asks the server to delete the cookie:
+
+| Rule | Signals | Deletion request |
+| --- | --- | --- |
+| A Google default is not a refusal | `default denied` | `false` |
+| A grant is not a refusal | `update granted, banner granted` | `false` |
+| An update denied is a refusal | `update denied` | `true` |
+| An undecided banner cancels an update denied | `update denied, banner undecided` | `false` |
+| A decided banner keeps an update denied | `update denied, banner granted` | `true` |
+| A disappearing banner keeps an update denied | `update denied, banner gone` | `true` |
+| A banner reporting denied is a refusal | `banner undecided, banner denied` | `true` |
+| A banner refusal counts once | `banner denied, handled, banner denied` | `false` |
+| A banner refusal counts again after a grant | `banner denied, handled, banner granted, banner denied` | `true` |
+| An update denied counts every time | `update denied, handled, update denied` | `true` |
+
+### Real browsers
+
+`npm run test:e2e` starts `scripts/demo.mjs` and drives it in headless Chromium and WebKit through Playwright, on every push. Tested 2026-11-05, `tests/e2e/consent.spec.ts`:
+
+- Without a decision no request reaches `/e` or `/p`, nothing goes to the stub and no cookie exists.
+- Accepting sends the page view and creates a cookie marked `HttpOnly` that page scripts cannot read.
+- Rejecting sends one deletion request, no event and no cookie.
+- Withdrawing deletes the cookie and stops later events.
+- A same-document navigation sends one `page_view`, and repeating the same address sends none.
+
+Limits: the demo runs on plain `http://localhost`, so it drops the `Secure` and `Domain` cookie attributes, and it reads the banner through the CookieConsent interface only. Playwright's WebKit is not Safari, so the [cap on cookie lifetime](#safari) stays outside these tests.
+
 ### Why unknown is not denied
 
-`denied` in a default says nothing about a person. Collection stops all the same, in both modes, but treating it as a refusal would fire withdrawal logic for people who never chose. `unknown` is the state with no signal at all, the only one in which cookieless mode sends before a decision.
+`denied` in a default says nothing about a person. Collection stops all the same, but treating it as a refusal would fire withdrawal logic for people who never chose. `unknown` is the state with no signal at all.
 
 - `default` denied is a state, and only an explicit update or a banner's decision triggers a cookie deletion request. Tested: `tests/browser.test.ts`.
 - A `default` with `region` stays `unknown` until an update or a decided banner: the script cannot know which region the visitor is in. Tested: `tests/consent-and-collector.test.ts`, `tests/cmp-adapters.test.ts`.
@@ -196,7 +254,7 @@ A default install uses a neutral random subdomain such as `kx7qpa.example.com` a
 
 Tested 2026-11-05, one run: with uBlock Origin Lite and default lists in Chromium, the regular tag was stopped and the tracker was not ([notes](measurement-protocol-notes.md#browser-checks)). Other blockers, stricter lists and other browsers: Not verified.
 
-Consent works the same with or without a blocker. In cookie mode nothing leaves without consent. In both modes a refusal stops collection, and cookieless mode sends before a decision only as described in the [consent state machine](#consent-state-machine).
+Consent works the same with or without a blocker. Nothing leaves without consent, and a refusal stops collection, as described in the [consent state machine](#consent-state-machine).
 
 Simo Ahava [disagrees with this approach](https://www.simoahava.com/analytics/agency-transparency-control-unsolved-problems-server-side-tagging/). He argues that a first-party subdomain hides the vendor domain that blockers match, which erodes the visitor's control, and that what happens on the server cannot be audited from the browser. Both points apply to a default install, and this project does not refute them.
 
