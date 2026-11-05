@@ -240,3 +240,27 @@ it("resolving unknown analytics never expands the waiting event advertising perm
   expect(consent.ad_user_data).toBe("denied");
   expect(consent.ad_personalization).toBe("denied");
 });
+
+it("each delivered event renews the signed cookie and a failed delivery does not", async () => {
+  let status = 204;
+  const google = vi.fn<typeof fetch>(async () => new Response(null, { status }));
+  const site = "https://www.example.com";
+  const app = createApp({ siteOrigin: site, cookieDomain: "example.com", cookieSecret: "s".repeat(64),
+    measurementId: "G-TEST", apiSecret: "test" }, google);
+  const send = (cookie?: string) => {
+    const now = Date.now();
+    return app.inject({ method: "POST", url: "/e", headers: { origin: site, "content-type": "application/json", ...(cookie ? { cookie } : {}) },
+      payload: { event_id: crypto.randomUUID(), name: "generate_lead", client_id: "1.2", session_id: 1, session_started_ms: now,
+        session_expires_ms: now + 1800000, timestamp_ms: now, consent: { analytics_storage: "granted" }, params: {} } });
+  };
+  try {
+    const first = String((await send()).headers["set-cookie"]);
+    expect(first).toContain("Max-Age=34560000");
+    const cookie = first.split(";")[0]!;
+    expect(String((await send(cookie)).headers["set-cookie"])).toContain("Max-Age=34560000");
+    status = 503;
+    const failed = await send(cookie);
+    expect(failed.statusCode).toBe(503);
+    expect(failed.headers["set-cookie"]).toBeUndefined();
+  } finally { await app.close(); }
+});

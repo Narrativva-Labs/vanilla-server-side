@@ -4,6 +4,8 @@ import { createConsentObserver } from "./consent.js";
 import { normalizeEventItem } from "./data-layer.js";
 import { cookiebot } from "./cmp/cookiebot.js";
 import { cookieconsent } from "./cmp/cookieconsent.js";
+import { cookieyes } from "./cmp/cookieyes.js";
+import { shoptet } from "./cmp/shoptet.js";
 
 const script = document.currentScript as HTMLScriptElement | null;
 const win = window as unknown as Window & {
@@ -12,6 +14,8 @@ const win = window as unknown as Window & {
 };
 if (script && !win.__vanillaGA) {
   win.__vanillaGA = true;
+  // Some banners, such as CookieYes from its CDN, skip Google commands without a dataLayer.
+  const layer = (win.dataLayer = win.dataLayer || []);
   const mode = script.dataset.mode === "cookieless" ? "cookieless" : "cookie";
   const warn = (message: string) => console.warn(message);
   let engagementEnabled = false;
@@ -49,7 +53,6 @@ if (script && !win.__vanillaGA) {
     true,
   );
   const observer = createConsentObserver();
-  const layer = (win.dataLayer = win.dataLayer || []);
   const adapters = [
     cookiebot(window),
     cookieconsent(
@@ -60,6 +63,8 @@ if (script && !win.__vanillaGA) {
         .map((s) => s.trim())
         .filter(Boolean),
     ),
+    cookieyes(window, document),
+    shoptet(window),
   ];
 
   function sync() {
@@ -130,15 +135,20 @@ if (script && !win.__vanillaGA) {
       tracker.exit(elapsed);
     } else { visibleSince = engagementEnabled ? Date.now() : 0; visibleTime = 0; }
   });
-  window.setInterval(() => { sync(); void tracker.flush(); }, 100);
+  window.setInterval(() => {
+    sync();
+    void tracker.flush();
+  }, 500);
   window.addEventListener("online", () => void tracker.flush());
   window.setTimeout(() => {
+    // A supported banner that is still waiting for the visitor is the normal undecided state.
     if (
       mode === "cookie" &&
-      observer.snapshot().analytics_storage === "unknown"
+      observer.snapshot().analytics_storage === "unknown" &&
+      adapters.every((adapter) => adapter.read() === undefined)
     ) {
       warn(
-        "[Vanilla Server-Side] No resolved analytics consent received. Use direct gtag consent commands, Cookiebot or CookieConsent. GTM Consent API alone is not visible to this tracker.",
+        "[Vanilla Server-Side] No resolved analytics consent received. Use direct gtag consent commands or a supported banner. GTM Consent API alone is not visible to this tracker.",
       );
     }
   }, 2000);

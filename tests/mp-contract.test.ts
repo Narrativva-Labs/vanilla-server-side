@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { validateParams, validEventName } from "../src/server/mp-validation.js";
+import { shortenBytes, validateParams, validEventName } from "../src/server/mp-validation.js";
 import { buildGoogleRequest, sendGoogle } from "../src/server/google.js";
 import { deviceModel, deviceBrowser } from "../src/client/device.js";
 import { normalizeConsent } from "../src/shared/consent.js";
@@ -13,19 +13,28 @@ const event = () => {
     timestamp_ms: now, consent: granted, params: {} };
 };
 afterEach(() => vi.useRealTimers());
-it("final automatic parameters take precedence, strings obey standard-property limits", () => {
+it("final automatic parameters take precedence, page text keeps 256 bytes, other strings 100 characters", () => {
   const warn = vi.fn();
   const params = validateParams({ ...Object.fromEntries(Array.from({ length: 26 }, (_, i) => ["field_" + i, i])),
-    session_id: 123, engagement_time_msec: 1200, page_location: "x".repeat(200),
-    page_referrer: "r".repeat(200), page_title: "😀".repeat(101) }, warn);
+    session_id: 123, engagement_time_msec: 1200, page_location: "x".repeat(300),
+    page_referrer: "r".repeat(300), page_title: "😀".repeat(101) }, warn);
   expect(Object.keys(params)).toHaveLength(25);
   expect(params).toMatchObject({ session_id: 123, engagement_time_msec: 1200,
-    page_location: "x".repeat(100), page_referrer: "r".repeat(100), page_title: "😀".repeat(100) });
+    page_location: "x".repeat(256), page_referrer: "r".repeat(256), page_title: "😀".repeat(64) });
   expect(warn).toHaveBeenCalled();
   const invalid = validateParams({ "bad-name": "x", ["n".repeat(41)]: "x", _private: 1,
     firebase_conversion: 1, google_value: 1, ga_value: 1, firebase_value: 1,
     long: "x".repeat(101), nested: { x: 1 }, valid: "x".repeat(100) }, warn);
   expect(invalid).toEqual({ valid: "x".repeat(100) });
+});
+it("page text is cut by UTF-8 bytes on whole characters and never ends in a partial percent escape", () => {
+  const params = validateParams({ page_title: "č".repeat(200), page_location: "https://shop.example/" + "a".repeat(233) + "%C4%8D",
+    page_referrer: "x".repeat(256) }, vi.fn());
+  expect(params.page_title).toBe("č".repeat(128));
+  expect(params.page_location).toBe("https://shop.example/" + "a".repeat(233));
+  expect(params.page_referrer).toBe("x".repeat(256));
+  expect(shortenBytes("ab%C", 3)).toBe("ab");
+  expect(shortenBytes("ab%", 2)).toBe("ab");
 });
 it("ecommerce items retain standard fields plus 27 custom parameters", () => {
   const custom = Object.fromEntries(Array.from({ length: 28 }, (_, i) => [`custom_${i}`, i]));

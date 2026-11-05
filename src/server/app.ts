@@ -1,5 +1,6 @@
 import { validEventName } from "./mp-validation.js";
 import { COOKIE_NAME, cookieHeader, serverIdentity, type CookieConfig } from "./identity.js";
+import { isObviousBot } from "./bots.js";
 import { createRateLimit } from "./rate-limit.js";
 import { jsonSnapshot } from "../shared/consent.js";
 import Fastify from "fastify";
@@ -53,7 +54,7 @@ export function createApp(
     initialIdentities.clear();
     limiter.clear();
   });
-  const status = { sent: 0, errors: 0, lastSuccess: null as string | null };
+  const status = { sent: 0, errors: 0, botsFiltered: 0, lastSuccess: null as string | null };
   app.get("/health", async () => ({ ok: true, google: status }));
   app.get("/s.js", async (_, reply) => {
     const source = await readFile(
@@ -155,6 +156,11 @@ export function createApp(
       },
     },
     async (req, reply) => {
+      // Answer as delivered so a bot has no reason to retry; it receives no cookie either.
+      if (isObviousBot(req.headers["user-agent"])) {
+        status.botsFiltered++;
+        return reply.code(204).send();
+      }
       const event = req.body;
       event.consent = consentSnapshot(event.consent);
       if (!canTrack(event.consent, config.mode ?? "cookie"))

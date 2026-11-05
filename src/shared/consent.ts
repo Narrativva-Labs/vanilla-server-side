@@ -52,6 +52,8 @@ export function sanitizeUrl(value: string) {
       .trim()
       .replace(/\\/g, "/")
       .replace(/^(https?):(?!\/\/)/i, "$1://");
+    // An empty referrer means there is none; resolving it would invent the path "/".
+    if (!input) return "";
     const url = new URL(input, "https://relative.invalid/");
     if (!["http:", "https:"].includes(url.protocol)) return "";
     url.hash = "";

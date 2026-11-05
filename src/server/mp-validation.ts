@@ -6,7 +6,22 @@ export function validName(name: string) {
 }
 export function validEventName(name: string) { return validName(name) && !reservedEvents.has(name); }
 const automatic = ["session_id", "engagement_time_msec", "page_location", "page_referrer", "page_title"];
-const shorten = (value: string, length: number) => Array.from(value).slice(0, length).join("");
+// Measured with npm run verify:mp: the validation server allows 256 UTF-8 bytes for these fields.
+export const PAGE_TEXT_BYTES = 256;
+const pageText = new Set(["page_location", "page_referrer", "page_title"]);
+const encoder = new TextEncoder();
+/** Whole characters only, and never a dangling percent escape at the end of a URL. */
+export function shortenBytes(value: string, limit: number) {
+  if (encoder.encode(value).byteLength <= limit) return value;
+  let bytes = 0;
+  let output = "";
+  for (const character of value) {
+    bytes += encoder.encode(character).byteLength;
+    if (bytes > limit) break;
+    output += character;
+  }
+  return output.replace(/%[0-9a-f]?$/i, "");
+}
 const itemStandard = new Set(("item_id item_name affiliation coupon discount index item_brand item_category item_category2 item_category3 item_category4 item_category5 item_list_id item_list_name item_variant location_id price quantity creative_name creative_slot promotion_id promotion_name").split(" "));
 function validateItem(input: Record<string, unknown>, diagnose: (reason: string) => void) {
   const output: Record<string, unknown> = {};
@@ -31,12 +46,11 @@ export function validateParams(input: Record<string, unknown>, diagnose: (reason
     if (!validName(key)) { diagnose("MP parameter dropped: invalid or reserved name"); continue; }
     if (Object.keys(output).length >= 25) { diagnose("MP parameter dropped: maximum 25 parameters including automatic fields"); continue; }
     if (typeof raw === "string") {
-      if (Array.from(raw).length > 100) {
-        if (automatic.includes(key)) {
-          output[key] = shorten(raw, 100);
-          diagnose("MP automatic text parameter truncated to 100 characters");
-        } else diagnose("MP parameter dropped: string exceeds 100 characters");
-      } else output[key] = raw;
+      if (pageText.has(key)) {
+        output[key] = shortenBytes(raw, PAGE_TEXT_BYTES);
+        if (output[key] !== raw) diagnose(`MP page text truncated to ${PAGE_TEXT_BYTES} bytes`);
+      } else if (Array.from(raw).length > 100) diagnose("MP parameter dropped: string exceeds 100 characters");
+      else output[key] = raw;
     } else if (typeof raw === "number" && Number.isFinite(raw)) {
       if (key === "engagement_time_msec" && (!Number.isInteger(raw) || raw < 0)) {
         diagnose("MP parameter dropped: engagement must be a non-negative integer"); continue;

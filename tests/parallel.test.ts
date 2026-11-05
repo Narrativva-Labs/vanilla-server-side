@@ -154,7 +154,7 @@ it("health counts failed Google delivery without logging payloads or secrets", a
     const response = await app.inject({ method: "POST", url: "/e", headers: { origin: config.siteOrigin },
       payload: JSON.parse(String(p.fetcher.mock.calls[0]![1]?.body)) });
     expect(response.statusCode).toBe(503);
-    expect((await app.inject("/health")).json().google).toEqual({ sent: 0, errors: 1, lastSuccess: null });
+    expect((await app.inject("/health")).json().google).toEqual({ sent: 0, errors: 1, botsFiltered: 0, lastSuccess: null });
     expect(log.mock.calls).toEqual([["Google delivery failed", { outcome: "retry" }]]);
   } finally { log.mockRestore(); await app.close(); }
 });

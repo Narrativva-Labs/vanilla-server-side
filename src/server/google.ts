@@ -13,6 +13,7 @@ export interface Destination {
   measurementId: string;
   apiSecret: string;
   mode?: "cookie" | "cookieless";
+  region?: "eu";
 }
 export type Delivery = "sent" | "retry" | "dropped";
 export function buildGoogleRequest(
@@ -43,7 +44,8 @@ export function buildGoogleRequest(
     ...(redactAds(raw) as Record<string, unknown>),
     session_id: event.session_id,
   });
-  const url = new URL("https://www.google-analytics.com/mp/collect");
+  const host = destination.region === "eu" ? "region1.google-analytics.com" : "www.google-analytics.com";
+  const url = new URL(`https://${host}/mp/collect`);
   url.searchParams.set("measurement_id", destination.measurementId);
   url.searchParams.set("api_secret", destination.apiSecret);
   return {

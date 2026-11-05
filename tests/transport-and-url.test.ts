@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import type { TrackingEvent } from "../src/shared/event.js";
-import { analyticsOnly } from "../src/shared/consent.js";
+import { analyticsOnly, sanitizeUrl } from "../src/shared/consent.js";
 import { createTracker } from "../src/client/tracker.js";
 import { createApp } from "../src/server/app.js";
 import { page } from "./browser-fixture.js";
@@ -273,4 +273,9 @@ it("relative forms are sanitized only in URL fields while ordinary text is prese
       ],
     });
   }
+});
+
+it("an empty referrer stays empty instead of becoming a root path", () => {
+  expect(sanitizeUrl("")).toBe("");
+  expect(sanitizeUrl("   ")).toBe("");
 });

@@ -339,9 +339,9 @@ export function createTracker(
       if (!deliveryReady || !canTrack(consent, mode) || runtime.now() < waitUntil || elapsed <= 0) return;
       // Fixed automatic fields only: custom ecommerce data cannot inflate the exit request.
       enqueue("page_engagement", {
-        page_location: Array.from(sanitizeUrl(runtime.href())).slice(0, 100).join(""),
-        page_referrer: Array.from(sanitizeUrl(runtime.referrer())).slice(0, 100).join(""),
-        page_title: Array.from(runtime.title?.() ?? "").slice(0, 100).join(""),
+        page_location: Array.from(sanitizeUrl(runtime.href())).slice(0, 256).join(""),
+        page_referrer: Array.from(sanitizeUrl(runtime.referrer())).slice(0, 256).join(""),
+        page_title: Array.from(runtime.title?.() ?? "").slice(0, 256).join(""),
         engagement_time_msec: Math.max(0, Math.round(elapsed)),
       }, runtime.now(), undefined, undefined, true);
     },

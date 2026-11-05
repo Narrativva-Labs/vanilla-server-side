@@ -36,10 +36,13 @@ export function createConsentObserver() {
       return true;
     },
     fallback(value: unknown) {
+      const analytics = consentSnapshot(value).analytics_storage;
+      // CookieYes pushes a denied update on load: an undecided adapter means nobody refused yet.
+      // A later refusal still deletes through the transition below.
+      if (value !== undefined && analytics === "unknown") analyticsDenialUpdate = false;
       // Adapters return denied only for a resolved visitor decision, never a default.
       // Consume this transition once so polling does not repeat cookie deletion.
-      if (consentSnapshot(value).analytics_storage === "denied" &&
-          consentSnapshot(fallback).analytics_storage !== "denied")
+      if (analytics === "denied" && consentSnapshot(fallback).analytics_storage !== "denied")
         analyticsDenialUpdate = true;
       fallback = value;
     },

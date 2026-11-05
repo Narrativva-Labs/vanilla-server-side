@@ -1,6 +1,5 @@
 import { expect, it, vi } from "vitest";
 import { createServer, request, type Server } from "node:http";
-import { execFileSync } from "node:child_process";
 import { runInNewContext } from "node:vm";
 import { cookieHeader } from "../src/server/identity.js";
 
@@ -14,7 +13,6 @@ const listen = (server: Server) => new Promise<string>((resolve, reject) => {
 });
 it("same-origin path proxy strips the prefix and serves working tracker, collect and consent endpoints", async () => {
   // Exercise the built server's actual script route as well as real HTTP forwarding.
-  execFileSync("npm", ["run", "build"], { stdio: "pipe" });
   const { createApp } = await import(new URL("../dist/server/app.js", import.meta.url).href);
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const paths: string[] = [];

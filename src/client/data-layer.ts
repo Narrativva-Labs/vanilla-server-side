@@ -19,7 +19,8 @@ export function normalizeEventItem(item: unknown) {
     command?.[0] === "event" && typeof command[1] === "string"
       ? { ...(isObject(command[2]) ? command[2] : {}), event: command[1] }
       : item;
-  if (!isObject(raw) || typeof raw.event !== "string") return;
+  // Shoptet reports banner state this way; it is consent data, not an analytics event.
+  if (!isObject(raw) || typeof raw.event !== "string" || "cookie_consent" in raw) return;
   const { event, ecommerce, ...params } = raw;
   // Flatten the standard ecommerce envelope; preserve values and items without guessing aliases.
   const {

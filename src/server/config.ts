@@ -17,6 +17,9 @@ export function configFromEnv(env = process.env) {
   const mode = env.TRACKING_MODE ?? "cookie";
   if (mode !== "cookie" && mode !== "cookieless")
     throw new Error("TRACKING_MODE must be cookie or cookieless");
+  const region = env.GA4_REGION || undefined;
+  if (region !== undefined && region !== "eu")
+    throw new Error("GA4_REGION must be eu or unset");
   const cookieSecret = env.COOKIE_SECRET ?? "";
   if (
     mode === "cookie" &&
@@ -40,6 +43,7 @@ export function configFromEnv(env = process.env) {
     );
   return {
     mode: mode as "cookie" | "cookieless",
+    region: region as "eu" | undefined,
     allowedEvents,
     cookieSecret,
     cookieDomain,
