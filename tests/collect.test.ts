@@ -122,11 +122,11 @@ it("a returning visitor opens a new session without counting as a first visit", 
 it("a session opened by another event starts through /g/collect and keeps its data in MP", async () => {
   const { app, post, urls, google } = setup();
   try {
-    await post("/e", event({ name: "page_engagement" }));
+    await post("/e", event({ name: "generate_lead" }));
     expect(urls().map((url) => url.pathname)).toEqual(["/g/collect", "/mp/collect"]);
     expect(urls()[0]!.searchParams.get("en")).toBe("page_engagement");
     const body = JSON.parse(String(google.mock.calls[1]![1]!.body));
-    expect(body.events[0].name).toBe("page_engagement");
+    expect(body.events[0].name).toBe("generate_lead");
   } finally {
     await app.close();
   }
@@ -414,38 +414,201 @@ it("a failed measurement request after an open session does not open it again", 
   }
 });
 
-it("parallel events open a session once and answer with one cookie", async () => {
+function gatedApp(answer: (attempt: number) => number = () => 204) {
   let release!: () => void;
   let entered!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
   const started = new Promise<void>((resolve) => (entered = resolve));
   const urls: URL[] = [];
+  let collects = 0;
   const google = vi.fn<typeof fetch>(async (input) => {
     const url = new URL(String(input));
     urls.push(url);
-    if (url.pathname === "/g/collect") {
+    if (url.pathname !== "/g/collect") return new Response(null, { status: 204 });
+    collects++;
+    const status = answer(collects);
+    if (collects === 1) {
       entered();
       await gate;
     }
-    return new Response(null, { status: 204 });
+    return new Response(null, { status });
   });
   const app = createApp(config, google);
-  const post = () =>
+  const post = (payload = event(), path = "/e", cookie = "") =>
     app.inject({
       method: "POST",
-      url: "/e",
-      headers: { origin: config.siteOrigin },
-      payload: event(),
+      url: path,
+      headers: { origin: config.siteOrigin, cookie },
+      payload,
     });
+  return { app, urls, post, started, release };
+}
+const moment = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+it("a parallel event waits for the opening and answers with one cookie", async () => {
+  const { app, urls, post, started, release } = gatedApp();
   try {
     const first = post();
     await started;
-    const second = await post();
+    const second = post();
+    await moment();
+    expect(urls).toHaveLength(1);
     release();
-    const replies = [await first, second];
+    const replies = await Promise.all([first, second]);
     expect(urls.map((url) => url.pathname)).toEqual(["/g/collect", "/mp/collect"]);
     expect(urls.filter((url) => url.searchParams.get("_ss") === "1")).toHaveLength(1);
     for (const reply of replies) expect(typeof reply.headers["set-cookie"]).toBe("string");
+  } finally {
+    await app.close();
+  }
+});
+
+it("a failed opening is taken over by the waiting event", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const { app, urls, post, started, release } = gatedApp((attempt) => (attempt === 1 ? 503 : 204));
+  try {
+    const first = post();
+    await started;
+    const second = post();
+    await moment();
+    release();
+    await Promise.all([first, second]);
+    expect(urls.map((url) => url.pathname)).toEqual(["/g/collect", "/g/collect"]);
+    expect(urls[1]!.searchParams.get("_ss")).toBe("1");
+  } finally {
+    log.mockRestore();
+    await app.close();
+  }
+});
+
+it("a withdrawal during delivery leaves no renewed cookie", async () => {
+  const { app, post, started, release } = gatedApp();
+  try {
+    const pending = post();
+    await started;
+    await post({ client_id: "123.456" } as never, "/p");
+    release();
+    expect((await pending).headers["set-cookie"]).toBeUndefined();
+  } finally {
+    await app.close();
+  }
+});
+
+it("the same event waiting for an opening is delivered once", async () => {
+  const { app, urls, post, started, release } = gatedApp();
+  try {
+    const first = post();
+    await started;
+    const payload = event({ name: "generate_lead" });
+    const twins = [post(payload), post(payload)];
+    await moment();
+    release();
+    await Promise.all([first, ...twins]);
+    expect(urls.filter((url) => url.pathname === "/mp/collect")).toHaveLength(1);
+  } finally {
+    await app.close();
+  }
+});
+
+it("a click hit that opens nothing does not confirm the session", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const { app, urls, post, started, release } = gatedApp((attempt) => (attempt <= 2 ? 503 : 204));
+  try {
+    const first = post();
+    await started;
+    const waiting = [post(), post(event({ click_ids: { gclid: "abc" } }))];
+    await moment();
+    release();
+    await Promise.all([first, ...waiting]);
+    await post();
+    expect(urls.at(-1)!.pathname).toBe("/g/collect");
+    expect(urls.at(-1)!.searchParams.get("_ss")).toBe("1");
+  } finally {
+    log.mockRestore();
+    await app.close();
+  }
+});
+
+it("an event waits for an opening only once", async () => {
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const { app, urls, post, started, release } = gatedApp(() => 503);
+  try {
+    const first = post();
+    await started;
+    const waiting = [post(), post(), post()];
+    await moment();
+    release();
+    await Promise.all([first, ...waiting]);
+    expect(urls.length).toBeLessThanOrEqual(4);
+  } finally {
+    log.mockRestore();
+    await app.close();
+  }
+});
+
+it("a browser without cookies also gets a new session after 24 hours", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const { app, post, urls } = setup();
+  try {
+    await post("/e", event());
+    for (let minutes = 0; minutes < 24 * 60 + 1; minutes += 0.5) {
+      vi.setSystemTime(Date.now() + 30_000);
+      await post("/e", event());
+    }
+    expect(urls().filter((url) => url.searchParams.get("_ss") === "1")).toHaveLength(2);
+  } finally {
+    await app.close();
+  }
+}, 60000);
+
+it("an invalid engagement time is not forwarded in _et", async () => {
+  const { app, post, urls } = setup();
+  try {
+    const params = { ...event().params, engagement_time_msec: 123.5 };
+    await post("/e", event({ name: "page_engagement", params }));
+    expect(urls()[0]!.searchParams.get("_et")).toBeNull();
+  } finally {
+    await app.close();
+  }
+});
+
+it("a session ends after 24 hours even with steady activity", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const { app, post, urls } = setup();
+  try {
+    let cookie = String((await post("/e", event())).headers["set-cookie"]);
+    for (let hours = 0; hours < 24; hours += 0.25) {
+      vi.setSystemTime(Date.now() + 15 * 60 * 1000);
+      cookie = String((await post("/e", event(), cookie)).headers["set-cookie"]);
+    }
+    const opened = urls().filter((url) => url.searchParams.get("_ss") === "1");
+    expect(opened).toHaveLength(2);
+    expect(opened[1]!.searchParams.get("_fv")).toBeNull();
+  } finally {
+    await app.close();
+  }
+});
+
+it("engagement time survives a hit that replaces the MP request", async () => {
+  const { app, post, urls } = setup();
+  try {
+    const params = { ...event().params, engagement_time_msec: 5000 };
+    const cookie = String((await post("/e", event())).headers["set-cookie"]);
+    await post("/e", event({ params, click_ids: { gclid: "later" } }), cookie);
+    expect(urls()[1]!.pathname).toBe("/g/collect");
+    expect(urls()[1]!.searchParams.get("_et")).toBe("5000");
+  } finally {
+    await app.close();
+  }
+});
+
+it("a final engagement that opens a session is one hit with its time", async () => {
+  const { app, post, urls } = setup();
+  try {
+    const params = { ...event().params, engagement_time_msec: 1200 };
+    await post("/e", event({ name: "page_engagement", params }));
+    expect(urls().map((url) => url.pathname)).toEqual(["/g/collect"]);
+    expect(urls()[0]!.searchParams.get("_et")).toBe("1200");
   } finally {
     await app.close();
   }
@@ -529,4 +692,30 @@ it("DENIED_PINGS=off stops the ping in the tracker and on the server", async () 
   now += 5000;
   await tracker.flush();
   expect(fetcher).not.toHaveBeenCalled();
+});
+
+it("waiting behind a retried page view does not spin the page", async () => {
+  let reads = 0;
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 503 }));
+  const tracker = createTracker(
+    "https://kx7qpa.example.com/e",
+    {
+      now: () => {
+        reads++;
+        return 1_800_000_000_000;
+      },
+      uuid: () => crypto.randomUUID(),
+      href: () => "https://shop.example/",
+      referrer: () => "",
+      warn: () => {},
+      fetch: fetcher,
+    },
+    new Set(["generate_lead"]),
+  );
+  tracker.update(all);
+  tracker.track("generate_lead");
+  await tracker.flush();
+  const before = reads;
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(reads - before).toBeLessThan(20);
 });

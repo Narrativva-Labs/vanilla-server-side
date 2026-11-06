@@ -212,13 +212,15 @@ it("concurrency limits apply per IP and globally, then release slots", async () 
     },
     fetcher,
   );
+  let visitor = 0;
   const post = (ip = "192.0.2.1") =>
     app.inject({
       method: "POST",
       url: "/e",
       remoteAddress: ip,
       headers: { origin: "https://shop.example" },
-      payload: event(),
+      // Separate visitors: events of one visitor wait for that visitor's session to open.
+      payload: { ...event(), client_id: `${++visitor}.1` },
     });
   try {
     const pending = Array.from({ length: 100 }, (_, i) =>

@@ -238,7 +238,7 @@ export function createTracker(
     }
     return body;
   }
-  /** One anonymous page ping without analytics consent, as Google tag does in Advanced Consent Mode. */
+  /** One limited page ping without analytics consent, as Google tag does in Advanced Consent Mode. */
   function ping() {
     if (!pings || consent.analytics_storage !== "denied") {
       pingAt = 0;
@@ -293,6 +293,8 @@ export function createTracker(
     }
     if (flushing || !canTrack(consent)) return;
     flushing = true;
+    // Set while events wait behind a page view; the periodic flush picks them up.
+    let waitingForPage = false;
     try {
       for (const item of [...queue]) {
         if (!queue.includes(item)) continue;
@@ -307,7 +309,10 @@ export function createTracker(
         }
         if (item.next > now) {
           // Events wait behind a page view, which may be the one opening the session.
-          if (item.event.name === "page_view") break;
+          if (item.event.name === "page_view") {
+            waitingForPage = true;
+            break;
+          }
           continue;
         }
         const effective = intersect(item.event.consent, consent);
@@ -350,12 +355,15 @@ export function createTracker(
         if (retry) {
           item.attempts++;
           item.next = runtime.now() + item.attempts * 1000;
-          if (item.event.name === "page_view") break;
+          if (item.event.name === "page_view") {
+            waitingForPage = true;
+            break;
+          }
         } else queue.splice(queue.indexOf(item), 1);
       }
     } finally {
       flushing = false;
-      if (queue.some((item) => item.next <= runtime.now()) && canTrack(consent))
+      if (!waitingForPage && queue.some((item) => item.next <= runtime.now()) && canTrack(consent))
         void Promise.resolve().then(flush);
     }
   }

@@ -54,7 +54,7 @@ The one runtime dependency is Fastify. There is no database.
 4. The tracker posts JSON to `/e`, resolved relative to the script URL, so a same-origin path proxy works.
 5. The collector checks origin and content type, the [bot filter](#bot-filter), consent, the event allowlist, freshness and rate limits. The consent check reads the state the browser reports; the server cannot confirm it independently.
 6. It replaces the browser's temporary identity with the signed server identity and adds the visitor IP.
-7. The first page view of a session goes to `/g/collect` with `_ss`, `_fv` for a new visitor, `_uip` and the click IDs, and to nothing else. A page view with a click ID inside a running session goes there too, without `_ss`. A session opened by another event sends a `page_engagement` hit to `/g/collect`, then the event itself, unless consent was withdrawn in between. Parallel events open a session once. The tracker's requests send no `Referer`, so a same-origin proxy does not receive the landing URL with its click ID that way.
+7. The first page view of a session goes to `/g/collect` with `_ss`, `_fv` for a new visitor, `_uip` and the click IDs, and to nothing else. A page view with a click ID inside a running session goes there too, without `_ss`. A session opened by another event sends a `page_engagement` hit to `/g/collect`, then the event itself, unless consent was withdrawn in between. A final `page_engagement` that opens a session is that hit, with its time in `_et`. A parallel event waits for the opening to finish. The tracker's requests send no `Referer`, so a same-origin proxy does not receive the landing URL with its click ID that way.
 8. Everything else goes through `buildGoogleRequest`, which applies the limits and sends one MP request.
 9. The cookie is set or renewed only after Google answered 2xx.
 
@@ -65,7 +65,7 @@ Tested 2026-11-06: `tests/collect.test.ts`, `tests/consent-and-collector.test.ts
 The cookie `vanilla_session` holds `base64url(JSON).base64url(HMAC-SHA256)`. The JSON has the client ID, session ID, session start and last activity.
 
 - The server creates a random GA-format client ID only after analytics consent.
-- A session ends after 30 minutes of inactivity. That timing lives in the cookie, so no store is needed.
+- A session ends after 30 minutes of inactivity or after 24 hours. That timing lives in the cookie, so no store is needed.
 - Attributes: `HttpOnly; Secure; SameSite=Lax; Max-Age=34560000` (400 days) and a `Domain` shared by website and tracker.
 - Signatures are compared in constant time. A tampered or malformed cookie starts a fresh identity.
 - Signing gives integrity, not confidentiality or replay protection. The content is readable by whoever holds the cookie.
@@ -92,7 +92,7 @@ Each purpose has three states, and the tracker works from `analytics_storage`:
 | --- | --- | --- |
 | `unknown` | No signal, or an undecided banner with no Google state | Events wait in memory for up to 2 seconds, then are dropped. Nothing is sent and no cookie is set |
 | `granted` | The visitor agreed | Send |
-| `denied` | Default or refusal | Stop and clear the queues. After 2 seconds in this state, one anonymous ping to `/d` per page, unless consent already measured that page |
+| `denied` | Default or refusal | Stop and clear the queues. After 2 seconds in this state, one limited ping to `/d` per page, unless consent already measured that page |
 
 | From | Signal | To | Side effect |
 | --- | --- | --- | --- |
@@ -170,7 +170,7 @@ Whether the tracker asks the server to delete the cookie:
 
 - Without a decision no request reaches `/e` or `/p`, nothing goes to the stub and no cookie exists.
 - Accepting sends the page view and creates a cookie marked `HttpOnly` that page scripts cannot read.
-- Rejecting sends one deletion request, one anonymous ping, no event and no cookie.
+- Rejecting sends one deletion request, one limited ping, no event and no cookie.
 - Withdrawing deletes the cookie and stops later events.
 - A same-document navigation sends one `page_view`, and repeating the same address sends none.
 
@@ -256,11 +256,11 @@ A default install uses a neutral random subdomain such as `kx7qpa.example.com` a
 
 Tested 2026-11-05, one run: with uBlock Origin Lite and default lists in Chromium, the regular tag was stopped and the tracker was not ([notes](measurement-protocol-notes.md#browser-checks)). Other blockers, stricter lists and other browsers: Not verified.
 
-Consent works the same with or without a blocker. No event leaves without consent, and a refusal stops collection, as described in the [consent state machine](#consent-state-machine).
+Consent works the same with or without a blocker. No event leaves without consent, and a refusal stops regular measurement, as described in the [consent state machine](#consent-state-machine).
 
 Simo Ahava [disagrees with this approach](https://www.simoahava.com/analytics/agency-transparency-control-unsolved-problems-server-side-tagging/). He argues that a first-party subdomain hides the vendor domain that blockers match, which erodes the visitor's control, and that what happens on the server cannot be audited from the browser. Both points apply to a default install, and this project does not refute them.
 
-The project's position: a blocker does not overrule the visitor's decision in the cookie banner. That decision is what governs measurement here, so a visitor who refuses is not measured, whatever their blocker does.
+The project's position: a blocker does not overrule the visitor's decision in the cookie banner. That decision is what governs measurement here, so a visitor who refuses is not measured beyond the limited ping, whatever their blocker does.
 
 ## Prior art
 

@@ -28,7 +28,7 @@ test("accepting sends the page view and sets an HttpOnly cookie", async ({ demo,
   expect(demo.sent().map(({ path }) => path)).toEqual(["/e", "/e"]);
 });
 
-test("rejecting sends one anonymous ping, no event and no cookie", async ({ demo, page }) => {
+test("rejecting sends one limited ping, no event and no cookie", async ({ demo, page }) => {
   await demo.open();
   await page.getByRole("button", { name: "Reject" }).click();
   await expect.poll(() => demo.sent()).toEqual([{ path: "/p" }]);

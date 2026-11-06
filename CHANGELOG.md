@@ -21,8 +21,9 @@
 - One `/g/collect` hit now opens each session, which gives GA4 session source, New users and `session_start`. Measurement Protocol carries everything else. `campaign_details` is gone, because no report used it.
 - `gclid`, `gbraid` and `wbraid` reach Google in that hit when `ad_storage` and `ad_user_data` are granted, so conversions can be imported into Google Ads through GA4.
 - A withdrawal is no longer rate limited, and it stops a request that is waiting for session opening.
+- A session also ends after 24 hours on the server, and engagement time survives a `/g/collect` hit.
 - The maps of visitor state have a fixed size, and the tracker sends no `Referer` with its requests.
-- A page that stays denied sends one anonymous ping, as in Advanced Consent Mode. Update your privacy text before you upgrade.
+- A page that stays denied sends one limited ping, as in Advanced Consent Mode. Update your privacy text before you upgrade.
 - `npm run test:e2e` runs the consent flow in Chromium and WebKit, also in CI.
 
 No release is tagged yet. Install and update follow the default branch.

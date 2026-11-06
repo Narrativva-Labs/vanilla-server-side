@@ -60,7 +60,7 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 **Source:** Live checks in [cookie banners](cookie-banners.md), 2026-11-05.
 
-## Anonymous pings without consent
+## Limited pings without consent
 
 **Decision:** a page that stays denied for 2 seconds sends one `/g/collect` hit with its real consent state, `gcs=G100` when both storages are denied, a one-off ID, no cookie, no visitor IP and no click IDs.
 

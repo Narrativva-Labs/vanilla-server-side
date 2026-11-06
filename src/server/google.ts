@@ -49,6 +49,7 @@ interface CollectHit {
   screen?: string;
   ip?: string;
   clicks?: Record<string, string>;
+  engagement?: unknown;
   sessionStart: boolean;
   firstVisit: boolean;
 }
@@ -91,6 +92,10 @@ export function buildCollectUrl(destination: Destination, hit: CollectHit) {
     ul: hit.language?.toLowerCase(),
     sr: hit.screen,
     _uip: hit.ip,
+    _et:
+      Number.isSafeInteger(hit.engagement) && Number(hit.engagement) > 0
+        ? String(hit.engagement)
+        : undefined,
     _ss: hit.sessionStart ? "1" : undefined,
     _fv: hit.firstVisit ? "1" : undefined,
   };
@@ -177,8 +182,9 @@ export async function sendGoogle(
   if (opening) {
     const consent = intersect(normalizeConsent(event.consent), normalizeConsent(current));
     const pageView = event.name === "page_view";
+    // These two carry all their data in the hit. Any other event needs its own MP request.
+    const complete = pageView || event.name === "page_engagement";
     const url = buildCollectUrl(destination, {
-      // A session opened by another event still needs a start; its data follow through MP.
       name: pageView ? "page_view" : "page_engagement",
       clientId: event.client_id,
       sessionId: event.session_id,
@@ -190,12 +196,13 @@ export async function sendGoogle(
       screen: event.device?.screen_resolution,
       ip: event.ip_override,
       clicks: pageView && clickConsent(consent) ? event.click_ids : undefined,
+      engagement: complete ? event.params.engagement_time_msec : undefined,
       sessionStart: opening.sessionStart,
       firstVisit: opening.firstVisit,
     });
     const delivery = await post(url, { headers: browser(opening.userAgent) }, signal, fetcher);
     if (delivery === "sent") opening.opened?.();
-    if (delivery !== "sent" || pageView) return delivery;
+    if (delivery !== "sent" || complete) return delivery;
     // Consent may have been withdrawn while the first request was on its way.
     if (!canTrack(getCurrent())) return "dropped";
   }

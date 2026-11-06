@@ -1,5 +1,11 @@
 import { validEventName } from "./mp-validation.js";
-import { COOKIE_NAME, cookieHeader, serverIdentity, type CookieConfig } from "./identity.js";
+import {
+  COOKIE_NAME,
+  SESSION_LIMIT_MS,
+  cookieHeader,
+  serverIdentity,
+  type CookieConfig,
+} from "./identity.js";
 import { isObviousBot } from "./bots.js";
 import { createRateLimit } from "./rate-limit.js";
 import Fastify from "fastify";
@@ -39,8 +45,9 @@ export function createApp(
     string,
     { expires: number; identity: ReturnType<typeof serverIdentity> }
   >();
-  // Sessions being opened right now, so a parallel event does not open the same one again.
-  const opening = new Set<string>();
+  // Sessions being opened right now. A parallel event waits for the result instead of
+  // opening the session again or confirming one that has not opened.
+  const opening = new Map<string, Promise<boolean>>();
   let pruned = 0;
   const prune = () => {
     if (Date.now() - pruned < 1000) return;
@@ -52,7 +59,10 @@ export function createApp(
     for (const [key, value] of initialIdentities)
       if (value.expires <= Date.now()) initialIdentities.delete(key);
   };
-  const timer = setInterval(prune, 60_000);
+  const timer = setInterval(() => {
+    prune();
+    limiter.sweep();
+  }, 60_000);
   timer.unref();
   app.addHook("onClose", async () => {
     clearInterval(timer);
@@ -240,13 +250,19 @@ export function createApp(
         if (seen.has(event.event_id)) return reply.code(204).send();
         const browserKey = "browser:" + event.client_id;
         remember(activeBrowsers, event.client_id, Date.now() + 60 * 60 * 1000);
-        const pending = inFlight.get(event.event_id);
-        if (pending) {
-          const result = await pending;
-          return result === "retry" ? reply.code(503).send() : reply.code(204).send();
-        }
+        // Not async: a twin must not slip in between this check and the inFlight entry below.
+        const duplicate = () => {
+          if (seen.has(event.event_id)) return reply.code(204).send();
+          return inFlight
+            .get(event.event_id)
+            ?.then((result) => reply.code(result === "retry" ? 503 : 204).send());
+        };
+        const answered = duplicate();
+        if (answered) return await answered;
         const hasCookie = req.headers.cookie?.includes(`${COOKIE_NAME}=`) ?? false;
-        const earlier = hasCookie ? undefined : initialIdentities.get(browserKey)?.identity;
+        const remembered = hasCookie ? undefined : initialIdentities.get(browserKey)?.identity;
+        const earlier =
+          remembered && Date.now() - remembered.started < SESSION_LIMIT_MS ? remembered : undefined;
         const identity = earlier ?? serverIdentity(config, req.headers.cookie);
         if (!hasCookie)
           remember(initialIdentities, browserKey, { identity, expires: Date.now() + 60_000 });
@@ -260,13 +276,23 @@ export function createApp(
         const clicked =
           event.name === "page_view" && event.click_ids && clickConsent(event.consent);
         const withdrawn = () => isRevoked("server:" + identity.clientId) || isRevoked(browserKey);
-        // Fastify appends Set-Cookie, and an opened session sets it before the final answer.
-        const keepCookie = () => {
-          if (!withdrawn() && !reply.hasHeader("set-cookie"))
-            reply.header("Set-Cookie", identity.cookie);
-        };
+        // One wait only, so a Google outage cannot hold this request and its rate limit slot.
+        const running = identity.newSession ? opening.get(identity.clientId) : undefined;
+        if (running) {
+          if (await running) identity.newSession = identity.newClient = false;
+          const answeredMeanwhile = duplicate();
+          if (answeredMeanwhile) return await answeredMeanwhile;
+        }
         const starting = identity.newSession && !opening.has(identity.clientId);
-        if (starting) opening.add(identity.clientId);
+        let opened = false;
+        let finishOpening = (_opened: boolean) => {};
+        if (starting)
+          opening.set(
+            identity.clientId,
+            new Promise((resolve) => {
+              finishOpening = resolve;
+            }),
+          );
         const delivery = sendGoogle(
           config,
           event,
@@ -279,9 +305,10 @@ export function createApp(
                 firstVisit: starting && identity.newClient,
                 userAgent: req.headers["user-agent"],
                 opened() {
+                  if (!starting) return;
+                  opened = true;
                   // A browser that keeps no cookie must not open a new session with every event.
                   identity.newSession = identity.newClient = false;
-                  keepCookie();
                 },
               }
             : undefined,
@@ -292,14 +319,18 @@ export function createApp(
           result = await delivery;
         } finally {
           inFlight.delete(event.event_id);
-          if (starting) opening.delete(identity.clientId);
+          if (starting) {
+            opening.delete(identity.clientId);
+            finishOpening(opened);
+          }
         }
+        // Decided here, last, so a withdrawal during delivery always wins.
+        if ((opened || (result === "sent" && !identity.newSession)) && !withdrawn())
+          reply.header("Set-Cookie", identity.cookie);
         if (result !== "retry") remember(seen, event.event_id, Date.now() + 60_000);
         if (result === "sent") {
           status.sent++;
           status.lastSuccess = new Date().toISOString();
-          identity.newSession = identity.newClient = false;
-          keepCookie();
         } else {
           status.errors++;
           console.error("Google delivery failed", { outcome: result });

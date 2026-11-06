@@ -1,6 +1,8 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
 import { SESSION_MS } from "../shared/event.js";
 export const COOKIE_NAME = "vanilla_session";
+// Matches the tracker and Google's window for session attribution.
+export const SESSION_LIMIT_MS = 24 * 60 * 60 * 1000;
 export interface CookieConfig {
   cookieSecret: string;
   cookieDomain?: string;
@@ -61,7 +63,8 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
     }
   }
   const newClient = !state;
-  const newSession = !state || now - state.last >= SESSION_MS;
+  const newSession =
+    !state || now - state.last >= SESSION_MS || now - state.started >= SESSION_LIMIT_MS;
   state ??= {
     clientId: `${randomInt(1, 2147483647)}.${Math.floor(now / 1000)}`,
     sessionId: 0,

@@ -61,7 +61,7 @@ The installer uses root or sudo. It supports Ubuntu and Debian, installs Docker 
 3. Measurement ID from the second property.
 4. Measurement Protocol API secret.
 
-The tracker waits for analytics permission: without it no event is sent and no cookie is set. A page that stays denied sends one anonymous ping, described in the [README](README.md#consent). To turn it off, set `DENIED_PINGS=off` in .env and rebuild as described below. Choose and disclose the appropriate behavior for your site.
+The tracker waits for analytics permission: without it no event is sent and no cookie is set. A page that stays denied sends one limited ping, described in the [README](README.md#consent). To turn it off, set `DENIED_PINGS=off` in .env and rebuild as described below. Choose and disclose the appropriate behavior for your site.
 
 To send through Google's [EU collection endpoint](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), set `GA4_REGION=eu` in .env after installation and rebuild as described below. Leave it empty for the default endpoint.
 
@@ -124,7 +124,7 @@ After denial the tracker requests deletion of its cookie and clears pending anal
 
 ## 7. Verify
 
-Open https://kx7qpa.example.com/health. It should show ok, Google delivery counters and `botsFiltered`. With no consent signal at all, counters should not increase and no vanilla_session cookie should be set. With consent denied, which is the usual banner default, one anonymous ping per page raises `sent` after 2 seconds, and still no vanilla_session cookie is set. Accept analytics, navigate pages and send a test ecommerce event if available. Inspect the HttpOnly cookie in browser developer tools under Storage/Application; JavaScript cannot read it. Withdraw consent and verify deletion.
+Open https://kx7qpa.example.com/health. It should show ok, Google delivery counters and `botsFiltered`. With no consent signal at all, counters should not increase and no vanilla_session cookie should be set. With consent denied, which is the usual banner default, one limited ping per page raises `sent` after 2 seconds, and still no vanilla_session cookie is set. Accept analytics, navigate pages and send a test ecommerce event if available. Inspect the HttpOnly cookie in browser developer tools under Storage/Application; JavaScript cannot read it. Withdraw consent and verify deletion.
 
 In the **second property**, open Reports -> Realtime. Then use DebugView with a temporary event carrying debug_mode:
 
@@ -152,7 +152,9 @@ Use this as a factual base for your privacy text, not as legal advice.
 
 - **With analytics consent:** your server stores the `vanilla_session` cookie and receives the events. Google receives them with the visitor's IP address and `User-Agent`.
 - **With ad consent too:** Google also receives `gclid`, `gbraid` or `wbraid` from the landing page.
-- **Without consent:** after 2 seconds your server receives one request per page, and Google receives one ping with a one-off ID, the cleaned URL, referrer, title, language, screen size and `User-Agent`. Google does not get the visitor's IP address from this ping. No cookie is set.
+- **Without consent:** after 2 seconds your server receives one request per page, with the visitor's IP address and `User-Agent`. Google receives one ping with a one-off ID, the cleaned URL, referrer, title, language, screen size and `User-Agent`. Google does not get the visitor's IP address from this ping. No cookie is set.
+- **IP address on your server:** the collector keeps it in memory for the rate limit, removes it within two minutes and does not log it. The default Caddy setup has no access log. With your own proxy, check its logs and how long it keeps them.
+- **What cleaning does not do:** it removes credentials, fragments and query parameters other than `utm_*`. It does not touch URL paths, UTM values or page titles, so check that yours hold no personal data, for example an email in a path. Avoid calling the ping anonymous in your privacy text unless you checked this.
 
 ## If something fails
 

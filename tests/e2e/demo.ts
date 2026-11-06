@@ -17,7 +17,7 @@ interface Demo {
   open(): Promise<void>;
   /** How many times the demo printed this event as going to Google. */
   toGoogle(name: string): number;
-  /** How many anonymous denied pings the demo printed as going to Google. */
+  /** How many denied pings the demo printed as going to Google. */
   pings(): number;
   /** Paths and event names of the tracker's requests, as the browser sent them. */
   sent(): { path: string; name?: string }[];

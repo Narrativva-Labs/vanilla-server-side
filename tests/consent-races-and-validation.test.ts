@@ -178,7 +178,7 @@ it("collector limits final parameters and drops invalid names and long custom va
       method: "POST",
       url: "/e",
       headers: { origin: config.siteOrigin },
-      payload: { ...event(), name: "page_engagement", params },
+      payload: { ...event(), name: "generate_lead", params },
     });
     expect(response.statusCode).toBe(204);
     const sent = JSON.parse(String(google.mock.calls[1]![1]!.body)).events.at(-1).params;

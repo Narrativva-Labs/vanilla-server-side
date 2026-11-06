@@ -50,12 +50,12 @@ Open http://localhost:3210. The page has a small consent bar (accept, reject, wi
 | --- | --- |
 | Analytics granted | Send |
 | No decision yet, no consent signal | Hold in memory for up to 2 seconds, then drop |
-| No decision yet, `default` or `update` denied | No events. One anonymous ping per page |
-| Analytics denied | Stop, clear the queue, delete the cookie. One anonymous ping per page, unless consent already measured that page |
+| No decision yet, `default` or `update` denied | No events. One limited ping per page |
+| Analytics denied | Stop, clear the queue, delete the cookie. One limited ping per page, unless consent already measured that page |
 
 After consent the identity is a random ID in a signed server cookie, the one first-party `HttpOnly` cookie this project stores, and the visitor IP is passed to Google for geography. Without consent there is no cookie and no regular event is sent, only one limited ping when the state is denied.
 
-A page that stays denied for 2 seconds sends that ping, the way the Google tag does in [Advanced Consent Mode](https://developers.google.com/tag-platform/security/concepts/consent-mode): a one-off ID, no cookie, no visitor IP and no click IDs, with the denied state in `gcs` and `gcd`. It carries the cleaned page URL, referrer, title, language, screen size and the browser's `User-Agent` header. Disclose this on your site, or set `DENIED_PINGS=off`. Whether a ping changes any report: Not verified.
+A page that stays denied for 2 seconds sends that ping, the way the Google tag does in [Advanced Consent Mode](https://developers.google.com/tag-platform/security/concepts/consent-mode): a one-off ID, no cookie, no visitor IP and no click IDs, with the denied state in `gcs` and `gcd`. It carries the cleaned page URL, referrer, title, language, screen size and the browser's `User-Agent` header. Your own server still receives the request, with the visitor's IP address, for the rate limit. A URL path or title can hold personal data, because the cleaning removes only query parameters, fragments and credentials, so "limited" does not mean anonymous. Disclose this on your site, or set `DENIED_PINGS=off`. Whether a ping changes any report: Not verified.
 
 Supported out of the box:
 
@@ -78,7 +78,7 @@ If the regular property already imports the same conversion, set this one as sec
 - **Partial reporting.** Google says Measurement Protocol alone gives [only partial reporting](https://developers.google.com/analytics/devguides/collection/protocol/ga4). In this project's test all 70 sessions sent that way had source `(not set)` and 0 new users, which is why a `/g/collect` hit now opens each session. Expect reports to differ from the regular property.
 - **`/g/collect` has no public contract.** Google can change it without notice, and it returns 204 for anything. The fields follow captured Google tag hits, so they need a recheck over time. See the [notes](docs/measurement-protocol-notes.md#gcollect).
 - **Safari kept the cookie for 7 days in the one run measured.** Safari 26.6.2 stored it for 7.0 days with the tracker on a different IPv4 /16 from the website, the case [WebKit's cap](https://webkit.org/blog/15697/private-browsing-2-0/) describes. A default install runs on a different server, so expect the same. The server renews the cookie on each delivered event; whether a returning visitor keeps the identity in Safari: Not verified. [Details](docs/technical-overview.md#safari).
-- **Content blockers.** Getting past them is a side benefit, not the purpose of this project. A neutral random subdomain and neutral paths lower the chance of a filter list match, but guarantee nothing: first-party does not mean unblockable. In one run, uBlock Origin Lite with default lists did not stop the tracker. Consent rules stay the same: no event is sent without consent, and a refusal stops collection. [Details](docs/technical-overview.md#content-blockers)
+- **Content blockers.** Getting past them is a side benefit, not the purpose of this project. A neutral random subdomain and neutral paths lower the chance of a filter list match, but guarantee nothing: first-party does not mean unblockable. In one run, uBlock Origin Lite with default lists did not stop the tracker. Consent rules stay the same: no event is sent without consent, and a refusal stops regular measurement, apart from the limited ping. [Details](docs/technical-overview.md#content-blockers)
 - **Bots.** A short User-Agent filter stops obvious ones. Anything that claims to be a browser passes.
 - **No cross-domain identity, durable queue or backfill.** If your server is down, its events are lost; the regular tag is unaffected.
 - **HTTP 2xx proves delivery only.** Google [does not report errors](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) on the live endpoint.

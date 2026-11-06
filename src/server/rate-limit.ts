@@ -1,13 +1,18 @@
-/** Process-local protection. Addresses expire after one minute and are never logged. */
+/** Process-local protection. Addresses are never logged and are removed within two minutes. */
 export function createRateLimit() {
   const visitors = new Map<string, { count: number; active: number; expires: number }>();
   let active = 0;
+  const sweep = () => {
+    const now = Date.now();
+    for (const [key, item] of visitors) {
+      if (item.expires <= now && item.active === 0) visitors.delete(key);
+    }
+  };
   return {
+    sweep,
     claim(ip: string) {
       const now = Date.now();
-      for (const [key, item] of visitors) {
-        if (item.expires <= now && item.active === 0) visitors.delete(key);
-      }
+      sweep();
       let visitor = visitors.get(ip);
       if (!visitor) {
         if (visitors.size >= 10000) {
