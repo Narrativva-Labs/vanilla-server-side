@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { serverIdentity, COOKIE_NAME } from "../src/server/identity.js";
 import { createApp } from "../src/server/app.js";
 import { normalizeConsent } from "../src/shared/consent.js";
-import { campaignDetails } from "../src/client/campaign.js";
+import { clickIds } from "../src/client/click-ids.js";
 import { page } from "./browser-fixture.js";
 import { configFromEnv } from "../src/server/config.js";
 import { execFileSync } from "node:child_process";
@@ -49,7 +49,6 @@ it("server consent, credentials, device, campaign, geography and health", async 
     timestamp_ms: now,
     consent: normalizeConsent({ analytics_storage: "granted" }),
     params: { engagement_time_msec: 50 },
-    campaign: { source: "newsletter", medium: "email" },
     device: {
       browser: "Firefox",
       model: "Phone",
@@ -74,21 +73,22 @@ it("server consent, credentials, device, campaign, geography and health", async 
     const response = await post(event);
     expect(response.statusCode).toBe(204);
     expect(response.headers["access-control-allow-credentials"]).toBe("true");
-    const body = JSON.parse(String(google.mock.calls[0]![1]?.body));
-    expect(body.device).toEqual(event.device);
-    expect(body.events.map((e: { name: string }) => e.name)).toEqual([
-      "campaign_details",
-      "page_view",
-    ]);
-    expect(body.events[1].params.engagement_time_msec).toBe(50);
-    expect(body.consent).toEqual({ ad_user_data: "DENIED", ad_personalization: "DENIED" });
-    expect(body.ip_override).toBe("127.0.0.1");
-    expect(body.client_id).not.toBe(event.client_id);
+    const opening = new URL(String(google.mock.calls[0]![0]));
+    expect(opening.pathname).toBe("/g/collect");
+    expect(opening.searchParams.get("en")).toBe("page_view");
+    expect(opening.searchParams.get("gcs")).toBe("G101");
+    expect(opening.searchParams.get("_uip")).toBe("127.0.0.1");
+    expect(opening.searchParams.get("sr")).toBe("360x800");
+    expect(opening.searchParams.get("cid")).not.toBe(event.client_id);
     const cookie = String(response.headers["set-cookie"]);
     await post({ ...event, event_id: crypto.randomUUID() }, cookie);
     const second = JSON.parse(String(google.mock.calls[1]![1]?.body));
-    expect(second.client_id).toBe(body.client_id);
+    expect(second.client_id).toBe(opening.searchParams.get("cid"));
+    expect(second.device).toEqual(event.device);
     expect(second.events.map((e: { name: string }) => e.name)).toEqual(["page_view"]);
+    expect(second.events[0].params.engagement_time_msec).toBe(50);
+    expect(second.consent).toEqual({ ad_user_data: "DENIED", ad_personalization: "DENIED" });
+    expect(second.ip_override).toBe("127.0.0.1");
     const deleted = await app.inject({
       method: "POST",
       url: "/p",
@@ -138,25 +138,13 @@ it("SPA deduplication, visible engagement and keepalive", async () => {
   }
   expect(p.cookieReads()).toBe(0);
 });
-it("campaign mapping uses documented field names and never transports click IDs", () => {
-  expect(
-    campaignDetails(
-      "https://example.com/?utm_id=a&utm_campaign=b&utm_source=c&utm_medium=d&utm_term=e&utm_content=f",
-      "",
-    ),
-  ).toEqual({ campaign_id: "a", campaign: "b", source: "c", medium: "d", term: "e", content: "f" });
-  expect(campaignDetails("https://example.com/?gclid=secret", "")).toEqual({
-    source: "google",
-    medium: "cpc",
+it("click IDs are read from the landing URL and malformed values are ignored", () => {
+  expect(clickIds("https://example.com/?gclid=abc-1_2&wbraid=w&x=1")).toEqual({
+    gclid: "abc-1_2",
+    wbraid: "w",
   });
-  expect(campaignDetails("https://example.com/", "https://www.google.cz/search")).toEqual({
-    source: "google",
-    medium: "organic",
-  });
-  expect(campaignDetails("https://example.com/", "https://other.example/path")).toEqual({
-    source: "other.example",
-    medium: "referral",
-  });
+  expect(clickIds("https://example.com/?gclid=a%20b")).toBeUndefined();
+  expect(clickIds("https://example.com/")).toBeUndefined();
 });
 it("configuration requires a strong signing secret", () => {
   const env = {

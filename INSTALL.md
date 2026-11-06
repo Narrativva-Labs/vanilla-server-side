@@ -61,7 +61,7 @@ The installer uses root or sudo. It supports Ubuntu and Debian, installs Docker 
 3. Measurement ID from the second property.
 4. Measurement Protocol API secret.
 
-The tracker waits for analytics permission: without it nothing is sent and no cookie is set. Choose and disclose the appropriate behavior for your site.
+The tracker waits for analytics permission: without it no event is sent and no cookie is set. A page that stays denied sends one anonymous ping, described in the [README](README.md#consent). Choose and disclose the appropriate behavior for your site.
 
 To send through Google's [EU collection endpoint](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), set `GA4_REGION=eu` in .env after installation and rebuild as described below. Leave it empty for the default endpoint.
 
@@ -85,7 +85,7 @@ Replace the example domain. If the site has a Content Security Policy, allow you
 
 ## Connect your consent banner
 
-The tracker sends nothing until analytics_storage is granted. Use your banner's actual choice; do not grant consent merely because the tracker has loaded.
+The tracker sends no event until analytics_storage is granted. Use your banner's actual choice; do not grant consent merely because the tracker has loaded.
 
 Cookiebot, CookieConsent by Orest Bida, CookieYes and the Shoptet cookie bar are read automatically. Complianz in GTM mode and other banners installed through a GTM template are not supported. A Shoptet store with the cookie bar turned off stays undecided, so nothing is sent there. For CookieConsent custom categories, add data-cc-analytics-category="stats" and optionally data-cc-ads-categories="ads,marketing" to the script tag.
 

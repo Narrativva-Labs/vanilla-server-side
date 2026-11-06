@@ -32,6 +32,10 @@ export function consentSnapshot(value: unknown): Consent {
 export function canTrack(consent: Consent) {
   return consent.analytics_storage === "granted";
 }
+/** Click IDs link a visit to an ad, so they need both advertising permissions. */
+export function clickConsent(consent: Consent) {
+  return consent.ad_storage === "granted" && consent.ad_user_data === "granted";
+}
 export function sanitizeUrl(value: string) {
   try {
     const input = value

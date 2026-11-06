@@ -147,7 +147,7 @@ it("slash-prefixed search and product names stay unchanged on client and server"
       payload: { ...event, params },
     });
     expect(result.statusCode).toBe(204);
-    const sent = JSON.parse(String(google.mock.calls[0]![1]!.body)).events.at(-1).params;
+    const sent = JSON.parse(String(google.mock.calls[1]![1]!.body)).events.at(-1).params;
     expect(sent.search_term).toBe(params.search_term);
     expect(sent.items[0].item_name).toBe(params.items[0]!.item_name);
   } finally {

@@ -32,7 +32,7 @@ export interface TrackingEvent {
     language?: string;
     screen_resolution?: string;
   };
-  campaign?: Record<string, string>;
+  click_ids?: Record<string, string>;
   ip_override?: string;
   params: Record<string, unknown>;
 }

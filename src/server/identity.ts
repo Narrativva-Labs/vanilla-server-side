@@ -60,6 +60,7 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
       }
     }
   }
+  const newClient = !state;
   const newSession = !state || now - state.last >= SESSION_MS;
   state ??= {
     clientId: `${randomInt(1, 2147483647)}.${Math.floor(now / 1000)}`,
@@ -73,5 +74,10 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
   }
   state.last = now;
   const payload = Buffer.from(JSON.stringify(state)).toString("base64url");
-  return { ...state, newSession, cookie: cookieHeader(config, `${payload}.${sign(payload)}`) };
+  return {
+    ...state,
+    newClient,
+    newSession,
+    cookie: cookieHeader(config, `${payload}.${sign(payload)}`),
+  };
 }

@@ -4,15 +4,15 @@ Author: František Bujnovský.
 
 Each decision names the alternative, the reason and the source. Source labels are explained in the [technical overview](technical-overview.md).
 
-## Measurement Protocol, not /g/collect
+## /g/collect opens a session, Measurement Protocol carries the rest
 
-**Decision:** send through the documented Measurement Protocol, with the API secret held on the server.
+**Decision:** the first page view of a session goes only through `/g/collect`. Every other event goes through the documented Measurement Protocol, with the API secret held on the server. A session opened by another event, for example after 30 idle minutes, gets a short `/g/collect` hit first and its data follow through MP.
 
-**Alternative:** emulate the browser transport `/g/collect`, as [ga4mp](https://github.com/analytics-debugger/ga4mp) and the [Zaraz GA4 component](https://github.com/managed-components/google-analytics-4) do. That route gets closer to tag behavior, including what MP cannot send.
+**Alternative:** Measurement Protocol only, which this project started with. Or `/g/collect` for everything, as [ga4mp](https://github.com/analytics-debugger/ga4mp) and the [Zaraz GA4 component](https://github.com/managed-components/google-analytics-4) do.
 
-**Why:** `/g/collect` is not a public contract, so an emulation has to follow Google's script over time. MP has a [reference](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), a [changelog](https://developers.google.com/analytics/devguides/collection/protocol/ga4/changelog) and a [validator](https://developers.google.com/analytics/devguides/collection/protocol/ga4/validating-events), and Google states it [will remain operational](https://developers.google.com/analytics/devguides/collection/protocol/ga4). The cost is partial reporting, accepted on purpose.
+**Why:** MP alone did not work for acquisition. All 70 test sessions showed source `(not set)` and 0 new users, including the ones sent with `campaign_details`. `/g/collect` produced `session_start` and `first_visit` at once, which MP refuses as reserved names. It is not a public contract, so it is used as little as possible: one hit per session, with a small fixed set of fields. Ecommerce and custom events stay on the path that has a [reference](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) and a [validator](https://developers.google.com/analytics/devguides/collection/protocol/ga4/validating-events).
 
-**Source:** Google docs. Whether `/g/collect` reports better for this setup: Not verified, not tested here.
+**Source:** Tested 2026-11-06, [notes](measurement-protocol-notes.md#gcollect).
 
 ## A second property
 
@@ -59,6 +59,16 @@ Google state does not always win. A decided banner beats every `default`, becaus
 **Why:** with most banners, which set `default` denied, it measured nothing without a decision anyway. After consent the cookie mode is better: the identity survives a page load and geography works. And the second mode added complexity to every consent, identity and delivery path.
 
 **Source:** Live checks in [cookie banners](cookie-banners.md), 2026-11-05.
+
+## Anonymous pings without consent
+
+**Decision:** a page that stays denied for 2 seconds sends one `/g/collect` hit with `gcs=G100`, a one-off ID, no cookie, no visitor IP and no click IDs.
+
+**Alternative:** send nothing, which is what this project did first. Or send at once, as the Google tag does.
+
+**Why:** this is the shape of a cookieless ping in Advanced Consent Mode, seen in a captured Google tag hit. The Google tag sends its hit at once and no second `page_view` after a grant. Vanilla sends its full page view only after a grant, so sending at once would leave a refusal behind on each page load of a visitor whose banner restores a grant a moment later. The 2 seconds avoid that. A visitor who refuses and leaves within 2 seconds is not pinged, and one who accepts after 2 seconds leaves a ping as well as the full page view.
+
+**Source:** Tested 2026-11-06, `tests/collect.test.ts`, [notes](measurement-protocol-notes.md#gcollect). Effect on reports and modeling: Not verified. Google's [behavioral modeling](https://support.google.com/analytics/answer/11161109) needs at least 1,000 denied events a day for 7 days and 1,000 daily granted users, and it describes Google tags on the page, so a small site should expect no effect.
 
 ## Retries, against Google's advice
 
@@ -114,7 +124,7 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 | Left out | Why |
 | --- | --- |
-| Google Ads integration | MP identifiers are joined from tagging, and an independent property has none |
+| Direct Google Ads integration | Ads is reached through the GA4 link only. No conversion API, no second destination |
 | Cross-domain identity | Needs URL decoration or shared state |
 | Durable queue, backfill | Needs storage. Events during downtime are lost; the regular tag is unaffected |
 | Browser fingerprinting | Contrary to the purpose of the consent gates |

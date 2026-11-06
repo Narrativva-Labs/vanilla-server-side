@@ -27,7 +27,15 @@ function received(name) {
 
 /** Stands in for fetch in the collector: prints what would leave and answers like Google. */
 async function fakeGoogle(url, init) {
-  const { host, pathname } = new URL(url);
+  const { host, pathname, searchParams } = new URL(url);
+  if (pathname === "/g/collect") {
+    const name = searchParams.get("en");
+    received(name);
+    line("TO GOOGLE", `${name}  ->  ${host}${pathname}`, [
+      [...searchParams].map(([key, value]) => `${key}=${value}`).join(" "),
+    ]);
+    return new Response(null, { status: 204 });
+  }
   const { events, client_id, consent, device, ip_override } = JSON.parse(init.body);
   for (const { name, params } of events) {
     received(name);
@@ -43,7 +51,7 @@ async function fakeGoogle(url, init) {
 }
 
 const reasons = {
-  denied: "the visitor refused, so nothing left the browser",
+  denied: "the visitor refused, so the event stayed in the browser",
   unknown: "no decision within 2 seconds, so the event was dropped from memory",
   granted: "it never reached the collector",
 };

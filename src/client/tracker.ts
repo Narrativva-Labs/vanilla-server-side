@@ -1,6 +1,7 @@
 import {
   consentSnapshot,
   canTrack,
+  clickConsent,
   cleanUrls,
   intersect,
   jsonSnapshot,
@@ -15,7 +16,9 @@ import {
   timely,
   type TrackingEvent,
 } from "../shared/event.js";
-import { campaignDetails } from "./campaign.js";
+import { clickIds } from "./click-ids.js";
+const PING_URL_BYTES = 1000;
+const PING_DELAY_MS = 2000;
 export interface Runtime {
   title?(): string;
   device?(): TrackingEvent["device"];
@@ -37,6 +40,8 @@ export function createTracker(
   const purchases = new Set<string>();
   let pageSent = false;
   let pageScheduled = false;
+  let pagePinged = false;
+  let pingAt = 0;
   let deliveryReady = !deferDelivery;
   let waitUntil = 0;
   const waiting: {
@@ -46,7 +51,7 @@ export function createTracker(
     deadline: number;
     unresolved: boolean;
     consent: Consent;
-    campaign: Record<string, string>;
+    clicks?: Record<string, string>;
   }[] = [];
   let memory: { clientId: string; sessionId: number; started: number; last: number } | undefined;
   let flushing = false;
@@ -89,6 +94,8 @@ export function createTracker(
             body: JSON.stringify({ client_id: withdrawnClient }),
           })
           .catch(() => {});
+      // A page already measured with consent is not counted again as a refused one.
+      pagePinged ||= pageSent;
       pageSent = false;
       pageScheduled = false;
     }
@@ -118,7 +125,7 @@ export function createTracker(
       ...params,
       engagement_time_msec: Math.max(0, Math.round(runtime.engagement?.() ?? 0)),
     });
-    const campaign = campaignDetails(runtime.href(), runtime.referrer());
+    const clicks = name === "page_view" ? clickIds(runtime.href()) : undefined;
     const timestamp = runtime.now();
     const unresolved = consent.analytics_storage === "unknown";
     if (unresolved || timestamp < waitUntil) {
@@ -135,18 +142,18 @@ export function createTracker(
         deadline,
         unresolved,
         consent: { ...consent },
-        campaign,
+        clicks,
       });
       return;
     }
-    enqueue(name, params, timestamp, undefined, campaign);
+    enqueue(name, params, timestamp, undefined, clicks);
   }
   function enqueue(
     name: string,
     params: Record<string, unknown>,
     timestamp: number,
     originalConsent?: Consent,
-    campaign?: Record<string, string>,
+    clicks?: Record<string, string>,
     immediate = false,
   ) {
     if (!canTrack(consent)) return;
@@ -181,7 +188,6 @@ export function createTracker(
       timestamp_ms: timestamp,
       consent: originalConsent ? intersect(originalConsent, consent) : { ...consent },
       device: runtime.device?.(),
-      campaign: campaign ?? campaignDetails(runtime.href(), runtime.referrer()),
       params: {
         page_location: sanitizeUrl(runtime.href()),
         page_referrer: sanitizeUrl(runtime.referrer()),
@@ -190,8 +196,9 @@ export function createTracker(
     };
     // A page_location set by the site is cleaned like the automatic one.
     event.params = cleanUrls(jsonSnapshot(event.params)) as Record<string, unknown>;
-    // Never retain click IDs in the queue, even when consent permits advertising.
+    // Click IDs travel only in their own field and only with advertising permission.
     const snapshot = redactAds(jsonSnapshot(event)) as TrackingEvent;
+    if (clicks && clickConsent(snapshot.consent)) snapshot.click_ids = clicks;
     if (transaction) {
       if (purchases.size >= 1000) purchases.delete(purchases.values().next().value!);
       purchases.add(transaction);
@@ -216,7 +223,10 @@ export function createTracker(
     void flush();
   }
   function requestBody(event: TrackingEvent) {
-    const body = JSON.stringify(event);
+    // Consent may have narrowed while the event waited in the queue.
+    const body = JSON.stringify(
+      clickConsent(event.consent) ? event : { ...event, click_ids: undefined },
+    );
     if (new TextEncoder().encode(body).byteLength > 32 * 1024) {
       runtime.warn(
         "[Vanilla Server-Side] Event skipped: UTF-8 payload exceeds the collector's 32 KiB limit. Reduce the event payload or number of items.",
@@ -225,8 +235,37 @@ export function createTracker(
     }
     return body;
   }
+  /** One anonymous page ping without analytics consent, as Google tag does in Advanced Consent Mode. */
+  function ping() {
+    if (consent.analytics_storage !== "denied") {
+      pingAt = 0;
+      return;
+    }
+    // A banner restoring a stored grant must not leave a refusal behind on every page load.
+    pingAt ||= runtime.now() + PING_DELAY_MS;
+    if (pagePinged || runtime.now() < pingAt) return;
+    pagePinged = true;
+    const device = runtime.device?.();
+    void runtime
+      .fetch(new URL("./d", endpoint).href, {
+        method: "POST",
+        credentials: "omit",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          consent,
+          page_location: shortenBytes(sanitizeUrl(runtime.href()), PING_URL_BYTES),
+          page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PING_URL_BYTES),
+          page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
+          language: device?.language,
+          screen_resolution: device?.screen_resolution,
+        }),
+      })
+      .catch(() => {});
+  }
   async function flush() {
     if (!deliveryReady) return;
+    ping();
     if (resolving) return;
     resolving = true;
     try {
@@ -242,7 +281,7 @@ export function createTracker(
           const original = item.unresolved
             ? { ...item.consent, analytics_storage: consent.analytics_storage }
             : item.consent;
-          enqueue(item.name, item.params, item.timestamp, original, item.campaign);
+          enqueue(item.name, item.params, item.timestamp, original, item.clicks);
         }
       }
     } finally {
@@ -334,10 +373,13 @@ export function createTracker(
     page() {
       pageSent = false;
       pageScheduled = false;
+      pagePinged = false;
+      pingAt = 0;
       if (canTrack(consent)) {
         pageScheduled = true;
         track("page_view", {}, true);
       }
+      void flush();
     },
     start() {
       deliveryReady = true;

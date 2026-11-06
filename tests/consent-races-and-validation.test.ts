@@ -76,7 +76,7 @@ it("an active collect cannot restore a cookie after consent withdrawal", async (
   }
 });
 
-it("first Google 503 does not confirm a session; retry preserves campaign_details", async () => {
+it("first Google 503 does not confirm a session; the retry opens it again", async () => {
   const google = vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(new Response(null, { status: 503 }))
@@ -101,16 +101,9 @@ it("first Google 503 does not confirm a session; retry preserves campaign_detail
       payload,
     });
     expect(retry.statusCode).toBe(204);
-    expect(
-      JSON.parse(String(google.mock.calls[0]![1]!.body)).events.map(
-        (e: { name: string }) => e.name,
-      ),
-    ).toEqual(["campaign_details", "page_view"]);
-    expect(
-      JSON.parse(String(google.mock.calls[1]![1]!.body)).events.map(
-        (e: { name: string }) => e.name,
-      ),
-    ).toEqual(["campaign_details", "page_view"]);
+    const opened = google.mock.calls.map(([url]) => new URL(String(url)));
+    expect(opened.map((url) => url.pathname)).toEqual(["/g/collect", "/g/collect"]);
+    expect(opened.map((url) => url.searchParams.get("_ss"))).toEqual(["1", "1"]);
   } finally {
     log.mockRestore();
     await app.close();
@@ -150,7 +143,7 @@ it("pagehide dispatches engagement immediately while another fetch is pending", 
     ),
   ).toBe(true);
 });
-it("a waiting SPA page_view retains the old page but keeps the original campaign", async () => {
+it("a waiting SPA page_view retains the old page and its UTM parameters", async () => {
   vi.useFakeTimers();
   const p = page([["consent", "default", { ...granted, wait_for_update: 500 }]]);
   p.host.history.pushState({}, "", "https://shop.example/new?utm_source=wrong");
@@ -159,7 +152,6 @@ it("a waiting SPA page_view retains the old page but keeps the original campaign
   await settle();
   const first = JSON.parse(String(p.fetcher.mock.calls[0]![1]!.body));
   expect(first.params.page_location).toContain("utm_source=test");
-  expect(first.campaign.source).toBe("test");
 });
 
 it("time spent denied is excluded from engagement after grant", async () => {
@@ -186,10 +178,10 @@ it("collector limits final parameters and drops invalid names and long custom va
       method: "POST",
       url: "/e",
       headers: { origin: config.siteOrigin },
-      payload: { ...event(), params },
+      payload: { ...event(), name: "page_engagement", params },
     });
     expect(response.statusCode).toBe(204);
-    const sent = JSON.parse(String(google.mock.calls[0]![1]!.body)).events.at(-1).params;
+    const sent = JSON.parse(String(google.mock.calls[1]![1]!.body)).events.at(-1).params;
     expect(Object.keys(sent)).toHaveLength(25);
     expect(sent.session_id).toEqual(expect.any(Number));
     expect(sent["bad-name"]).toBeUndefined();
@@ -245,7 +237,11 @@ it("concurrent first requests reuse the transient browser identity", async () =>
       ),
     );
     expect(replies.every((r) => r.statusCode === 204)).toBe(true);
-    const ids = google.mock.calls.map(([, options]) => JSON.parse(String(options!.body)).client_id);
+    const ids = google.mock.calls.map(([url, options]) =>
+      options!.body
+        ? JSON.parse(String(options!.body)).client_id
+        : new URL(String(url)).searchParams.get("cid"),
+    );
     expect(new Set(ids).size).toBe(1);
   } finally {
     await app.close();

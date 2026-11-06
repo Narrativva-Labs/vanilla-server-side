@@ -120,7 +120,7 @@ it("same-origin path proxy strips the prefix and serves working tracker, collect
     expect(replies[0]!.headers.get("set-cookie")).toContain(
       "Domain=127.0.0.1; HttpOnly; Secure; SameSite=Lax",
     );
-    const firstId = JSON.parse(String(google.mock.calls[0]![1]?.body)).client_id;
+    const firstId = new URL(String(google.mock.calls[0]![0])).searchParams.get("cid");
     host.dataLayer.push(["event", "generate_lead"] as string[]);
     await vi.waitFor(() => expect(google).toHaveBeenCalledTimes(2));
     await Promise.all([...pending]);

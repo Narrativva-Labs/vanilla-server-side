@@ -23,14 +23,15 @@ A second, independent GA4 pipeline runs next to the regular tag. It exists for c
 |   page views, ecommerce, engagement --> memory queue            |
 +-----------------------------------------------------------------+
         |
-        | POST /e (JSON, credentials)     POST /p (withdrawal)
+        | POST /e (events)   POST /p (withdrawal)   POST /d (denied ping)
         v
 +-- collector (Node, Fastify, behind Caddy) ----------------------+
 | origin check -> bot filter -> consent -> allowlist -> rate limit|
 | signed cookie -> identity -> MP limits -> single Google module  |
 +-----------------------------------------------------------------+
         |
-        | POST /mp/collect (API secret stays here)
+        | POST /g/collect (opens a session, denied ping)
+        | POST /mp/collect (everything else, API secret stays here)
         v
   second GA4 property
 ```
@@ -49,14 +50,15 @@ The one runtime dependency is Fastify. There is no database.
 
 1. The script reads `dataLayer` from the start, in order, so consent and events pushed before it loaded keep their sequence.
 2. An event is blocked, held or queued according to [consent](#consent-state-machine).
-3. URLs are cleaned in the browser, including a `page_location` or other URL parameter set by the site: no credentials, no fragments, no query parameters other than `utm_*`. Click IDs do not leave the browser.
+3. URLs are cleaned in the browser, including a `page_location` or other URL parameter set by the site: no credentials, no fragments, no query parameters other than `utm_*`. Click IDs travel in their own `click_ids` field, on page views only, and only with `ad_storage` and `ad_user_data` granted.
 4. The tracker posts JSON to `/e`, resolved relative to the script URL, so a same-origin path proxy works.
 5. The collector checks origin and content type, the [bot filter](#bot-filter), consent, the event allowlist, freshness and rate limits. The consent check reads the state the browser reports; the server cannot confirm it independently.
-6. It replaces the browser's temporary identity with the signed server identity and adds `ip_override`.
-7. `buildGoogleRequest` applies the limits and sends one MP request. `campaign_details` goes first in the same request at session start.
-8. The cookie is set or renewed only after Google answered 2xx.
+6. It replaces the browser's temporary identity with the signed server identity and adds the visitor IP.
+7. The first page view of a session goes to `/g/collect` with `_ss`, `_fv` for a new visitor, `_uip` and the click IDs, and to nothing else. A page view with a click ID inside a running session goes there too, without `_ss`. A session opened by another event sends a `page_engagement` hit to `/g/collect`, then the event itself.
+8. Everything else goes through `buildGoogleRequest`, which applies the limits and sends one MP request.
+9. The cookie is set or renewed only after Google answered 2xx.
 
-Tested 2026-11-05: `tests/consent-and-collector.test.ts`, `tests/transport-and-url.test.ts`, `tests/parallel.test.ts`.
+Tested 2026-11-06: `tests/collect.test.ts`, `tests/consent-and-collector.test.ts`, `tests/transport-and-url.test.ts`, `tests/parallel.test.ts`.
 
 ## Identity and the signed cookie
 
@@ -90,7 +92,7 @@ Each purpose has three states, and the tracker works from `analytics_storage`:
 | --- | --- | --- |
 | `unknown` | No signal, or an undecided banner with no Google state | Events wait in memory for up to 2 seconds, then are dropped. Nothing is sent and no cookie is set |
 | `granted` | The visitor agreed | Send |
-| `denied` | Default or refusal | Stop and clear the queues |
+| `denied` | Default or refusal | Stop and clear the queues. After 2 seconds in this state, one anonymous ping to `/d` per page |
 
 | From | Signal | To | Side effect |
 | --- | --- | --- | --- |
@@ -168,7 +170,7 @@ Whether the tracker asks the server to delete the cookie:
 
 - Without a decision no request reaches `/e` or `/p`, nothing goes to the stub and no cookie exists.
 - Accepting sends the page view and creates a cookie marked `HttpOnly` that page scripts cannot read.
-- Rejecting sends one deletion request, no event and no cookie.
+- Rejecting sends one deletion request, one anonymous ping, no event and no cookie.
 - Withdrawing deletes the cookie and stops later events.
 - A same-document navigation sends one `page_view`, and repeating the same address sends none.
 
@@ -198,8 +200,8 @@ The regular tag has its own consent handling and is not affected.
 | Send `first_visit`, `session_start`, `user_engagement` | Cannot: reserved | Tested 2026-11-05, `npm run verify:mp` |
 | Show `campaign_details` in DebugView | Cannot | [Google docs](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference/events#campaign_details) |
 | Run rules that create or rename events | Cannot | [Google docs](https://developers.google.com/analytics/devguides/collection/protocol/ga4) |
-| Session source from `campaign_details` in standard reports | Not verified | [Pending](measurement-protocol-notes.md#pending) |
-| New users | Not verified, probably 0 | [Pending](measurement-protocol-notes.md#pending) |
+| Session source from `campaign_details` in standard reports | Cannot: 70 of 70 sessions `(not set)` | Tested 2026-11-06, [notes](measurement-protocol-notes.md#gcollect) |
+| New users | Cannot: 0 | Tested 2026-11-06, [notes](measurement-protocol-notes.md#gcollect) |
 
 Where the documentation and the validator disagree, see [Measurement Protocol notes](measurement-protocol-notes.md). The main surprises: `device.model` and `device.browser` are required in strict validation although documented as optional, page fields have a measured limit of 256, and limits count UTF-8 bytes.
 
@@ -211,7 +213,7 @@ Where the documentation and the validator disagree, see [Measurement Protocol no
 
 > While it's possible to send events to Google Analytics solely with the Measurement Protocol, only partial reporting may be available. The purpose of the Measurement Protocol is to augment existing events collected using gtag, GTM, or Firebase.
 
-Vanilla does not pretend otherwise. The second property has no tag of its own, which puts it in the case Google describes as partial reporting. That is a deliberate trade, and it is why the design has two properties:
+Vanilla does not pretend otherwise. The second property has no tag of its own, which puts it in the case Google describes as partial reporting, and a test confirmed it: without `/g/collect` there was no session source and no new users. That hit closes the biggest gap, and the rest stays a deliberate trade. It is why the design has two properties:
 
 - **The regular tag stays untouched** and keeps delivering full reporting, its own consent handling and Ads integrations.
 - **The second property takes the partial reporting** in return for independence. Nothing on the production measurement depends on this project, and if the server stops, the regular property does not notice.
@@ -250,11 +252,11 @@ Limits, stated plainly:
 
 ## Content blockers
 
-A default install uses a neutral random subdomain such as `kx7qpa.example.com` and the neutral paths `/s.js`, `/e` and `/p`. Filter lists match known names and paths, so this lowers the chance of being caught. It guarantees nothing: first-party does not mean unblockable, and a list can add any name or pattern.
+A default install uses a neutral random subdomain such as `kx7qpa.example.com` and the neutral paths `/s.js`, `/e`, `/p` and `/d`. Filter lists match known names and paths, so this lowers the chance of being caught. It guarantees nothing: first-party does not mean unblockable, and a list can add any name or pattern.
 
 Tested 2026-11-05, one run: with uBlock Origin Lite and default lists in Chromium, the regular tag was stopped and the tracker was not ([notes](measurement-protocol-notes.md#browser-checks)). Other blockers, stricter lists and other browsers: Not verified.
 
-Consent works the same with or without a blocker. Nothing leaves without consent, and a refusal stops collection, as described in the [consent state machine](#consent-state-machine).
+Consent works the same with or without a blocker. No event leaves without consent, and a refusal stops collection, as described in the [consent state machine](#consent-state-machine).
 
 Simo Ahava [disagrees with this approach](https://www.simoahava.com/analytics/agency-transparency-control-unsolved-problems-server-side-tagging/). He argues that a first-party subdomain hides the vendor domain that blockers match, which erodes the visitor's control, and that what happens on the server cannot be audited from the browser. Both points apply to a default install, and this project does not refute them.
 
@@ -266,7 +268,7 @@ None of this is new, and the work below came first.
 
 - **Simo Ahava, 2015.** [Measure ad and content blocker impact](https://www.simoahava.com/analytics/measure-ad-content-blocker-impact-on-traffic/): a bait file detects blockers, and a fallback hit sent by Measurement Protocol to a separate Universal Analytics property, with a server relay suggested.
 - **Markus Baersch, 2022.** [GA4 Measurement Protocol for websites, an experiment](https://www.markus-baersch.de/blog/google-analytics-4-measurement-protocol-fuer-websites-experiment/): parallel MP collection compared with gtag. His findings on attribution, `first_visit` and New users are what the [Pending](measurement-protocol-notes.md#pending) list tests against. He pre-dates `ip_override` and `device`, and repeated the test in 2026 with the Data Manager API.
-- **[ga4mp](https://github.com/analytics-debugger/ga4mp).** The opposite route: an open implementation of the client-side protocol, with `/g/collect` as its default endpoint. It stays closer to the regular tag; Vanilla stays on the path covered by Google's published Measurement Protocol reference, which does not describe `/g/collect`.
+- **[ga4mp](https://github.com/analytics-debugger/ga4mp).** The opposite route: an open implementation of the client-side protocol, with `/g/collect` as its default endpoint. It stays closer to the regular tag; Vanilla uses `/g/collect` only to open a session and stays on the published Measurement Protocol for everything else.
 - **[Cloudflare Zaraz](https://developers.cloudflare.com/zaraz/).** Offloads third-party tools to Cloudflare's edge. Its [GA4 component](https://github.com/managed-components/google-analytics-4) also builds requests for `/g/collect`.
 - **[ga4-server-side-relay](https://github.com/catesandrew/ga4-server-side-relay).** A self-hosted first-party relay to Measurement Protocol for Next.js and Vercel, close to this project in approach.
 

@@ -158,7 +158,8 @@ it("limits a spoofed origin sender without blocking another IP", async () => {
     for (let i = 0; i < 300; i++) expect((await post("192.0.2.1")).statusCode).toBe(204);
     expect((await post("192.0.2.1")).statusCode).toBe(429);
     expect((await post("192.0.2.2")).statusCode).toBe(204);
-    expect(fetcher).toHaveBeenCalledTimes(301);
+    // The first event of a new session also opens it through /g/collect.
+    expect(fetcher).toHaveBeenCalledTimes(302);
   } finally {
     await app.close();
   }
@@ -187,7 +188,7 @@ it("full deduplication map evicts old entries instead of blocking a new visitor"
     for (let i = 0; i < 10000; i++)
       expect((await post(`192.0.2.${Math.floor(i / 50) + 1}`)).statusCode).toBe(204);
     expect((await post("192.0.2.250")).statusCode).toBe(204);
-    expect(fetcher).toHaveBeenCalledTimes(10001);
+    expect(fetcher).toHaveBeenCalledTimes(10002);
   } finally {
     await app.close();
   }

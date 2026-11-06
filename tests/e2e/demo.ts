@@ -17,6 +17,8 @@ interface Demo {
   open(): Promise<void>;
   /** How many times the demo printed this event as going to Google. */
   toGoogle(name: string): number;
+  /** How many anonymous denied pings the demo printed as going to Google. */
+  pings(): number;
   /** Paths and event names of the tracker's requests, as the browser sent them. */
   sent(): { path: string; name?: string }[];
   /** Waits for the demo to report this event as blocked, for up to six seconds. */
@@ -46,6 +48,7 @@ export const test = base.extend<{ demo: Demo }>({
     await use({
       open: async () => void (await page.goto(origin)),
       toGoogle: (name) => output.split(`TO GOOGLE  ${name}  `).length - 1,
+      pings: () => output.split("gcs=G100").length - 1,
       sent: () => sent,
       blocked: (name, reason) =>
         expect.poll(() => output, { timeout: 6000 }).toContain(`BLOCKED    ${name}: ${reason}`),

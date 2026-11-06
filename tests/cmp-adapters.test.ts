@@ -530,7 +530,8 @@ it("CookieYes: its denied update on load raises no warning, keeps collection off
     warningTimer(p);
     await settle();
     expect(p.warnings).not.toHaveBeenCalled();
-    expect(p.fetcher).not.toHaveBeenCalled();
+    // The only request is the anonymous page ping: no event and no deletion.
+    expect(p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(["/d"]);
   } finally {
     vi.useRealTimers();
   }

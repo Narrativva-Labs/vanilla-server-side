@@ -4,10 +4,10 @@ import { isObviousBot } from "./bots.js";
 import { createRateLimit } from "./rate-limit.js";
 import Fastify from "fastify";
 import { readFile } from "node:fs/promises";
-import { consentSnapshot, canTrack, jsonSnapshot } from "../shared/consent.js";
+import { consentSnapshot, canTrack, clickConsent, jsonSnapshot } from "../shared/consent.js";
 import { DEFAULT_EVENTS } from "../shared/settings.js";
 import { timely, type TrackingEvent } from "../shared/event.js";
-import { sendGoogle, type Destination } from "./google.js";
+import { sendGoogle, sendDeniedPing, type DeniedPing, type Destination } from "./google.js";
 export function createApp(
   config: Destination & CookieConfig & { allowedEvents?: string[] },
   fetcher: typeof fetch = fetch,
@@ -112,6 +112,46 @@ export function createApp(
       release();
     }
   });
+  app.post<{ Body: DeniedPing }>(
+    "/d",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["consent", "page_location"],
+          properties: {
+            consent: { type: "object" },
+            page_location: { type: "string", maxLength: 2048 },
+            page_referrer: { type: "string", maxLength: 2048 },
+            page_title: { type: "string", maxLength: 1024 },
+            language: { type: "string", maxLength: 32 },
+            screen_resolution: { type: "string", pattern: "^[0-9]{1,6}x[0-9]{1,6}$" },
+          },
+        },
+      },
+    },
+    async (req, reply) => {
+      if (isObviousBot(req.headers["user-agent"])) {
+        status.botsFiltered++;
+        return reply.code(204).send();
+      }
+      const ping = { ...req.body, consent: consentSnapshot(req.body.consent) };
+      if (ping.consent.analytics_storage !== "denied")
+        return reply.code(400).send({ error: "ping_requires_denied_consent" });
+      const release = limiter.claim(req.ip);
+      if (!release) return reply.code(429).send({ error: "rate_limit" });
+      try {
+        // No cookie, no IP and no retry: this request leaves nothing that links two pings.
+        const result = await sendDeniedPing(config, ping, req.headers["user-agent"], fetcher);
+        if (result === "sent") status.sent++;
+        else status.errors++;
+        return reply.code(204).send();
+      } finally {
+        release();
+      }
+    },
+  );
   app.post<{ Body: TrackingEvent }>(
     "/e",
     {
@@ -154,10 +194,14 @@ export function createApp(
                 screen_resolution: { type: "string", pattern: "^[0-9]{1,6}x[0-9]{1,6}$" },
               },
             },
-            campaign: {
+            click_ids: {
               type: "object",
-              maxProperties: 6,
-              additionalProperties: { type: "string", maxLength: 100 },
+              additionalProperties: false,
+              properties: {
+                gclid: { type: "string", pattern: "^[A-Za-z0-9_-]{1,256}$" },
+                gbraid: { type: "string", pattern: "^[A-Za-z0-9_-]{1,256}$" },
+                wbraid: { type: "string", pattern: "^[A-Za-z0-9_-]{1,256}$" },
+              },
             },
           },
         },
@@ -208,13 +252,21 @@ export function createApp(
         event.session_started_ms = Math.min(identity.started, event.timestamp_ms);
         event.session_expires_ms = event.timestamp_ms + 30 * 60 * 1000;
         event.ip_override = req.ip;
-        if (!identity.newSession) delete event.campaign;
+        const clicked =
+          event.name === "page_view" && event.click_ids && clickConsent(event.consent);
         const delivery = sendGoogle(
           config,
           event,
           () => event.consent,
           new AbortController().signal,
           fetcher,
+          identity.newSession || clicked
+            ? {
+                sessionStart: identity.newSession,
+                firstVisit: identity.newClient,
+                userAgent: req.headers["user-agent"],
+              }
+            : undefined,
         );
         inFlight.set(event.event_id, delivery);
         let result: "sent" | "retry" | "dropped";
@@ -230,6 +282,8 @@ export function createApp(
         if (result === "sent") {
           status.sent++;
           status.lastSuccess = new Date().toISOString();
+          // A browser that keeps no cookie must not open a new session with every event.
+          identity.newSession = identity.newClient = false;
           if (!isRevoked("server:" + identity.clientId) && !isRevoked(browserKey))
             reply.header("Set-Cookie", identity.cookie);
         } else {

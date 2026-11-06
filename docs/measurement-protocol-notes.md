@@ -48,7 +48,7 @@ Reserved names, as answered by the validator:
 | Finding | Behavior |
 | --- | --- |
 | `device.model` and `device.browser` required in strict mode | Both are always present when `device` is sent, with generic fallbacks. A blank model falls back to the category |
-| Page text limit | `page_location`, `page_referrer` and `page_title` are cut to 256 UTF-8 bytes on whole characters, without a dangling `%` escape. The campaign is read in the browser before this, so a cut URL does not lose UTM values |
+| Page text limit | `page_location`, `page_referrer` and `page_title` are cut to 256 UTF-8 bytes on whole characters, without a dangling `%` escape. `/g/collect` allows 1000 bytes for the URLs, so the first hit keeps long UTM values |
 | Reserved names | All 34 stay blocked. The accepted 14 are still documented as reserved, and an undocumented acceptance is not a contract |
 | `user_engagement` | Final visible time goes out as the custom event `page_engagement` |
 | Other text limits | Unchanged: values over 100 characters are dropped with a diagnostic. A value of 51 to 100 multi-byte characters passes here and would fail strict validation. Live effect: Not verified |
@@ -84,12 +84,50 @@ Single runs on a live website, 2026-11-05. They show what happened in one setup,
 | Same Safari visit, `_ga` set by the regular Google tag through GTM, no server container | Stored expiry 400 days. This contradicts WebKit's [published 7-day cap](https://webkit.org/blog/8613/intelligent-tracking-prevention-2-1/) for cookies set with `document.cookie` | Tested: same file, one measurement. The cause is Not verified |
 | uBlock Origin Lite with default lists, Chromium | GTM was neutralised and `_ga` was not created. `s.js` loaded, `/e` returned 204 and `vanilla_session` was set | Tested: one run, consent accepted. Other blockers, stricter lists and other browsers are Not verified |
 
+## /g/collect
+
+Measurement Protocol alone could not do what this project needs, so one `/g/collect` hit now opens each session.
+
+**What MP alone gave.** Tested, 2026-11-06: GA4 Data API over everything sent to the test property through MP on 2026-11-05, including sessions with `campaign_details` and UTM values.
+
+| Report | Result |
+| --- | --- |
+| Session source / medium | `(not set)` in 70 of 70 sessions |
+| Session campaign | `(not set)` in 70 of 70 sessions |
+| Default channel group | `Unassigned` |
+| New users | 0 |
+| Sessions, device, country, pages | Worked |
+
+**What the Google tag sends.** Tested, 2026-11-06: `gtag.js` in Chromium, default consent set, hits captured and blocked so that nothing reached Google.
+
+| Consent | `gcs` | `gcd` | `npa` | Cookies |
+| --- | --- | --- | --- | --- |
+| All granted | `G111` | `13t3t3t2t5l1` | `0` | `_ga` and `_ga_*` |
+| Analytics only | `G101` | `13p3t3p2p5l1` | `1` | `_ga` and `_ga_*` |
+| All denied | `G100` | `13p3p3p2p5l1` | `1` | None |
+
+In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, and the full URL in `dl`, including `gclid`. Denied hits use a new `cid`. After a later grant the tag sent no second `page_view`. `dma` and `dma_cps` are left out here, because `dma` depends on the visitor's region. Vanilla sends the consent state it knows at that moment, always with `t` and `p`.
+
+**What this project sends.** `v tid _p gcs gcd npa cid sid seg _s en dl dr dt ul sr _uip _ss _fv`, as a POST with an empty body and the visitor's `User-Agent`. The denied ping leaves out `_uip`. The fields come from the hits above.
+
+**What came back.** Tested, 2026-11-06: 7 hits built by `buildCollectUrl` and sent to `/g/collect` of the test property, then read in Realtime through the GA4 Data API.
+
+| Sent | Realtime |
+| --- | --- |
+| 6 hits with analytics granted, `_ss=1`, `_fv=1` | 6 `page_view`, 6 `session_start`, 6 `first_visit` |
+| `_uip` 8.8.8.8, 4 hits | Country: United States |
+| `_uip` 1.1.1.1, 2 hits | Country: India. So the country comes from `_uip`, not from the sending machine |
+| 1 denied hit with `gcs=G100` | Not shown |
+
+`/g/collect` answered 204 to all of them, which proves delivery only.
+
 ## Pending
 
 **Not verified yet.** These need time in standard reports, not a validator.
 
-- `campaign_details` and session source: does Session source / medium show the sent values in standard reports? The field is [documented](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference/events#campaign_details), it passes the validator and Google says it is not visible in DebugView. A [2026 third-party test](https://www.markus-baersch.de/blog/data-manager-api-echter-ersatz-fuer-das-measurement-protocol/) of standalone server events reports `(not set)` session source. This project has not confirmed or refuted that.
-- New users: probably 0, because `first_visit` is reserved. A [2022 third-party test](https://www.markus-baersch.de/blog/google-analytics-4-measurement-protocol-fuer-websites-experiment/) reported 0. Not confirmed by this project.
-- Engaged sessions without `user_engagement`, with engagement time carried by `engagement_time_msec` and `page_engagement`.
+- Session source, campaign and New users from `/g/collect`, in standard reports. The hits were sent on 2026-11-06.
+- A conversion credited to a real Google Ads click, through the link between GA4 and Ads.
+- Whether a denied ping appears in any report, or feeds modeling.
+- Engaged sessions, with engagement time carried by `engagement_time_msec` and `page_engagement`. The first run showed 0.
 - What the live endpoint does with over-limit text and over-limit item parameters.
 - Whether [known bot exclusion](https://support.google.com/analytics/answer/9888366) applies to Measurement Protocol events. The page does not mention them.

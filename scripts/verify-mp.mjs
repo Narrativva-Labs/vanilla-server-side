@@ -149,15 +149,8 @@ console.log(`Endpoint: ${VALIDATION_URL} (validation_behavior ${STRICT} unless s
 
 heading("1. Payloads built by this repository (these must all be accepted)");
 await repository(
-  "page_view with campaign_details, device and ip_override",
-  built(
-    "page_view",
-    {},
-    {
-      campaign: { source: "newsletter", medium: "email", campaign: "launch" },
-      ip_override: "192.0.2.1",
-    },
-  ),
+  "page_view with device and ip_override",
+  built("page_view", {}, { ip_override: "192.0.2.1" }),
 );
 await repository(
   "purchase with an item",
