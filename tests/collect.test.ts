@@ -141,13 +141,34 @@ it("click IDs reach Google only with ad_storage and ad_user_data", async () => {
     expect(dl.searchParams.get("gclid")).toBe("abc123");
     expect(dl.searchParams.get("wbraid")).toBe("w1");
     expect(dl.searchParams.get("utm_source")).toBe("news");
-    await post("/e", event({ click_ids, consent: analyticsOnly }));
-    expect(String(urls()[1])).not.toContain("abc123");
-    await post("/e", event({ click_ids, consent: { ...all, ad_user_data: "denied" } }));
-    expect(String(urls()[2])).not.toContain("abc123");
   } finally {
     await app.close();
   }
+  for (const consent of [analyticsOnly, { ...all, ad_user_data: "denied" }]) {
+    // A fresh visitor, so this is the hit that would carry the click ID.
+    const fresh = setup();
+    try {
+      await fresh.post("/e", event({ click_ids, consent }));
+      expect(fresh.urls()[0]!.pathname).toBe("/g/collect");
+      expect(String(fresh.urls()[0])).not.toContain("abc123");
+    } finally {
+      await fresh.app.close();
+    }
+  }
+});
+
+it("a refusal after a silent denial still names the requests on their way", async () => {
+  const { tracker, sent, wait } = client();
+  tracker.update(all);
+  await wait(0);
+  tracker.update({ analytics_storage: "denied" }, 0, true);
+  tracker.update({});
+  tracker.update({ analytics_storage: "denied" }, 0, true);
+  await wait(0);
+  const withdrawals = sent().filter((item) => item.path === "/p");
+  expect(withdrawals.length).toBeGreaterThan(1);
+  for (const item of withdrawals)
+    expect(item.body.client_id).toBe(sent().find((hit) => hit.path === "/e")!.body.client_id);
 });
 
 it("an ad click inside a running session is kept without starting a session", async () => {
@@ -718,4 +739,33 @@ it("waiting behind a retried page view does not spin the page", async () => {
   const before = reads;
   await new Promise((resolve) => setTimeout(resolve, 5));
   expect(reads - before).toBeLessThan(20);
+});
+
+it("a restored page reads consent before it sends the page view", async () => {
+  const refused = client();
+  refused.tracker.update(all);
+  await refused.wait(0);
+  refused.tracker.page(() => refused.tracker.update({ analytics_storage: "denied" }));
+  await refused.wait(0);
+  expect(refused.sent().filter((item) => item.path === "/e")).toHaveLength(1);
+  const granted = client();
+  granted.tracker.update({ analytics_storage: "denied" });
+  await granted.wait(0);
+  granted.tracker.page(() => granted.tracker.update(all));
+  await granted.wait(0);
+  expect(granted.sent().filter((item) => item.path === "/e")).toHaveLength(1);
+});
+
+it("the server cleans URLs itself, for a request that skipped the tracker", async () => {
+  const { app, post, google } = setup();
+  try {
+    const page_location = "https://alice:password@shop.example/a?token=PRIVATE&utm_source=x#frag";
+    await post("/e", event({ name: "generate_lead", params: { page_location } }));
+    const body = String(google.mock.calls[1]![1]!.body);
+    for (const secret of ["alice", "password", "PRIVATE", "frag"])
+      expect(body).not.toContain(secret);
+    expect(body).toContain("utm_source=x");
+  } finally {
+    await app.close();
+  }
 });

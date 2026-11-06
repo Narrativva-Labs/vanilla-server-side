@@ -25,6 +25,32 @@ it("the browser entry reads and writes no storage and stops after a real denial"
   expect(p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(["/e", "/p"]);
   expect(p.cookieReads()).toBe(0);
 });
+const flushAsync = async () => {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+};
+it("a page restored from the back/forward cache sends a page view", async () => {
+  const p = page([["consent", "update", { analytics_storage: "granted" }]]);
+  await flushAsync();
+  const before = p.fetcher.mock.calls.length;
+  p.host.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+  (p.host.setInterval.mock.calls[0]![0] as () => void)();
+  await flushAsync();
+  expect(p.fetcher.mock.calls.length).toBe(before + 1);
+  expect(JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]!.body)).name).toBe("page_view");
+});
+it("a restored page and its popstate send one page view", async () => {
+  const p = page([["consent", "update", { analytics_storage: "granted" }]]);
+  await flushAsync();
+  p.host.history.pushState({}, "", "https://shop.example/b");
+  await flushAsync();
+  const before = p.fetcher.mock.calls.length;
+  p.host.location.href = "https://shop.example/a";
+  p.host.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+  p.host.dispatchEvent(new Event("popstate"));
+  (p.host.setInterval.mock.calls[0]![0] as () => void)();
+  await flushAsync();
+  expect(p.fetcher.mock.calls.length).toBe(before + 1);
+});
 it("a historical consent sequence stops collection on denial", () => {
   const p = page([
     ["consent", "default", { analytics_storage: "granted" }],

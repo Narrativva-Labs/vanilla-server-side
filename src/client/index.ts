@@ -124,6 +124,12 @@ if (script && !win.__vanillaGA) {
     };
   }
   window.addEventListener("popstate", navigate);
+  // A page restored from the back/forward cache runs no script again.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    lastPage = location.href;
+    tracker.page(sync);
+  });
   window.addEventListener("pagehide", () => {
     tracker.exit();
   });

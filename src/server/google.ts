@@ -9,6 +9,7 @@ import {
   intersect,
   canTrack,
   clickConsent,
+  cleanUrls,
   normalizeConsent,
   redactAds,
   sanitizeUrl,
@@ -115,8 +116,9 @@ export function buildGoogleRequest(
     return undefined;
   }
   // Click IDs are not a documented MP attribution mechanism. Remove them even from URLs.
+  // URLs are cleaned here too: a request does not have to come from the tracker.
   const params = validateParams({
-    ...(redactAds(event.params) as Record<string, unknown>),
+    ...(cleanUrls(redactAds(event.params)) as Record<string, unknown>),
     session_id: event.session_id,
   });
   const url = new URL(`https://${host(destination)}/mp/collect`);

@@ -81,6 +81,7 @@ If the regular property already imports the same conversion, set this one as sec
 - **Content blockers.** Getting past them is a side benefit, not the purpose of this project. A neutral random subdomain and neutral paths lower the chance of a filter list match, but guarantee nothing: first-party does not mean unblockable. In one run, uBlock Origin Lite with default lists did not stop the tracker. Consent rules stay the same: no event is sent without consent, and a refusal stops regular measurement, apart from the limited ping. [Details](docs/technical-overview.md#content-blockers)
 - **Bots.** A short User-Agent filter stops obvious ones. Anything that claims to be a browser passes.
 - **No cross-domain identity, durable queue or backfill.** If your server is down, its events are lost; the regular tag is unaffected.
+- **Each open tab keeps its own consent state** until it reloads, so a refusal in one tab does not stop a second open tab at once.
 - **HTTP 2xx proves delivery only.** Google [does not report errors](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) on the live endpoint.
 - **No legal guarantee.** Choose consent behavior and disclosures that fit your site.
 
@@ -92,7 +93,7 @@ If the regular property already imports the same conversion, set this one as sec
 - [Cookie banners](docs/cookie-banners.md): what consent banners really send
 - [Design decisions](docs/decisions.md): each decision with its alternative and source
 
-For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `npm run verify:mp` checks real payloads against Google's validation server and sends nothing to reports.
+For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `tests/fuzz.test.ts` runs random sequences against rules that must always hold. `npm run verify:mp` checks real payloads against Google's validation server and sends nothing to reports.
 
 Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a security issue? See [SECURITY.md](SECURITY.md).
 

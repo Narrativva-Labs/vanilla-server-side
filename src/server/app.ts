@@ -47,7 +47,12 @@ export function createApp(
   >();
   // Sessions being opened right now. A parallel event waits for the result instead of
   // opening the session again or confirming one that has not opened.
-  const opening = new Map<string, Promise<boolean>>();
+  const opening = new Map<string, Promise<ReturnType<typeof serverIdentity> | undefined>>();
+  // Sessions opened in the last minute, for a request that left with the older cookie.
+  const recent = new Map<
+    string,
+    { expires: number; identity: ReturnType<typeof serverIdentity> }
+  >();
   let pruned = 0;
   const prune = () => {
     if (Date.now() - pruned < 1000) return;
@@ -56,8 +61,8 @@ export function createApp(
     for (const [id, expires] of seen) if (expires <= Date.now()) seen.delete(id);
     for (const [key, expires] of activeBrowsers)
       if (expires <= Date.now()) activeBrowsers.delete(key);
-    for (const [key, value] of initialIdentities)
-      if (value.expires <= Date.now()) initialIdentities.delete(key);
+    for (const map of [initialIdentities, recent])
+      for (const [key, value] of map) if (value.expires <= Date.now()) map.delete(key);
   };
   const timer = setInterval(() => {
     prune();
@@ -72,6 +77,7 @@ export function createApp(
     activeBrowsers.clear();
     initialIdentities.clear();
     opening.clear();
+    recent.clear();
     limiter.clear();
   });
   const status = { sent: 0, errors: 0, botsFiltered: 0, lastSuccess: null as string | null };
@@ -263,29 +269,34 @@ export function createApp(
         const remembered = hasCookie ? undefined : initialIdentities.get(browserKey)?.identity;
         const earlier =
           remembered && Date.now() - remembered.started < SESSION_LIMIT_MS ? remembered : undefined;
-        const identity = earlier ?? serverIdentity(config, req.headers.cookie);
+        let identity = earlier ?? serverIdentity(config, req.headers.cookie);
         if (!hasCookie)
           remember(initialIdentities, browserKey, { identity, expires: Date.now() + 60_000 });
         if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey))
           return reply.code(204).send();
+        const clicked =
+          event.name === "page_view" && event.click_ids && clickConsent(event.consent);
+        const withdrawn = () => isRevoked("server:" + identity.clientId) || isRevoked(browserKey);
+        const fresh = identity.newSession ? recent.get(identity.clientId) : undefined;
+        if (fresh && fresh.expires > Date.now()) identity = fresh.identity;
+        // One wait only, so a Google outage cannot hold this request and its rate limit slot.
+        const running = identity.newSession ? opening.get(identity.clientId) : undefined;
+        if (running) {
+          // The opener's session, whose ID can differ from the one worked out for this request.
+          identity = (await running) ?? identity;
+          const answeredMeanwhile = duplicate();
+          if (answeredMeanwhile) return await answeredMeanwhile;
+        }
+        // Nothing goes out in a session that is not open: the tracker retries this event.
+        if (identity.newSession && opening.has(identity.clientId)) return reply.code(503).send();
         event.client_id = identity.clientId;
         event.session_id = identity.sessionId;
         event.session_started_ms = Math.min(identity.started, event.timestamp_ms);
         event.session_expires_ms = event.timestamp_ms + 30 * 60 * 1000;
         event.ip_override = req.ip;
-        const clicked =
-          event.name === "page_view" && event.click_ids && clickConsent(event.consent);
-        const withdrawn = () => isRevoked("server:" + identity.clientId) || isRevoked(browserKey);
-        // One wait only, so a Google outage cannot hold this request and its rate limit slot.
-        const running = identity.newSession ? opening.get(identity.clientId) : undefined;
-        if (running) {
-          if (await running) identity.newSession = identity.newClient = false;
-          const answeredMeanwhile = duplicate();
-          if (answeredMeanwhile) return await answeredMeanwhile;
-        }
-        const starting = identity.newSession && !opening.has(identity.clientId);
+        const starting = identity.newSession;
         let opened = false;
-        let finishOpening = (_opened: boolean) => {};
+        let finishOpening = (_identity?: typeof identity) => {};
         if (starting)
           opening.set(
             identity.clientId,
@@ -309,6 +320,7 @@ export function createApp(
                   opened = true;
                   // A browser that keeps no cookie must not open a new session with every event.
                   identity.newSession = identity.newClient = false;
+                  remember(recent, identity.clientId, { identity, expires: Date.now() + 60_000 });
                 },
               }
             : undefined,
@@ -321,7 +333,7 @@ export function createApp(
           inFlight.delete(event.event_id);
           if (starting) {
             opening.delete(identity.clientId);
-            finishOpening(opened);
+            finishOpening(opened ? identity : undefined);
           }
         }
         // Decided here, last, so a withdrawal during delivery always wins.

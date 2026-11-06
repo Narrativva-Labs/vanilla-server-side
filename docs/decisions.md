@@ -30,7 +30,7 @@ Each decision names the alternative, the reason and the source. Source labels ar
 
 **Alternative:** a server-side store keyed by a random ID, or a browser-readable cookie.
 
-**Why:** no store to run, back up or secure on a small VPS, and no visitor table to hold. `HttpOnly` keeps the value out of page scripts. The server decides when identity starts. The costs: state is signed, not encrypted; concurrent tabs can race; revocation and the first-request bridge are process-local and end with a restart. A database and locking would conflict with the intended deployment.
+**Why:** no store to run, back up or secure on a small VPS, and no visitor table to hold. `HttpOnly` keeps the value out of page scripts. The server decides when identity starts. The costs: state is signed, not encrypted; concurrent tabs can race; revocation and the first-request bridge are process-local and end with a restart. A database and locking would conflict with the intended deployment. The price: what the server holds in memory, recent withdrawals and event IDs for deduplication, is lost on a restart, so a retry across a restart can duplicate an event.
 
 **Source:** Tested 2026-11-05: `tests/parallel.test.ts`, `tests/consent-races-and-validation.test.ts`.
 

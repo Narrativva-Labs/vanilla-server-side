@@ -76,3 +76,36 @@ test("a SPA navigation sends one page view", async ({ demo, page }) => {
   expect(demo.toGoogle("page_view")).toBe(3);
   expect(demo.sent().filter(({ name }) => name === "page_view")).toHaveLength(3);
 });
+
+for (const [name, failure] of [
+  ["errors", { status: 503 }],
+  ["a slow answer", { status: 204, delay: 1500 }],
+] as const)
+  test(`a collector with ${name} does not block the page`, async ({ demo, page }) => {
+    await demo.open();
+    await page.route("**/e", async (route) => {
+      if ("delay" in failure) await new Promise((done) => setTimeout(done, failure.delay));
+      await route.fulfill({ status: failure.status });
+    });
+    await page.getByRole("button", { name: "Accept" }).click();
+    await page.getByRole("button", { name: "generate_lead" }).click();
+    await page.getByRole("button", { name: "purchase" }).click();
+    // The longest gap between timer ticks shows whether the main thread stayed free.
+    const longest = await page.evaluate(
+      () =>
+        new Promise<number>((done) => {
+          let last = performance.now();
+          let worst = 0;
+          const timer = setInterval(() => {
+            const now = performance.now();
+            worst = Math.max(worst, now - last);
+            last = now;
+          }, 20);
+          setTimeout(() => {
+            clearInterval(timer);
+            done(worst);
+          }, 3500);
+        }),
+    );
+    expect(longest).toBeLessThan(500);
+  });

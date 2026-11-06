@@ -55,6 +55,8 @@ export function createTracker(
     clicks?: Record<string, string>;
   }[] = [];
   let memory: { clientId: string; sessionId: number; started: number; last: number } | undefined;
+  // Survives a denial: a later refusal must still name the requests already on their way.
+  let lastClient: string | undefined;
   let flushing = false;
   let resolving = false;
   let generation = 0;
@@ -83,7 +85,7 @@ export function createTracker(
       active.forEach((controller) => controller.abort());
       active.clear();
       waiting.length = 0;
-      const withdrawnClient = memory?.clientId;
+      const withdrawnClient = lastClient;
       memory = undefined;
       if (explicitDenial || withdrawal)
         void runtime
@@ -174,6 +176,7 @@ export function createTracker(
       last: timestamp,
     });
     id.last = timestamp;
+    lastClient = id.clientId;
     const transaction =
       name === "purchase" && typeof params.transaction_id === "string"
         ? params.transaction_id
@@ -388,11 +391,15 @@ export function createTracker(
         true,
       );
     },
-    page() {
+    /** `refresh` reads the current consent first, for a page that was frozen for a while. */
+    page(refresh?: () => void) {
       pageSent = false;
-      pageScheduled = false;
       pagePinged = false;
       pingAt = 0;
+      // Set during the refresh, so a grant found there does not send its own page view.
+      pageScheduled = true;
+      refresh?.();
+      pageScheduled = false;
       if (canTrack(consent)) {
         pageScheduled = true;
         track("page_view", {}, true);

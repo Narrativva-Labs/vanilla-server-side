@@ -546,3 +546,15 @@ it("the consent warning stays for an unresolved regional default without a recog
   warningTimer(p);
   expect(p.warnings).toHaveBeenCalledWith(consentWarning);
 });
+it("a page restored from the back/forward cache reads the banner before it measures", async () => {
+  const p = page();
+  const state: { choice: Choice } = { choice: "granted" };
+  banners.CookieYes(p, state);
+  poll(p);
+  await settle();
+  expect(paths(p)).toEqual(["/e"]);
+  state.choice = "denied";
+  p.host.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
+  await settle();
+  expect(paths(p).filter((path) => path === "/e")).toHaveLength(1);
+});
