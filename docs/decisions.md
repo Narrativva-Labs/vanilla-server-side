@@ -6,11 +6,11 @@ Each decision names the alternative, the reason and the source. Source labels ar
 
 ## /g/collect opens a session, Measurement Protocol carries the rest
 
-**Decision:** the first page view of a session goes only through `/g/collect`. Every other event goes through the documented Measurement Protocol, with the API secret held on the server. A session opened by another event, for example after 30 idle minutes, gets a short `/g/collect` hit first and its data follow through MP.
+**Decision:** the first page view of a session goes only through `/g/collect`. Other events go through the documented Measurement Protocol, with the API secret held on the server. There are two exceptions: a session opened by another event, for example after 30 idle minutes, gets a short `/g/collect` hit first and its data follow through MP, and a page view with a click ID inside a running session goes through `/g/collect` without starting a session.
 
 **Alternative:** Measurement Protocol only, which this project started with. Or `/g/collect` for everything, as [ga4mp](https://github.com/analytics-debugger/ga4mp) and the [Zaraz GA4 component](https://github.com/managed-components/google-analytics-4) do.
 
-**Why:** MP alone did not work for acquisition. All 70 test sessions showed source `(not set)` and 0 new users, including the ones sent with `campaign_details`. `/g/collect` produced `session_start` and `first_visit` at once, which MP refuses as reserved names. It is not a public contract, so it is used as little as possible: one hit per session, with a small fixed set of fields. Ecommerce and custom events stay on the path that has a [reference](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) and a [validator](https://developers.google.com/analytics/devguides/collection/protocol/ga4/validating-events).
+**Why:** MP alone did not work for acquisition. All 70 test sessions showed source `(not set)` and 0 new users, including the ones sent with `campaign_details`. `/g/collect` produced `session_start` and `first_visit` at once, which MP refuses as reserved names. It is not a public contract, so it is used as little as possible: usually one hit per session, with a small fixed set of fields. Ecommerce and custom events stay on the path that has a [reference](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) and a [validator](https://developers.google.com/analytics/devguides/collection/protocol/ga4/validating-events).
 
 **Source:** Tested 2026-11-06, [notes](measurement-protocol-notes.md#gcollect).
 
@@ -36,7 +36,7 @@ Each decision names the alternative, the reason and the source. Source labels ar
 
 Safari capped the cookie at 7 days in one measured run: Safari 26.6.2 stored 7.0 days for the server-set cookie with the tracker on a different IPv4 /16 from the website. Tested 2026-11-05, one run. Keeping the identity through renewal on return, and avoiding the cap with a same-origin proxy: Not verified. See [Safari](technical-overview.md#safari) and [WebKit](https://webkit.org/blog/15697/private-browsing-2-0/).
 
-A same-origin reverse proxy can serve `/kx7qpa/s.js` and strip `/kx7qpa/` before forwarding: the tracker resolves `e` and `p` relative to its script URL, `SITE_ORIGIN` must match the website origin, and `COOKIE_DOMAIN` must cover the website host. Tested 2026-11-05: `tests/path-proxy.test.ts`.
+A same-origin reverse proxy can serve `/kx7qpa/s.js` and strip `/kx7qpa/` before forwarding: the tracker resolves `e`, `p` and `d` relative to its script URL, `SITE_ORIGIN` must match the website origin, and `COOKIE_DOMAIN` must cover the website host. Tested 2026-11-05: `tests/path-proxy.test.ts`.
 
 ## Unknown is not denied
 
@@ -62,13 +62,13 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 ## Anonymous pings without consent
 
-**Decision:** a page that stays denied for 2 seconds sends one `/g/collect` hit with `gcs=G100`, a one-off ID, no cookie, no visitor IP and no click IDs.
+**Decision:** a page that stays denied for 2 seconds sends one `/g/collect` hit with its real consent state, `gcs=G100` when both storages are denied, a one-off ID, no cookie, no visitor IP and no click IDs.
 
 **Alternative:** send nothing, which is what this project did first. Or send at once, as the Google tag does.
 
 **Why:** this is the shape of a cookieless ping in Advanced Consent Mode, seen in a captured Google tag hit. The Google tag sends its hit at once and no second `page_view` after a grant. Vanilla sends its full page view only after a grant, so sending at once would leave a refusal behind on each page load of a visitor whose banner restores a grant a moment later. The 2 seconds avoid that. A visitor who refuses and leaves within 2 seconds is not pinged, and one who accepts after 2 seconds leaves a ping as well as the full page view.
 
-**Source:** Tested 2026-11-06, `tests/collect.test.ts`, [notes](measurement-protocol-notes.md#gcollect). Effect on reports and modeling: Not verified. Google's [behavioral modeling](https://support.google.com/analytics/answer/11161109) needs at least 1,000 denied events a day for 7 days and 1,000 daily granted users, and it describes Google tags on the page, so a small site should expect no effect.
+**Source:** Tested 2026-11-06, `tests/collect.test.ts`, [notes](measurement-protocol-notes.md#gcollect). Effect on reports and modeling: Not verified. Google's [behavioral modeling](https://support.google.com/analytics/answer/11161109) needs at least 1,000 denied events a day for 7 days and 1,000 daily granted users, and it describes Google tags on the page, so a small site should expect no effect. That is why `DENIED_PINGS=off` turns the ping off: it follows the Google tag's behavior by default, and whether it is worth having depends on the site.
 
 ## Retries, against Google's advice
 
@@ -76,7 +76,7 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 **Alternative:** follow the [reference](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) to the letter: "If you don't get a `2xx` status code, correct any errors in your HTTP request. Don't retry the same request." Or go the other way with a durable queue.
 
-**Why:** a short network failure should not lose a purchase, and a durable queue would bring back the storage this design avoids. The trade is real: a timeout or 5xx can happen after Google accepted the data, so a retry can duplicate an event. Short-lived server deduplication by event ID cannot see Google's state, so this is not exactly-once delivery. A new session is confirmed in the cookie only after success, so `campaign_details` is still present on a retry.
+**Why:** a short network failure should not lose a purchase, and a durable queue would bring back the storage this design avoids. The trade is real: a timeout or 5xx can happen after Google accepted the data, so a retry can duplicate an event. Short-lived server deduplication by event ID cannot see Google's state, so this is not exactly-once delivery. A session counts as open once `/g/collect` answered 2xx: the cookie goes out then, even if the Measurement Protocol half fails, so a retry repeats only the event. Events wait behind a page view that is being retried, because it may be the one opening the session.
 
 **Source:** Google docs. Tested 2026-11-05: `tests/mp-contract.test.ts`, `tests/delivery-and-privacy.test.ts`.
 
@@ -92,7 +92,7 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 ## Device fields
 
-**Decision:** `device.model` and `device.browser` are always sent with `device`, with fallbacks. The raw User-Agent is not transmitted.
+**Decision:** `device.model` and `device.browser` are always sent with `device`, with fallbacks. Measurement Protocol requests carry no raw User-Agent. The `/g/collect` hit does, as a browser's own hit would, in the HTTP header.
 
 **Alternative:** send only `category`, as the reference recommends as a minimum, or use the `user_agent` field.
 
@@ -116,7 +116,7 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 **Alternative:** a descriptive name such as an analytics subdomain, or a vendor domain.
 
-**Why:** the main purpose of this project is control over data and consent. Fewer blocked requests are a side benefit, not the reason it exists. Neutral names lower the chance of a filter list match. They guarantee nothing, and first-party does not mean unblockable. A blocker does not overrule the visitor's decision in the cookie banner: nothing is sent without consent, and a refusal stops collection. Simo Ahava disagrees with this approach; see [content blockers](technical-overview.md#content-blockers).
+**Why:** the main purpose of this project is control over data and consent. Fewer blocked requests are a side benefit, not the reason it exists. Neutral names lower the chance of a filter list match. They guarantee nothing, and first-party does not mean unblockable. A blocker does not overrule the visitor's decision in the cookie banner: no event is sent without consent, and a refusal stops collection. Simo Ahava disagrees with this approach; see [content blockers](technical-overview.md#content-blockers).
 
 **Source:** Tested 2026-11-05, one run with uBlock Origin Lite: [notes](measurement-protocol-notes.md#browser-checks). Other blockers: Not verified.
 

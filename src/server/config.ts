@@ -15,6 +15,9 @@ export function configFromEnv(env = process.env) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");
   const region = env.GA4_REGION || undefined;
   if (region !== undefined && region !== "eu") throw new Error("GA4_REGION must be eu or unset");
+  const deniedPings = env.DENIED_PINGS || "on";
+  if (deniedPings !== "on" && deniedPings !== "off")
+    throw new Error("DENIED_PINGS must be on or off");
   const cookieSecret = env.COOKIE_SECRET ?? "";
   if (cookieSecret.length < 32 || cookieSecret.startsWith("replace-"))
     throw new Error("COOKIE_SECRET must contain at least 32 characters");
@@ -31,6 +34,7 @@ export function configFromEnv(env = process.env) {
     throw new Error("Invalid TRACKED_EVENTS (page_view is managed automatically)");
   return {
     region: region as "eu" | undefined,
+    deniedPings: deniedPings === "on",
     allowedEvents,
     cookieSecret,
     cookieDomain,

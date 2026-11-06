@@ -2,7 +2,7 @@
 
 **[Install it](INSTALL.md)** | **[Understand how it works](docs/technical-overview.md)**
 
-A small, self-hosted analytics collector by František Bujnovský. Your regular Google Analytics stays exactly as it is. Next to it, a tiny script sends events to your own server, and your server forwards them to a **second, separate** Google Analytics property. One `/g/collect` hit opens each session, the same transport the Google tag uses, and the documented Measurement Protocol carries everything else.
+A small, self-hosted analytics collector by František Bujnovský. Your regular Google Analytics stays exactly as it is. Next to it, a tiny script sends events to your own server, and your server forwards them to a **second, separate** Google Analytics property. A `/g/collect` hit opens each session, the same transport the Google tag uses, and the documented Measurement Protocol carries almost everything else.
 
 You get a second measurement under your own control: a signed cookie set by your server, a consent check on your server, and the Google API secret kept off the website. The server checks the consent state the browser reports and cannot confirm it independently, and the data still ends up in Google Analytics. It runs on a small VPS with no database. MIT licensed.
 
@@ -35,7 +35,7 @@ Then add the one script tag the installer prints:
 
 ## Try it first
 
-No account and no server. It needs Node 22.12 or 24, and after `npm ci` it runs offline.
+No account and no server. It needs Node 22.12, 24 or 26, and after `npm ci` it runs offline.
 
 ```sh
 npm ci
@@ -51,11 +51,11 @@ Open http://localhost:3210. The page has a small consent bar (accept, reject, wi
 | Analytics granted | Send |
 | No decision yet, no consent signal | Hold in memory for up to 2 seconds, then drop |
 | No decision yet, `default` or `update` denied | No events. One anonymous ping per page |
-| Analytics denied | Stop, clear the queue, delete the cookie. One anonymous ping per page |
+| Analytics denied | Stop, clear the queue, delete the cookie. One anonymous ping per page, unless consent already measured that page |
 
-After consent the identity is a random ID in a signed server cookie, the one first-party `HttpOnly` cookie this project stores, and the visitor IP is passed to Google for geography. Before consent there is no cookie and no event is sent.
+After consent the identity is a random ID in a signed server cookie, the one first-party `HttpOnly` cookie this project stores, and the visitor IP is passed to Google for geography. Without consent there is no cookie and no regular event is sent, only one limited ping when the state is denied.
 
-A page that stays denied for 2 seconds sends one ping, the way the Google tag does in [Advanced Consent Mode](https://developers.google.com/tag-platform/security/concepts/consent-mode): a one-off ID, no cookie, no visitor IP and no click IDs, with the denied state in `gcs` and `gcd`. It carries the cleaned page URL, referrer, title, language, screen size and browser name. Disclose this on your site. Whether a ping changes any report: Not verified.
+A page that stays denied for 2 seconds sends that ping, the way the Google tag does in [Advanced Consent Mode](https://developers.google.com/tag-platform/security/concepts/consent-mode): a one-off ID, no cookie, no visitor IP and no click IDs, with the denied state in `gcs` and `gcd`. It carries the cleaned page URL, referrer, title, language, screen size and the browser's `User-Agent` header. Disclose this on your site, or set `DENIED_PINGS=off`. Whether a ping changes any report: Not verified.
 
 Supported out of the box:
 
@@ -71,7 +71,7 @@ The tracker reads these banners by itself, without integration code, and a decid
 
 The server talks only to Google Analytics. Google Ads reaches the data the usual way: link the second property to Ads and import its key events as conversions. For that, the landing page's `gclid`, `gbraid` or `wbraid` goes to Google in the first hit, and only when `ad_storage` and `ad_user_data` are both granted. Without them the click ID stays in the browser.
 
-If the regular property already imports the same conversion, set this one as secondary, or it counts twice. A conversion credited to a real ad click: Not verified yet.
+If the regular property already imports the same conversion, set this one as secondary, or it counts twice. A conversion credited to a real ad click: Not verified yet. Steps are in [INSTALL.md](INSTALL.md#optional-import-conversions-into-google-ads).
 
 ## Limits
 
@@ -92,6 +92,8 @@ If the regular property already imports the same conversion, set this one as sec
 - [Cookie banners](docs/cookie-banners.md): what consent banners really send
 - [Design decisions](docs/decisions.md): each decision with its alternative and source
 
-For development on Node 24: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `npm run verify:mp` checks real payloads against Google's validation server and sends nothing to reports.
+For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `npm run verify:mp` checks real payloads against Google's validation server and sends nothing to reports.
 
-Found a security issue? See [SECURITY.md](SECURITY.md).
+Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a security issue? See [SECURITY.md](SECURITY.md).
+
+Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).

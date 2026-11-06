@@ -54,7 +54,7 @@ The one runtime dependency is Fastify. There is no database.
 4. The tracker posts JSON to `/e`, resolved relative to the script URL, so a same-origin path proxy works.
 5. The collector checks origin and content type, the [bot filter](#bot-filter), consent, the event allowlist, freshness and rate limits. The consent check reads the state the browser reports; the server cannot confirm it independently.
 6. It replaces the browser's temporary identity with the signed server identity and adds the visitor IP.
-7. The first page view of a session goes to `/g/collect` with `_ss`, `_fv` for a new visitor, `_uip` and the click IDs, and to nothing else. A page view with a click ID inside a running session goes there too, without `_ss`. A session opened by another event sends a `page_engagement` hit to `/g/collect`, then the event itself.
+7. The first page view of a session goes to `/g/collect` with `_ss`, `_fv` for a new visitor, `_uip` and the click IDs, and to nothing else. A page view with a click ID inside a running session goes there too, without `_ss`. A session opened by another event sends a `page_engagement` hit to `/g/collect`, then the event itself, unless consent was withdrawn in between. Parallel events open a session once. The tracker's requests send no `Referer`, so a same-origin proxy does not receive the landing URL with its click ID that way.
 8. Everything else goes through `buildGoogleRequest`, which applies the limits and sends one MP request.
 9. The cookie is set or renewed only after Google answered 2xx.
 
@@ -92,7 +92,7 @@ Each purpose has three states, and the tracker works from `analytics_storage`:
 | --- | --- | --- |
 | `unknown` | No signal, or an undecided banner with no Google state | Events wait in memory for up to 2 seconds, then are dropped. Nothing is sent and no cookie is set |
 | `granted` | The visitor agreed | Send |
-| `denied` | Default or refusal | Stop and clear the queues. After 2 seconds in this state, one anonymous ping to `/d` per page |
+| `denied` | Default or refusal | Stop and clear the queues. After 2 seconds in this state, one anonymous ping to `/d` per page, unless consent already measured that page |
 
 | From | Signal | To | Side effect |
 | --- | --- | --- | --- |

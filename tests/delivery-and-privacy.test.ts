@@ -40,7 +40,12 @@ it("a regrant sends one new page view and external page views are ignored", asyn
 for (const original of ["denied", "granted"] as const)
   it(`ad updates preserve retry and never expand ${original} original permissions`, async () => {
     let now = Date.now();
-    const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 503 }));
+    const fetcher = vi.fn<typeof fetch>(
+      async (_url, init) =>
+        new Response(null, {
+          status: JSON.parse(String(init!.body)).name === "purchase" ? 503 : 204,
+        }),
+    );
     const tracker = createTracker(
       "https://kx7qpa.example.com/e",
       {
@@ -60,7 +65,7 @@ for (const original of ["denied", "granted"] as const)
     });
     tracker.track("purchase", { transaction_id: "keep" });
     await settle();
-    expect(tracker.pending()).toBe(2);
+    expect(tracker.pending()).toBe(1);
     tracker.update({
       ...granted,
       ad_user_data: "denied",
@@ -71,11 +76,11 @@ for (const original of ["denied", "granted"] as const)
       ad_user_data: "granted",
       ad_personalization: "granted",
     });
-    expect(tracker.pending()).toBe(2);
+    expect(tracker.pending()).toBe(1);
     now += 2000;
     await tracker.flush();
-    expect(fetcher).toHaveBeenCalledTimes(4);
-    const retry = JSON.parse(String(fetcher.mock.calls[3]![1]!.body));
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    const retry = JSON.parse(String(fetcher.mock.calls[2]![1]!.body));
     expect(retry.consent.ad_user_data).toBe("denied");
     expect(retry.consent.ad_personalization).toBe("denied");
     tracker.update(denied);

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createApp } from "../src/server/app.js";
+import { createApp, remember } from "../src/server/app.js";
 import { createTracker } from "../src/client/tracker.js";
 import { buildCollectUrl } from "../src/server/google.js";
 import { normalizeConsent } from "../src/shared/consent.js";
@@ -313,4 +313,220 @@ it("an undecided visitor and a withdrawal on a measured page send no ping", asyn
   withdrawn.tracker.update({ analytics_storage: "denied" });
   await withdrawn.wait(5000);
   expect(withdrawn.sent().map((item) => item.path)).toEqual(["/e", "/p"]);
+});
+
+it("a withdrawal during session opening stops the Measurement Protocol request", async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const started = new Promise<void>((resolve) => (entered = resolve));
+  const paths: string[] = [];
+  const google = vi.fn<typeof fetch>(async (url) => {
+    const { pathname } = new URL(String(url));
+    paths.push(pathname);
+    if (pathname === "/g/collect") {
+      entered();
+      await gate;
+    }
+    return new Response(null, { status: 204 });
+  });
+  const app = createApp(config, google);
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const headers = { origin: config.siteOrigin };
+  try {
+    const pending = app.inject({
+      method: "POST",
+      url: "/e",
+      headers,
+      payload: event({ name: "purchase" }),
+    });
+    await started;
+    await app.inject({ method: "POST", url: "/p", headers, payload: { client_id: "123.456" } });
+    release();
+    const reply = await pending;
+    expect(paths).toEqual(["/g/collect"]);
+    expect(reply.headers["set-cookie"]).toBeUndefined();
+  } finally {
+    log.mockRestore();
+    await app.close();
+  }
+});
+
+it("a withdrawal deletes the cookie even after the rate limit is used up", async () => {
+  const { app, post } = setup();
+  try {
+    let limited = 0;
+    for (let i = 0; i < 301; i++) if ((await post("/e", event())).statusCode === 429) limited++;
+    expect(limited).toBe(1);
+    const reply = await post("/p", {});
+    expect(reply.statusCode).toBe(204);
+    expect(String(reply.headers["set-cookie"])).toContain("Max-Age=0");
+  } finally {
+    await app.close();
+  }
+});
+
+it("a click ID in the page title reaches Google in no ping", async () => {
+  const { app, post, urls } = setup();
+  try {
+    await post("/d", ping({ page_title: "Not found: /a?gclid=secret&x=1" }));
+    expect(urls()[0]!.searchParams.get("dt")).not.toContain("secret");
+  } finally {
+    await app.close();
+  }
+  const title = client();
+  title.tracker.update({ analytics_storage: "denied" });
+  await title.wait(2000);
+  expect(title.sent()[0]!.init.referrerPolicy).toBe("no-referrer");
+});
+
+it("a failed measurement request after an open session does not open it again", async () => {
+  const google = vi.fn<typeof fetch>(
+    async (url) =>
+      new Response(null, { status: String(url).includes("/mp/") && !retried() ? 503 : 204 }),
+  );
+  let attempts = 0;
+  const retried = () => attempts++ > 0;
+  const app = createApp(config, google);
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const headers = { origin: config.siteOrigin };
+  try {
+    const payload = event({ name: "purchase" });
+    const first = await app.inject({ method: "POST", url: "/e", headers, payload });
+    expect(first.statusCode).toBe(503);
+    const cookie = String(first.headers["set-cookie"]);
+    expect(cookie).toContain("vanilla_session=");
+    const second = await app.inject({
+      method: "POST",
+      url: "/e",
+      headers: { ...headers, cookie },
+      payload,
+    });
+    expect(second.statusCode).toBe(204);
+    expect(google.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
+      "/g/collect",
+      "/mp/collect",
+      "/mp/collect",
+    ]);
+  } finally {
+    log.mockRestore();
+    await app.close();
+  }
+});
+
+it("parallel events open a session once and answer with one cookie", async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const started = new Promise<void>((resolve) => (entered = resolve));
+  const urls: URL[] = [];
+  const google = vi.fn<typeof fetch>(async (input) => {
+    const url = new URL(String(input));
+    urls.push(url);
+    if (url.pathname === "/g/collect") {
+      entered();
+      await gate;
+    }
+    return new Response(null, { status: 204 });
+  });
+  const app = createApp(config, google);
+  const post = () =>
+    app.inject({
+      method: "POST",
+      url: "/e",
+      headers: { origin: config.siteOrigin },
+      payload: event(),
+    });
+  try {
+    const first = post();
+    await started;
+    const second = await post();
+    release();
+    const replies = [await first, second];
+    expect(urls.map((url) => url.pathname)).toEqual(["/g/collect", "/mp/collect"]);
+    expect(urls.filter((url) => url.searchParams.get("_ss") === "1")).toHaveLength(1);
+    for (const reply of replies) expect(typeof reply.headers["set-cookie"]).toBe("string");
+  } finally {
+    await app.close();
+  }
+});
+
+it("events wait behind a page view that is being retried", async () => {
+  let now = 1_800_000_000_000;
+  const names: string[] = [];
+  let failures = 1;
+  const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+    names.push(JSON.parse(String(init!.body)).name);
+    return new Response(null, { status: failures-- > 0 ? 503 : 204 });
+  });
+  const tracker = createTracker(
+    "https://kx7qpa.example.com/e",
+    {
+      now: () => now,
+      uuid: () => crypto.randomUUID(),
+      href: () => "https://shop.example/",
+      referrer: () => "",
+      warn: () => {},
+      fetch: fetcher,
+    },
+    new Set(["generate_lead"]),
+  );
+  tracker.update(all);
+  tracker.track("generate_lead");
+  await tracker.flush();
+  await tracker.flush();
+  expect(names).toEqual(["page_view"]);
+  now += 1000;
+  await tracker.flush();
+  await tracker.flush();
+  expect(names).toEqual(["page_view", "page_view", "generate_lead"]);
+});
+
+it("visitor maps drop their oldest entry at the limit", () => {
+  const map = new Map<string, number>();
+  for (let i = 0; i < 5; i++) remember(map, String(i), i, 3);
+  expect([...map.keys()]).toEqual(["2", "3", "4"]);
+  remember(map, "4", 9, 3);
+  expect(map.size).toBe(3);
+});
+
+it("DENIED_PINGS=off stops the ping in the tracker and on the server", async () => {
+  const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+  // The built server, because /s.js is served from the build output.
+  const built = "../dist/server/app.js";
+  const { createApp: createBuilt } = (await import(built)) as { createApp: typeof createApp };
+  const app = createBuilt({ ...config, deniedPings: false }, google);
+  try {
+    const reply = await app.inject({
+      method: "POST",
+      url: "/d",
+      headers: { origin: config.siteOrigin },
+      payload: ping(),
+    });
+    expect(reply.statusCode).toBe(204);
+    expect(google).not.toHaveBeenCalled();
+    expect((await app.inject("/s.js")).body).toContain('dataset.pings="off"');
+  } finally {
+    await app.close();
+  }
+  let now = 1_800_000_000_000;
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+  const tracker = createTracker(
+    "https://kx7qpa.example.com/e",
+    {
+      now: () => now,
+      uuid: () => crypto.randomUUID(),
+      href: () => "https://shop.example/",
+      referrer: () => "",
+      warn: () => {},
+      fetch: fetcher,
+    },
+    new Set(),
+    false,
+    false,
+  );
+  tracker.update({ analytics_storage: "denied" });
+  now += 5000;
+  await tracker.flush();
+  expect(fetcher).not.toHaveBeenCalled();
 });

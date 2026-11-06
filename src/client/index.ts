@@ -49,6 +49,7 @@ if (script && !win.__vanillaGA) {
     },
     new Set((script.dataset.events ?? "").split(",")),
     true,
+    script.dataset.pings !== "off",
   );
   const observer = createConsentObserver();
   const adapters = [

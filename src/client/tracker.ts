@@ -35,6 +35,7 @@ export function createTracker(
   runtime: Runtime,
   allowed: ReadonlySet<string>,
   deferDelivery = false,
+  pings = true,
 ) {
   let consent = consentSnapshot(null);
   const purchases = new Set<string>();
@@ -90,6 +91,7 @@ export function createTracker(
             method: "POST",
             credentials: "include",
             keepalive: true,
+            referrerPolicy: "no-referrer",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ client_id: withdrawnClient }),
           })
@@ -212,6 +214,7 @@ export function createTracker(
             method: "POST",
             credentials: "include",
             keepalive: true,
+            referrerPolicy: "no-referrer",
             headers: { "Content-Type": "application/json" },
             body,
           })
@@ -237,7 +240,7 @@ export function createTracker(
   }
   /** One anonymous page ping without analytics consent, as Google tag does in Advanced Consent Mode. */
   function ping() {
-    if (consent.analytics_storage !== "denied") {
+    if (!pings || consent.analytics_storage !== "denied") {
       pingAt = 0;
       return;
     }
@@ -251,12 +254,13 @@ export function createTracker(
         method: "POST",
         credentials: "omit",
         keepalive: true,
+        referrerPolicy: "no-referrer",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           consent,
           page_location: shortenBytes(sanitizeUrl(runtime.href()), PING_URL_BYTES),
           page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PING_URL_BYTES),
-          page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
+          page_title: shortenBytes(redactAds(runtime.title?.() ?? "") as string, PAGE_TEXT_BYTES),
           language: device?.language,
           screen_resolution: device?.screen_resolution,
         }),
@@ -301,7 +305,11 @@ export function createTracker(
           queue.splice(queue.indexOf(item), 1);
           continue;
         }
-        if (item.next > now) continue;
+        if (item.next > now) {
+          // Events wait behind a page view, which may be the one opening the session.
+          if (item.event.name === "page_view") break;
+          continue;
+        }
         const effective = intersect(item.event.consent, consent);
         if (!canTrack(effective)) {
           queue.splice(queue.indexOf(item), 1);
@@ -322,6 +330,7 @@ export function createTracker(
             method: "POST",
             credentials: "include",
             keepalive: true,
+            referrerPolicy: "no-referrer",
             headers: { "Content-Type": "application/json" },
             body,
             signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
@@ -341,6 +350,7 @@ export function createTracker(
         if (retry) {
           item.attempts++;
           item.next = runtime.now() + item.attempts * 1000;
+          if (item.event.name === "page_view") break;
         } else queue.splice(queue.indexOf(item), 1);
       }
     } finally {

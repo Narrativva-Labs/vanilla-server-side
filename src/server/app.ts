@@ -8,8 +8,13 @@ import { consentSnapshot, canTrack, clickConsent, jsonSnapshot } from "../shared
 import { DEFAULT_EVENTS } from "../shared/settings.js";
 import { timely, type TrackingEvent } from "../shared/event.js";
 import { sendGoogle, sendDeniedPing, type DeniedPing, type Destination } from "./google.js";
+/** Oldest entries go first, so no map of visitor state can outgrow its limit. */
+export function remember<T>(map: Map<string, T>, key: string, value: T, limit = 10000) {
+  if (map.size >= limit && !map.has(key)) map.delete(map.keys().next().value!);
+  map.set(key, value);
+}
 export function createApp(
-  config: Destination & CookieConfig & { allowedEvents?: string[] },
+  config: Destination & CookieConfig & { allowedEvents?: string[]; deniedPings?: boolean },
   fetcher: typeof fetch = fetch,
 ) {
   const app = Fastify({
@@ -21,13 +26,11 @@ export function createApp(
     requestTimeout: 10000,
   });
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));
+  const pings = config.deniedPings !== false;
   const limiter = createRateLimit();
   // Longer than the bounded Google request timeout; never retain visitor data in logs.
   const revoked = new Map<string, number>();
-  const revoke = (key: string) => {
-    if (revoked.size >= 10000 && !revoked.has(key)) revoked.delete(revoked.keys().next().value!);
-    revoked.set(key, Date.now() + 60000);
-  };
+  const revoke = (key: string) => remember(revoked, key, Date.now() + 60000);
   const isRevoked = (key: string) => (revoked.get(key) ?? 0) > Date.now();
   const seen = new Map<string, number>();
   const inFlight = new Map<string, Promise<"sent" | "retry" | "dropped">>();
@@ -36,7 +39,12 @@ export function createApp(
     string,
     { expires: number; identity: ReturnType<typeof serverIdentity> }
   >();
+  // Sessions being opened right now, so a parallel event does not open the same one again.
+  const opening = new Set<string>();
+  let pruned = 0;
   const prune = () => {
+    if (Date.now() - pruned < 1000) return;
+    pruned = Date.now();
     for (const [key, expires] of revoked) if (expires <= Date.now()) revoked.delete(key);
     for (const [id, expires] of seen) if (expires <= Date.now()) seen.delete(id);
     for (const [key, expires] of activeBrowsers)
@@ -53,6 +61,7 @@ export function createApp(
     revoked.clear();
     activeBrowsers.clear();
     initialIdentities.clear();
+    opening.clear();
     limiter.clear();
   });
   const status = { sent: 0, errors: 0, botsFiltered: 0, lastSuccess: null as string | null };
@@ -66,7 +75,7 @@ export function createApp(
       .type("text/javascript")
       .header("Cache-Control", "public, max-age=300")
       .send(
-        `document.currentScript.dataset.events=${JSON.stringify([...allowed].join(","))};\n${source}`,
+        `document.currentScript.dataset.events=${JSON.stringify([...allowed].join(","))};document.currentScript.dataset.pings=${JSON.stringify(pings ? "on" : "off")};\n${source}`,
       );
   });
   app.addHook("onRequest", async (req, reply) => {
@@ -94,23 +103,18 @@ export function createApp(
       .header("Vary", "Origin");
   });
   app.post<{ Body: { client_id?: string } }>("/p", async (req, reply) => {
-    const release = limiter.claim(req.ip);
-    if (!release) return reply.code(429).send({ error: "rate_limit" });
-    try {
-      prune();
-      if (req.headers.cookie?.includes(`${COOKIE_NAME}=`))
-        revoke("server:" + serverIdentity(config, req.headers.cookie).clientId);
-      if (
-        typeof req.body?.client_id === "string" &&
-        /^\d{1,20}\.\d{1,20}$/.test(req.body.client_id) &&
-        activeBrowsers.has(req.body.client_id)
-      )
-        revoke("browser:" + req.body.client_id);
-      reply.header("Set-Cookie", cookieHeader(config, "", true));
-      return reply.code(204).send();
-    } finally {
-      release();
-    }
+    // Withdrawal calls no one and is never rate limited: the cookie must always go.
+    prune();
+    if (req.headers.cookie?.includes(`${COOKIE_NAME}=`))
+      revoke("server:" + serverIdentity(config, req.headers.cookie).clientId);
+    if (
+      typeof req.body?.client_id === "string" &&
+      /^\d{1,20}\.\d{1,20}$/.test(req.body.client_id) &&
+      activeBrowsers.has(req.body.client_id)
+    )
+      revoke("browser:" + req.body.client_id);
+    reply.header("Set-Cookie", cookieHeader(config, "", true));
+    return reply.code(204).send();
   });
   app.post<{ Body: DeniedPing }>(
     "/d",
@@ -132,6 +136,7 @@ export function createApp(
       },
     },
     async (req, reply) => {
+      if (!pings) return reply.code(204).send();
       if (isObviousBot(req.headers["user-agent"])) {
         status.botsFiltered++;
         return reply.code(204).send();
@@ -234,7 +239,7 @@ export function createApp(
         prune();
         if (seen.has(event.event_id)) return reply.code(204).send();
         const browserKey = "browser:" + event.client_id;
-        activeBrowsers.set(event.client_id, Date.now() + 60 * 60 * 1000);
+        remember(activeBrowsers, event.client_id, Date.now() + 60 * 60 * 1000);
         const pending = inFlight.get(event.event_id);
         if (pending) {
           const result = await pending;
@@ -244,7 +249,7 @@ export function createApp(
         const earlier = hasCookie ? undefined : initialIdentities.get(browserKey)?.identity;
         const identity = earlier ?? serverIdentity(config, req.headers.cookie);
         if (!hasCookie)
-          initialIdentities.set(browserKey, { identity, expires: Date.now() + 60_000 });
+          remember(initialIdentities, browserKey, { identity, expires: Date.now() + 60_000 });
         if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey))
           return reply.code(204).send();
         event.client_id = identity.clientId;
@@ -254,17 +259,30 @@ export function createApp(
         event.ip_override = req.ip;
         const clicked =
           event.name === "page_view" && event.click_ids && clickConsent(event.consent);
+        const withdrawn = () => isRevoked("server:" + identity.clientId) || isRevoked(browserKey);
+        // Fastify appends Set-Cookie, and an opened session sets it before the final answer.
+        const keepCookie = () => {
+          if (!withdrawn() && !reply.hasHeader("set-cookie"))
+            reply.header("Set-Cookie", identity.cookie);
+        };
+        const starting = identity.newSession && !opening.has(identity.clientId);
+        if (starting) opening.add(identity.clientId);
         const delivery = sendGoogle(
           config,
           event,
-          () => event.consent,
+          () => (withdrawn() ? consentSnapshot(null) : event.consent),
           new AbortController().signal,
           fetcher,
-          identity.newSession || clicked
+          starting || clicked
             ? {
-                sessionStart: identity.newSession,
-                firstVisit: identity.newClient,
+                sessionStart: starting,
+                firstVisit: starting && identity.newClient,
                 userAgent: req.headers["user-agent"],
+                opened() {
+                  // A browser that keeps no cookie must not open a new session with every event.
+                  identity.newSession = identity.newClient = false;
+                  keepCookie();
+                },
               }
             : undefined,
         );
@@ -274,18 +292,14 @@ export function createApp(
           result = await delivery;
         } finally {
           inFlight.delete(event.event_id);
+          if (starting) opening.delete(identity.clientId);
         }
-        if (result !== "retry") {
-          if (seen.size >= 10000) seen.delete(seen.keys().next().value!);
-          seen.set(event.event_id, Date.now() + 60_000);
-        }
+        if (result !== "retry") remember(seen, event.event_id, Date.now() + 60_000);
         if (result === "sent") {
           status.sent++;
           status.lastSuccess = new Date().toISOString();
-          // A browser that keeps no cookie must not open a new session with every event.
           identity.newSession = identity.newClient = false;
-          if (!isRevoked("server:" + identity.clientId) && !isRevoked(browserKey))
-            reply.header("Set-Cookie", identity.cookie);
+          keepCookie();
         } else {
           status.errors++;
           console.error("Google delivery failed", { outcome: result });

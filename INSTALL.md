@@ -61,11 +61,25 @@ The installer uses root or sudo. It supports Ubuntu and Debian, installs Docker 
 3. Measurement ID from the second property.
 4. Measurement Protocol API secret.
 
-The tracker waits for analytics permission: without it no event is sent and no cookie is set. A page that stays denied sends one anonymous ping, described in the [README](README.md#consent). Choose and disclose the appropriate behavior for your site.
+The tracker waits for analytics permission: without it no event is sent and no cookie is set. A page that stays denied sends one anonymous ping, described in the [README](README.md#consent). To turn it off, set `DENIED_PINGS=off` in .env and rebuild as described below. Choose and disclose the appropriate behavior for your site.
 
 To send through Google's [EU collection endpoint](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), set `GA4_REGION=eu` in .env after installation and rebuild as described below. Leave it empty for the default endpoint.
 
 The tracker sends page views, final engagement time and the events named in `TRACKED_EVENTS`. Without that setting it uses the list in [.env.example](.env.example): common ecommerce events plus `generate_lead`, `sign_up`, `login` and `search`. To change it, set `TRACKED_EVENTS` in .env to a comma-separated list, which replaces the default, and rebuild as described below. Other events are ignored. `page_view` is automatic and must not be listed.
+
+Vanilla reads events straight from `dataLayer`, not from your GTM tags. An event must already carry its final GA4 name and parameters there: if the site pushes `order_complete` and a GTM tag renames it to `purchase`, the regular property gets a purchase and Vanilla gets nothing. A working example:
+
+```js
+dataLayer.push({
+  event: "purchase",
+  ecommerce: {
+    transaction_id: "1001",
+    value: 1250,
+    currency: "CZK",
+    items: [{ item_id: "sku-1", item_name: "Book", price: 1250, quantity: 1 }],
+  },
+});
+```
 
 The installer generates a signing secret, writes .env with owner-only permissions, checks DNS, starts the services and waits up to three minutes for HTTPS, including health request timeouts. Caddy obtains and renews certificates. Rerunning preserves .env. For manual changes, run sudo nano .env then sudo docker compose up -d --build. Never share or commit .env.
 
@@ -110,7 +124,7 @@ After denial the tracker requests deletion of its cookie and clears pending anal
 
 ## 7. Verify
 
-Open https://kx7qpa.example.com/health. It should show ok, Google delivery counters and `botsFiltered`. Before consent, counters should not increase due to your visit and no vanilla_session cookie should be set. Accept analytics, navigate pages and send a test ecommerce event if available. Inspect the HttpOnly cookie in browser developer tools under Storage/Application; JavaScript cannot read it. Withdraw consent and verify deletion.
+Open https://kx7qpa.example.com/health. It should show ok, Google delivery counters and `botsFiltered`. With no consent signal at all, counters should not increase and no vanilla_session cookie should be set. With consent denied, which is the usual banner default, one anonymous ping per page raises `sent` after 2 seconds, and still no vanilla_session cookie is set. Accept analytics, navigate pages and send a test ecommerce event if available. Inspect the HttpOnly cookie in browser developer tools under Storage/Application; JavaScript cannot read it. Withdraw consent and verify deletion.
 
 In the **second property**, open Reports -> Realtime. Then use DebugView with a temporary event carrying debug_mode:
 
@@ -119,6 +133,26 @@ dataLayer.push({ event: "generate_lead", debug_mode: true });
 ```
 
 Send that only after the required consent, remove debug flags after testing, and check development/internal traffic filters if events are missing. Use an ordinary browser for this test: headless browsers and tools such as Lighthouse identify themselves in their User-Agent and are filtered as bots. campaign_details itself does not appear in DebugView. Ordinary reports take longer than Realtime and MP reporting is partial. A successful /health delivery counter proves only Google's HTTP acceptance.
+
+## Optional: import conversions into Google Ads
+
+This needs a Google Ads account and an ad click with both `ad_storage` and `ad_user_data` granted, so your banner must send them. A conversion credited to a real ad click: Not verified yet.
+
+1. In the **second property**, open Admin -> Events and mark the event you want as a key event.
+2. In Google Ads, keep auto-tagging on, so that clicks carry `gclid`.
+3. In the **second property**, open Admin -> Product links -> Google Ads links and link your Ads account. Do not link the regular property for this.
+4. After the event has been collected, import it in Google Ads under Goals -> Conversions -> New conversion action -> Import -> Google Analytics.
+5. If the regular property already imports the same conversion, set this one as secondary, or it counts twice.
+
+Update your privacy text first: Google's role differs between Analytics and Ads, as Google's [list of services](https://business.safety.google/adsservices/) shows.
+
+## What to disclose
+
+Use this as a factual base for your privacy text, not as legal advice.
+
+- **With analytics consent:** your server stores the `vanilla_session` cookie and receives the events. Google receives them with the visitor's IP address and `User-Agent`.
+- **With ad consent too:** Google also receives `gclid`, `gbraid` or `wbraid` from the landing page.
+- **Without consent:** after 2 seconds your server receives one request per page, and Google receives one ping with a one-off ID, the cleaned URL, referrer, title, language, screen size and `User-Agent`. Google does not get the visitor's IP address from this ping. No cookie is set.
 
 ## If something fails
 

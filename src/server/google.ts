@@ -1,7 +1,7 @@
 /**
- * All Google wire-format decisions live here. /g/collect opens a session, because only that
- * transport produces session source, new users and Ads click attribution. Measurement Protocol
- * carries everything else, because it is documented and it can be validated.
+ * All Google wire-format decisions live here. /g/collect opens a session, because Measurement
+ * Protocol alone gave no session source and no new users in tests, and it is what carries click
+ * IDs. Measurement Protocol carries the rest, because it is documented and it can be validated.
  */
 import { randomInt } from "node:crypto";
 import { validateParams, validEventName } from "./mp-validation.js";
@@ -26,6 +26,8 @@ export interface Opening {
   sessionStart: boolean;
   firstVisit: boolean;
   userAgent?: string;
+  /** The session is open at Google: a retry of this event must not open it again. */
+  opened?(): void;
 }
 export interface DeniedPing {
   consent: Consent;
@@ -85,7 +87,7 @@ export function buildCollectUrl(destination: Destination, hit: CollectHit) {
     en: hit.name,
     dl: landingUrl(hit.location, hit.clicks),
     dr: shortenBytes(sanitizeUrl(text(hit.referrer)), COLLECT_URL_BYTES),
-    dt: shortenBytes(text(hit.title), COLLECT_TITLE_BYTES),
+    dt: shortenBytes(redactAds(text(hit.title)) as string, COLLECT_TITLE_BYTES),
     ul: hit.language?.toLowerCase(),
     sr: hit.screen,
     _uip: hit.ip,
@@ -192,7 +194,10 @@ export async function sendGoogle(
       firstVisit: opening.firstVisit,
     });
     const delivery = await post(url, { headers: browser(opening.userAgent) }, signal, fetcher);
+    if (delivery === "sent") opening.opened?.();
     if (delivery !== "sent" || pageView) return delivery;
+    // Consent may have been withdrawn while the first request was on its way.
+    if (!canTrack(getCurrent())) return "dropped";
   }
   return post(
     request.url,
