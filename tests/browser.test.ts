@@ -1,4 +1,5 @@
-import { it, expect } from "vitest";
+import { sanitizeUrl } from "../src/shared/consent.js";
+import { it, expect, vi } from "vitest";
 import { page } from "./browser-fixture.js";
 it("accepts gtag Arguments and preserves the original dataLayer", async () => {
   const p = page([["consent", "update", { analytics_storage: "granted" }]]);
@@ -50,6 +51,41 @@ it("a restored page and its popstate send one page view", async () => {
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   await flushAsync();
   expect(p.fetcher.mock.calls.length).toBe(before + 1);
+});
+it("a SPA page reports the previous page as referrer and closes its time first", async () => {
+  vi.useFakeTimers();
+  try {
+    const p = page([["consent", "update", { analytics_storage: "granted" }]]);
+    await flushAsync();
+    const start = p.host.location.href;
+    vi.advanceTimersByTime(5000);
+    p.host.history.pushState({}, "", "https://shop.example/b");
+    (p.host.setInterval.mock.calls[0]![0] as () => void)();
+    await flushAsync();
+    const sent = p.fetcher.mock.calls.map(([, init]) => JSON.parse(String(init!.body)));
+    const closing = sent.find((event) => event.name === "page_engagement");
+    const next = sent.filter((event) => event.name === "page_view").at(-1);
+    expect(closing.params.page_location).toBe(sanitizeUrl(start));
+    expect(closing.params.engagement_time_msec).toBeGreaterThan(0);
+    expect(next.params.page_location).toContain("/b");
+    expect(next.params.page_referrer).toBe(sanitizeUrl(start));
+    expect(next.params.engagement_time_msec).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it("a page visited without consent is not reported as a referrer", async () => {
+  const p = page([["consent", "update", { analytics_storage: "denied" }]]);
+  await flushAsync();
+  p.host.history.pushState({}, "", "https://shop.example/private");
+  p.host.history.pushState({}, "", "https://shop.example/public");
+  p.command("consent", "update", { analytics_storage: "granted" });
+  await flushAsync();
+  const sent = p.fetcher.mock.calls
+    .filter(([url]) => String(url).endsWith("/e"))
+    .map(([, init]) => JSON.parse(String(init!.body)));
+  expect(sent.at(-1).params.page_location).toContain("/public");
+  expect(JSON.stringify(sent)).not.toContain("private");
 });
 it("a historical consent sequence stops collection on denial", () => {
   const p = page([

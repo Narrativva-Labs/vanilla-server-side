@@ -4,6 +4,10 @@
 
 A small, self-hosted analytics collector by František Bujnovský. Your regular Google Analytics stays exactly as it is. Next to it, a tiny script sends events to your own server, and your server forwards them to a **second, separate** Google Analytics property. A `/g/collect` hit opens each session, the same transport the Google tag uses, and the documented Measurement Protocol carries almost everything else.
 
+It measures for Google Analytics only and sends nothing to Meta or other platforms.
+
+Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).
+
 You get a second measurement under your own control: a signed cookie set by your server, a consent check on your server, and the Google API secret kept off the website. The server checks the consent state the browser reports and cannot confirm it independently, and the data still ends up in Google Analytics. It runs on a small VPS with no database. MIT licensed.
 
 ```text
@@ -32,6 +36,8 @@ Then add the one script tag the installer prints:
 ```html
 <script defer src="https://kx7qpa.example.com/s.js"></script>
 ```
+
+Page views then work by themselves. Other events are read from `dataLayer`, not from GTM tags, so they must already carry their GA4 names and parameters there.
 
 ## Try it first
 
@@ -96,5 +102,3 @@ If the regular property already imports the same conversion, set this one as sec
 For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `tests/fuzz.test.ts` runs random sequences against rules that must always hold. `npm run verify:mp` checks real payloads against Google's validation server and sends nothing to reports.
 
 Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a security issue? See [SECURITY.md](SECURITY.md).
-
-Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).

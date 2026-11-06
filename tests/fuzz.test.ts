@@ -94,6 +94,7 @@ async function scenario(seed: number) {
   const app = createApp(config, google);
   let cookie = "";
   let withdrawnAt = 0;
+  let withdrawals = 0;
   let started = 0;
   let lastEvent = 0;
   let decided = false;
@@ -102,7 +103,10 @@ async function scenario(seed: number) {
     const { pathname } = new URL(String(input));
     const payload = JSON.parse(String(init?.body ?? "{}"));
     const order = ++started;
-    trace(`SEND ${pathname} ${payload.name ?? ""} cookie=${cookie ? "yes" : "no"}`);
+    if (pathname === "/p") withdrawals++;
+    trace(
+      `SEND ${pathname} ${payload.name ?? ""} id=${payload.client_id} cookie=${cookie ? "yes" : "no"}`,
+    );
     if (pathname === "/e") {
       quiet = false;
       lastEvent = order;
@@ -115,6 +119,8 @@ async function scenario(seed: number) {
       problem("click ID in a ping request");
     open++;
     try {
+      // The network can deliver requests out of order, a withdrawal before an earlier event.
+      for (let i = rand() < 0.3 ? 1 + Math.floor(rand() * 5) : 0; i > 0; i--) await turn();
       const reply = await app.inject({
         method: "POST",
         url: pathname,
@@ -136,8 +142,10 @@ async function scenario(seed: number) {
       if (pathname === "/d" && header) problem("cookie from a ping");
       if (pathname === "/p") {
         cookie = "";
-        quiet = lastEvent < order;
-        withdrawnAt = order;
+        // Only once every withdrawal has arrived: until then the server cannot know.
+        withdrawals--;
+        quiet = withdrawals === 0 && lastEvent < order;
+        if (withdrawals === 0) withdrawnAt = order;
       } else if (header) {
         if (order < withdrawnAt) problem("cookie restored after withdrawal");
         else cookie = String(header).split(";")[0]!;

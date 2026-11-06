@@ -11,6 +11,7 @@ import {
 } from "../shared/consent.js";
 import {
   PAGE_TEXT_BYTES,
+  SESSION_LIMIT_MS,
   SESSION_MS,
   shortenBytes,
   timely,
@@ -64,8 +65,10 @@ export function createTracker(
   const active = new Set<AbortController>();
   function update(value: unknown, waitMs = 0, explicitDenial = false) {
     const next = consentSnapshot(value);
+    // Also through an unknown state in between: requests of this visitor may be on their way.
     const withdrawal =
-      consent.analytics_storage === "granted" && next.analytics_storage === "denied";
+      (consent.analytics_storage === "granted" || memory !== undefined) &&
+      next.analytics_storage === "denied";
     waitUntil = runtime.now() + Math.min(2000, Math.max(0, waitMs));
     if (waitMs > 0) {
       for (const item of waiting) item.deadline = Math.min(item.deadline, waitUntil);
@@ -164,7 +167,7 @@ export function createTracker(
     const now = runtime.now();
     if (
       memory &&
-      (timestamp - memory.last >= SESSION_MS || timestamp - memory.started >= 24 * 60 * 60 * 1000)
+      (timestamp - memory.last >= SESSION_MS || timestamp - memory.started >= SESSION_LIMIT_MS)
     ) {
       memory.sessionId = parseInt(runtime.uuid().replace(/-/g, "").slice(0, 12), 16);
       memory.started = timestamp;
@@ -374,13 +377,22 @@ export function createTracker(
     update,
     track: (name: string, params?: Record<string, unknown>) => track(name, params),
     flush,
-    exit(elapsed = runtime.engagement?.() ?? 0) {
+    /** Closes the time of a page left by SPA navigation. An expired session is left to the new page. */
+    leave(page: string) {
+      const now = runtime.now();
+      if (memory && (now - memory.last >= SESSION_MS || now - memory.started >= SESSION_LIMIT_MS)) {
+        runtime.engagement?.(); // That time belonged to the old session and is dropped with it.
+        return;
+      }
+      this.exit(undefined, page);
+    },
+    exit(elapsed = runtime.engagement?.() ?? 0, page = runtime.href()) {
       if (!deliveryReady || !canTrack(consent) || runtime.now() < waitUntil || elapsed <= 0) return;
       // Fixed automatic fields only: custom ecommerce data cannot inflate the exit request.
       enqueue(
         "page_engagement",
         {
-          page_location: shortenBytes(sanitizeUrl(runtime.href()), PAGE_TEXT_BYTES),
+          page_location: shortenBytes(sanitizeUrl(page), PAGE_TEXT_BYTES),
           page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PAGE_TEXT_BYTES),
           page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
           engagement_time_msec: Math.max(0, Math.round(elapsed)),

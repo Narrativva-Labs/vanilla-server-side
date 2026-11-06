@@ -1,6 +1,6 @@
 # Install Vanilla Server-Side
 
-By František Bujnovský. You need a domain, access to its DNS settings and a Google Analytics account. The software is free; you pay your chosen server provider. Each website operator runs their own server.
+By František Bujnovský. You need a domain, access to its DNS settings and a Google Analytics account. The software is free; you pay your chosen server provider. For scale: Hetzner lists [cloud servers](https://www.hetzner.com/cloud/) from € 5.99 a month without VAT, read on 2026-11-06. The install script took about 100 seconds on a clean test machine in CI, without DNS waiting. How long a first setup takes a beginner: Not verified. Each website operator runs their own server.
 
 Want to see it working first? `npm ci && npm run demo` runs everything locally with no account. See the [README](README.md#try-it-first). For how it works, see the [technical overview](docs/technical-overview.md).
 
@@ -96,6 +96,20 @@ Copy the script tag printed by the installer into your website's head or your CM
 ```
 
 Replace the example domain. If the site has a Content Security Policy, allow your tracker origin in script-src and connect-src. Keep your existing GTM and regular analytics tag unchanged.
+
+### WordPress
+
+Theme files are replaced by updates, so use a header code plugin instead, for example [WPCode](https://wordpress.org/plugins/insert-headers-and-footers/), and paste the tag into its header box.
+
+### Check your purchase event
+
+Place a test order. On the thank-you page, open the browser console and run:
+
+```js
+dataLayer.filter((item) => item.event === "purchase");
+```
+
+You should see one item with `transaction_id`, `value`, `currency` and `items`, directly or inside `ecommerce`. If it is missing or has another name, Vanilla will not measure it, even when the regular property shows the order. That needs a change on the site or in its plugin, not in Vanilla.
 
 ## Connect your consent banner
 

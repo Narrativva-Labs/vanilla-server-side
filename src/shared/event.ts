@@ -1,5 +1,7 @@
 import type { Consent } from "./consent.js";
 export const SESSION_MS = 30 * 60 * 1000;
+// Matches Google's window for session attribution.
+export const SESSION_LIMIT_MS = 24 * 60 * 60 * 1000;
 export const MAX_EVENT_AGE_MS = 72 * 60 * 60 * 1000;
 // Measured with npm run verify:mp: the validation server allows 256 UTF-8 bytes for these fields.
 export const PAGE_TEXT_BYTES = 256;

@@ -1,18 +1,12 @@
 import { validEventName } from "./mp-validation.js";
-import {
-  COOKIE_NAME,
-  SESSION_LIMIT_MS,
-  cookieHeader,
-  serverIdentity,
-  type CookieConfig,
-} from "./identity.js";
+import { COOKIE_NAME, cookieHeader, serverIdentity, type CookieConfig } from "./identity.js";
 import { isObviousBot } from "./bots.js";
 import { createRateLimit } from "./rate-limit.js";
 import Fastify from "fastify";
 import { readFile } from "node:fs/promises";
 import { consentSnapshot, canTrack, clickConsent, jsonSnapshot } from "../shared/consent.js";
 import { DEFAULT_EVENTS } from "../shared/settings.js";
-import { timely, type TrackingEvent } from "../shared/event.js";
+import { SESSION_LIMIT_MS, timely, type TrackingEvent } from "../shared/event.js";
 import { sendGoogle, sendDeniedPing, type DeniedPing, type Destination } from "./google.js";
 /** Oldest entries go first, so no map of visitor state can outgrow its limit. */
 export function remember<T>(map: Map<string, T>, key: string, value: T, limit = 10000) {
@@ -40,7 +34,6 @@ export function createApp(
   const isRevoked = (key: string) => (revoked.get(key) ?? 0) > Date.now();
   const seen = new Map<string, number>();
   const inFlight = new Map<string, Promise<"sent" | "retry" | "dropped">>();
-  const activeBrowsers = new Map<string, number>();
   const initialIdentities = new Map<
     string,
     { expires: number; identity: ReturnType<typeof serverIdentity> }
@@ -59,8 +52,6 @@ export function createApp(
     pruned = Date.now();
     for (const [key, expires] of revoked) if (expires <= Date.now()) revoked.delete(key);
     for (const [id, expires] of seen) if (expires <= Date.now()) seen.delete(id);
-    for (const [key, expires] of activeBrowsers)
-      if (expires <= Date.now()) activeBrowsers.delete(key);
     for (const map of [initialIdentities, recent])
       for (const [key, value] of map) if (value.expires <= Date.now()) map.delete(key);
   };
@@ -74,7 +65,6 @@ export function createApp(
     seen.clear();
     inFlight.clear();
     revoked.clear();
-    activeBrowsers.clear();
     initialIdentities.clear();
     opening.clear();
     recent.clear();
@@ -123,11 +113,8 @@ export function createApp(
     prune();
     if (req.headers.cookie?.includes(`${COOKIE_NAME}=`))
       revoke("server:" + serverIdentity(config, req.headers.cookie).clientId);
-    if (
-      typeof req.body?.client_id === "string" &&
-      /^\d{1,20}\.\d{1,20}$/.test(req.body.client_id) &&
-      activeBrowsers.has(req.body.client_id)
-    )
+    // Stored even for an unknown ID: the event it stops may still be on its way.
+    if (typeof req.body?.client_id === "string" && /^\d{1,20}\.\d{1,20}$/.test(req.body.client_id))
       revoke("browser:" + req.body.client_id);
     reply.header("Set-Cookie", cookieHeader(config, "", true));
     return reply.code(204).send();
@@ -255,7 +242,6 @@ export function createApp(
         prune();
         if (seen.has(event.event_id)) return reply.code(204).send();
         const browserKey = "browser:" + event.client_id;
-        remember(activeBrowsers, event.client_id, Date.now() + 60 * 60 * 1000);
         // Not async: a twin must not slip in between this check and the inFlight entry below.
         const duplicate = () => {
           if (seen.has(event.event_id)) return reply.code(204).send();

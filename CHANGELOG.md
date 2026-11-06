@@ -23,6 +23,8 @@
 - A withdrawal is no longer rate limited, and it stops a request that is waiting for session opening.
 - A session also ends after 24 hours on the server, and engagement time survives a `/g/collect` hit.
 - A page restored from the back/forward cache sends a page view.
+- A SPA page reports the previous page as referrer and closes its engagement time first. Android tablets count as tablets.
+- A withdrawal is stored even when it overtakes the visitor's first event.
 - `tests/fuzz.test.ts` checks rules over random sequences, with a failing Google.
 - The maps of visitor state have a fixed size, and the tracker sends no `Referer` with its requests.
 - A page that stays denied sends one limited ping, as in Advanced Consent Mode. Update your privacy text before you upgrade.

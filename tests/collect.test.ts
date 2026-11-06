@@ -3,6 +3,7 @@ import { createApp, remember } from "../src/server/app.js";
 import { createTracker } from "../src/client/tracker.js";
 import { buildCollectUrl } from "../src/server/google.js";
 import { normalizeConsent } from "../src/shared/consent.js";
+import { deviceCategory } from "../src/client/device.js";
 
 afterEach(() => vi.useRealTimers());
 const config = {
@@ -768,4 +769,53 @@ it("the server cleans URLs itself, for a request that skipped the tracker", asyn
   } finally {
     await app.close();
   }
+});
+
+it("a withdrawal that overtakes the first event still stops it", async () => {
+  const { app, post, urls } = setup();
+  try {
+    await post("/p", { client_id: "123.456" });
+    const reply = await post("/e", event());
+    expect(urls()).toEqual([]);
+    expect(reply.headers["set-cookie"]).toBeUndefined();
+  } finally {
+    await app.close();
+  }
+});
+
+it("device categories include tablets", () => {
+  const android = "Mozilla/5.0 (Linux; Android 14; SM-X710) Chrome/140.0 Safari/537.36";
+  expect(deviceCategory(android)).toBe("tablet");
+  expect(deviceCategory(android.replace("Safari", "Mobile Safari"))).toBe("mobile");
+  expect(deviceCategory("Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X)")).toBe("tablet");
+  expect(deviceCategory("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0) Mobile/15E148")).toBe("mobile");
+  expect(deviceCategory("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")).toBe("desktop");
+  expect(deviceCategory("Mozilla/5.0 (Windows NT 10.0; Tablet PC 2.0)")).toBe("desktop");
+  expect(deviceCategory("Mozilla/5.0 (Linux; Android 12; BRAVIA 4K GB ATV3)")).not.toBe("tablet");
+});
+
+it("a measured visitor who goes through unknown to denied is withdrawn", async () => {
+  const { tracker, sent, wait } = client();
+  tracker.update(all);
+  await wait(0);
+  tracker.update({});
+  tracker.update({ analytics_storage: "denied" });
+  await wait(0);
+  expect(sent().map((item) => item.path)).toEqual(["/e", "/p"]);
+});
+
+it("leaving a page after an expired session sends nothing for the old page", async () => {
+  const { tracker, sent, wait } = client();
+  tracker.update(all);
+  await wait(0);
+  await wait(31 * 60 * 1000);
+  tracker.leave("https://shop.example/old");
+  await wait(0);
+  expect(sent().filter((item) => item.body.name === "page_engagement")).toEqual([]);
+  tracker.page();
+  await wait(0);
+  const view = sent()
+    .filter((item) => item.body.name === "page_view")
+    .at(-1)!;
+  expect(view.body.params.engagement_time_msec).toBeLessThan(5000);
 });

@@ -1,8 +1,6 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
-import { SESSION_MS } from "../shared/event.js";
+import { SESSION_LIMIT_MS, SESSION_MS } from "../shared/event.js";
 export const COOKIE_NAME = "vanilla_session";
-// Matches the tracker and Google's window for session attribution.
-export const SESSION_LIMIT_MS = 24 * 60 * 60 * 1000;
 export interface CookieConfig {
   cookieSecret: string;
   cookieDomain?: string;

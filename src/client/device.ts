@@ -14,6 +14,12 @@ export function deviceModel(agent: string) {
   return /Mobi|Android/i.test(agent) ? "Mobile" : "Desktop";
 }
 
+/** An iPad that identifies itself as a Mac cannot be told apart and counts as desktop. */
+export function deviceCategory(agent: string) {
+  if (/iPad/i.test(agent) || (/Android/i.test(agent) && !/Mobi|TV/i.test(agent))) return "tablet";
+  return /Mobi|Android/i.test(agent) ? "mobile" : "desktop";
+}
+
 /** Browser family only; never transmit the raw user agent. Match variants before their engines. */
 export function deviceBrowser(agent: string) {
   if (/Edg(?:e|A|iOS)?\//i.test(agent)) return "Edge";

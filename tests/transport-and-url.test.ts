@@ -166,12 +166,12 @@ it("independent: regrant, external page views and changed SPA location emits a s
   p.command("event", "page_view");
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   await settle();
-  expect(p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
-    "/e",
-    "/p",
-    "/e",
-    "/e",
-  ]);
+  // The closing page_engagement depends on elapsed time, so only the rest is compared.
+  const sent = p.fetcher.mock.calls
+    .map(([url, init]) => [new URL(String(url)).pathname, JSON.parse(String(init!.body)).name])
+    .filter(([, name]) => name !== "page_engagement")
+    .map(([path]) => path);
+  expect(sent).toEqual(["/e", "/p", "/e", "/e"]);
 });
 
 it("independent: cookie collector rejects missing, unknown and denied analytics even with granted ads", async () => {

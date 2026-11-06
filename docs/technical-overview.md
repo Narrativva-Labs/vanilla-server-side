@@ -200,8 +200,8 @@ The regular tag has its own consent handling and is not affected.
 | Send `first_visit`, `session_start`, `user_engagement` | Cannot: reserved | Tested 2026-11-05, `npm run verify:mp` |
 | Show `campaign_details` in DebugView | Cannot | [Google docs](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference/events#campaign_details) |
 | Run rules that create or rename events | Cannot | [Google docs](https://developers.google.com/analytics/devguides/collection/protocol/ga4) |
-| Session source from `campaign_details` in standard reports | Cannot: 70 of 70 sessions `(not set)` | Tested 2026-11-06, [notes](measurement-protocol-notes.md#gcollect) |
-| New users | Cannot: 0 | Tested 2026-11-06, [notes](measurement-protocol-notes.md#gcollect) |
+| Session source from `campaign_details` in standard reports | Not in our test: 70 of 70 sessions `(not set)` | Tested 2026-11-06, [notes](measurement-protocol-notes.md#gcollect) |
+| New users | Not in our test: 0 | Tested 2026-11-06, [notes](measurement-protocol-notes.md#gcollect) |
 
 Where the documentation and the validator disagree, see [Measurement Protocol notes](measurement-protocol-notes.md). The main surprises: `device.model` and `device.browser` are required in strict validation although documented as optional, page fields have a measured limit of 256, and limits count UTF-8 bytes.
 

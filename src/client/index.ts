@@ -1,4 +1,4 @@
-import { deviceModel, deviceBrowser } from "./device.js";
+import { deviceCategory, deviceModel, deviceBrowser } from "./device.js";
 import { createTracker } from "./tracker.js";
 import { createConsentObserver } from "./consent.js";
 import { normalizeEventItem } from "./data-layer.js";
@@ -18,6 +18,8 @@ if (script && !win.__vanillaGA) {
   const layer = (win.dataLayer = win.dataLayer || []);
   const warn = (message: string) => console.warn(message);
   let engagementEnabled = false;
+  // After a SPA navigation the referrer is the previous virtual page, as Google asks for.
+  let previousPage: string | undefined;
   let visibleSince = 0;
   let visibleTime = 0;
   function engagement() {
@@ -35,13 +37,13 @@ if (script && !win.__vanillaGA) {
       device: () => ({
         browser: deviceBrowser(window.navigator?.userAgent ?? ""),
         model: deviceModel(window.navigator?.userAgent ?? ""),
-        category: /Mobi|Android/i.test(window.navigator?.userAgent ?? "") ? "mobile" : "desktop",
+        category: deviceCategory(window.navigator?.userAgent ?? ""),
         language: window.navigator?.language ?? "",
         screen_resolution: `${window.screen?.width ?? 0}x${window.screen?.height ?? 0}`,
       }),
       engagement,
       href: () => location.href,
-      referrer: () => document.referrer,
+      referrer: () => previousPage ?? document.referrer,
       now: Date.now,
       uuid: () => crypto.randomUUID(),
       fetch: window.fetch.bind(window),
@@ -112,6 +114,10 @@ if (script && !win.__vanillaGA) {
   let lastPage = location.href;
   const navigate = () => {
     if (location.href === lastPage) return;
+    // The time spent so far belongs to the page being left.
+    tracker.leave(lastPage);
+    // A page visited without settled consent is never reported, not even as a referrer.
+    previousPage = engagementEnabled ? lastPage : undefined;
     lastPage = location.href;
     tracker.page();
   };
@@ -128,6 +134,7 @@ if (script && !win.__vanillaGA) {
   window.addEventListener("pageshow", (event) => {
     if (!event.persisted) return;
     lastPage = location.href;
+    previousPage = undefined;
     tracker.page(sync);
   });
   window.addEventListener("pagehide", () => {
