@@ -121,12 +121,23 @@ In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, a
 
 `/g/collect` answered 204 to all of them, which proves delivery only.
 
+**What the standard reports showed.** Tested, 2026-11-06, GA4 Data API, about seven hours after the hits, so the day may still be incomplete: 11 sessions so far, against 0 usable sources in the 70 sessions sent through MP alone.
+
+| Sent | Standard report |
+| --- | --- |
+| UTM in `dl` | Session source / medium `vctest / browser`, campaign filled |
+| `utm_medium=cpc` | `vctest / cpc`, channel `Paid Other` |
+| `dr` from another site | `example.org / referral`, channel `Referral` |
+| No `dr`, no UTM | `(direct) / (none)`, channel `Direct` |
+| `dr` from Google with an invented `gclid`, no Ads link | `google / organic`, channel `Organic Search`. An invented click ID says nothing about real ad attribution |
+| `_fv=1` | New users 10 of 10 users |
+| `gcs=G100` ping | Not shown |
+
 ## Pending
 
 **Not verified yet.** These need time in standard reports, not a validator.
 
-- Session source, campaign and New users from `/g/collect`, in standard reports. The hits were sent on 2026-11-06.
-- A conversion credited to a real Google Ads click, through the link between GA4 and Ads.
+- A real Google Ads click: whether the session shows `google / cpc` and the campaign, and whether a conversion is credited through the link between GA4 and Ads.
 - Whether a denied ping appears in any report, or feeds modeling.
 - Engaged sessions, with engagement time carried by `engagement_time_msec` and `page_engagement`. The first run showed 0.
 - What the live endpoint does with over-limit text and over-limit item parameters.
