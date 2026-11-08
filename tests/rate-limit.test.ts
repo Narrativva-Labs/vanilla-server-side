@@ -30,3 +30,12 @@ it("steady traffic below the limit is never refused", () => {
   }
   held!();
 });
+it("one address holds up to 30 deliveries at once, then refuses until one finishes", () => {
+  const limit = createRateLimit();
+  const releases = Array.from({ length: 30 }, () => limit.claim("192.0.2.9"));
+  expect(releases.every(Boolean)).toBe(true);
+  expect(limit.claim("192.0.2.9")).toBeUndefined();
+  expect(limit.claim("192.0.2.10")).toBeTruthy();
+  releases[0]!();
+  expect(limit.claim("192.0.2.9")).toBeTruthy();
+});

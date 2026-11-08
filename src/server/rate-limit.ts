@@ -27,7 +27,7 @@ export function createRateLimit() {
         visitor.count = 0;
         visitor.expires = now + 60000;
       }
-      if (visitor.count >= 300 || visitor.active >= 10 || active >= 100) return undefined;
+      if (visitor.count >= 300 || visitor.active >= 30 || active >= 100) return undefined;
       visitor.count++;
       visitor.active++;
       active++;
