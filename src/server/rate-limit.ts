@@ -22,6 +22,10 @@ export function createRateLimit() {
         }
         visitor = { count: 0, active: 0, expires: now + 60000 };
         visitors.set(ip, visitor);
+      } else if (visitor.expires <= now) {
+        // A new minute starts even while a request is in flight: shared addresses are rarely idle.
+        visitor.count = 0;
+        visitor.expires = now + 60000;
       }
       if (visitor.count >= 300 || visitor.active >= 10 || active >= 100) return undefined;
       visitor.count++;
