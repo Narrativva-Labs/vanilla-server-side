@@ -288,3 +288,12 @@ it("withdrawal also blocks an initial collect response before any server cookie 
     await app.close();
   }
 });
+it("a cookie from another Vanilla server on the same parent domain does not reset the identity", () => {
+  const other = serverIdentity({ ...config, cookieSecret: "x".repeat(40) }).cookie.split(";")[0]!;
+  const own = serverIdentity(config);
+  const ownCookie = own.cookie.split(";")[0]!;
+  // Browsers send the parent-domain cookie first when it is older.
+  const again = serverIdentity(config, `${other}; ${ownCookie}`);
+  expect(again.clientId).toBe(own.clientId);
+  expect(again.newClient).toBe(false);
+});

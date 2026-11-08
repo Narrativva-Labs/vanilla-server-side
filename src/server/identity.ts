@@ -25,13 +25,15 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
     throw new Error("COOKIE_SECRET must contain at least 32 characters");
   const sign = (value: string) =>
     createHmac("sha256", config.cookieSecret).update(value).digest("base64url");
-  const raw = header
+  // Another Vanilla server on a parent or sibling domain can send a cookie with the same name.
+  // Use the first one this server signed, rather than starting a new identity on every request.
+  const candidates = header
     .split(";")
     .map((s) => s.trim())
-    .find((s) => s.startsWith(COOKIE_NAME + "="))
-    ?.slice(COOKIE_NAME.length + 1);
+    .filter((s) => s.startsWith(COOKIE_NAME + "="))
+    .map((s) => s.slice(COOKIE_NAME.length + 1));
   let state: State | undefined;
-  if (raw) {
+  for (const raw of candidates) {
     const [payload = "", signature = "", extra] = raw.split(".");
     const expected = Buffer.from(sign(payload), "base64url");
     const supplied = Buffer.from(signature, "base64url");
@@ -59,6 +61,7 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
         /* Invalid cookies start a fresh identity. */
       }
     }
+    if (state) break;
   }
   const newClient = !state;
   const newSession =
