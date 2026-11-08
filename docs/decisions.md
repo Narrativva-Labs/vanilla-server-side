@@ -46,6 +46,8 @@ A same-origin reverse proxy can serve `/kx7qpa/s.js` and strip `/kx7qpa/` before
 
 **Why:** banners send `denied` long before anyone decides: as a `default`, and in some cases as an `update` at load. A two-state model would treat every new visitor as having refused and fire deletion logic for them. The script cannot resolve a regional default by itself; only an update or a decided banner does. Conservative still holds: `unknown` sends nothing.
 
+Events pushed before the decision wait in memory and go out only after a grant, with the advertising permission they had when they happened. A refusal discards them, and so does leaving the page. Before 2026-11-08 they waited 2 seconds and a `denied` default dropped them at once. The demo shop then showed the cost: `view_item_list` on the landing page reached GA4 through Google Tag Manager in 4 of 4 visits and reached Vanilla in none, because the visitor clicked the banner after the list was pushed. A visitor landing from an ad straight on a product page would lose `view_item` the same way. Tested 2026-11-08, `tests/pre-consent.test.ts` and the GA4 Data API by campaign.
+
 Google state does not always win. A decided banner beats every `default`, because some banners send no `update` after the click. Between a banner and an `update` the newest decision wins, and the banner's first read at load does not count as new. See the [consent state machine](technical-overview.md#consent-state-machine).
 
 **Source:** Live checks in [cookie banners](cookie-banners.md), 2026-11-05. Tested 2026-11-05: `tests/browser.test.ts`, `tests/cmp-adapters.test.ts`.

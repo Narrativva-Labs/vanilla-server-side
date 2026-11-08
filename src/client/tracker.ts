@@ -46,6 +46,8 @@ export function createTracker(
   let pingAt = 0;
   let deliveryReady = !deferDelivery;
   let waitUntil = 0;
+  // False while analytics is denied only by a default: events then wait for the visitor's choice.
+  let settled = true;
   const waiting: {
     name: string;
     params: Record<string, unknown>;
@@ -63,8 +65,9 @@ export function createTracker(
   let generation = 0;
   const queue: { event: TrackingEvent; attempts: number; next: number }[] = [];
   const active = new Set<AbortController>();
-  function update(value: unknown, waitMs = 0, explicitDenial = false) {
+  function update(value: unknown, waitMs = 0, explicitDenial = false, decided = true) {
     const next = consentSnapshot(value);
+    settled = decided;
     // Also through an unknown state in between: requests of this visitor may be on their way.
     const withdrawal =
       (consent.analytics_storage === "granted" || memory !== undefined) &&
@@ -87,7 +90,8 @@ export function createTracker(
       queue.length = 0;
       active.forEach((controller) => controller.abort());
       active.clear();
-      waiting.length = 0;
+      // Events kept for an undecided visitor stay until the visitor decides.
+      if (settled || explicitDenial || withdrawal) waiting.length = 0;
       const withdrawnClient = lastClient;
       memory = undefined;
       if (explicitDenial || withdrawal)
@@ -117,7 +121,7 @@ export function createTracker(
     const blockedPage = name === "page_view" && !automaticPage;
     const allowedName = allowed.has(name) || automaticPage || name === "page_engagement";
     if (!allowedName || blockedPage || !/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(name)) return;
-    if (consent.analytics_storage === "denied") return;
+    if (consent.analytics_storage === "denied" && settled) return;
     const transaction =
       name === "purchase" && typeof params.transaction_id === "string"
         ? params.transaction_id
@@ -134,10 +138,11 @@ export function createTracker(
     });
     const clicks = name === "page_view" ? clickIds(runtime.href()) : undefined;
     const timestamp = runtime.now();
-    const unresolved = consent.analytics_storage === "unknown";
+    const unresolved = !canTrack(consent);
     if (unresolved || timestamp < waitUntil) {
       if (waiting.length >= 50) waiting.shift();
-      const deadline = timestamp < waitUntil ? waitUntil : timestamp + 2000;
+      // Kept in memory until the visitor decides; nothing leaves the page before that.
+      const deadline = unresolved ? Infinity : waitUntil;
       waiting.push({
         name,
         params: jsonSnapshot({
@@ -280,14 +285,15 @@ export function createTracker(
     resolving = true;
     try {
       for (const item of [...waiting]) {
-        const known = consent.analytics_storage !== "unknown";
+        const known =
+          consent.analytics_storage === "granted" ||
+          (consent.analytics_storage === "denied" && settled);
         const expired = runtime.now() >= item.deadline;
         const mayResolve = known && runtime.now() >= waitUntil;
         if (!expired && !mayResolve) continue;
         waiting.splice(waiting.indexOf(item), 1);
-        const tooLateForGrant = item.unresolved && runtime.now() > item.deadline;
-        if (!tooLateForGrant && canTrack(consent)) {
-          // Waiting may resolve analytics permission; advertising never expands.
+        if (canTrack(consent)) {
+          // The choice resolves analytics permission; advertising never expands.
           const original = item.unresolved
             ? { ...item.consent, analytics_storage: consent.analytics_storage }
             : item.consent;

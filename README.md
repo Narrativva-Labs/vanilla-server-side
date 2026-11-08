@@ -55,8 +55,7 @@ Open http://localhost:3210. The page has a small consent bar (accept, reject, wi
 | Visitor | What happens |
 | --- | --- |
 | Analytics granted | Send |
-| No decision yet, no consent signal | Hold in memory for up to 2 seconds, then drop |
-| No decision yet, `default` or `update` denied | No events. One limited ping per page |
+| No decision yet | Nothing sent. Events wait in memory and go out after a grant; a refusal or leaving the page drops them. With a `default` denied, one limited ping per page |
 | Analytics denied | Stop, clear the queue, delete the cookie. One limited ping per page, unless consent already measured that page |
 
 After consent the identity is a random ID in a signed server cookie, the one first-party `HttpOnly` cookie this project stores, and the visitor IP is passed to Google for geography. Without consent there is no cookie and no regular event is sent, only one limited ping when the state is denied.

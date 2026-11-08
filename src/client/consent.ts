@@ -39,6 +39,18 @@ function readBanner(state: ConsentState, value: unknown): ConsentState {
   const banner = Object.fromEntries(Object.entries(read).filter(([, v]) => v !== "unknown"));
   return { ...state, banner, updates, lastRead: read, refusal };
 }
+/** A refusal or grant by the visitor, not a starting value. */
+export function decidedAnalytics(state: ConsentState) {
+  const value = effectiveConsent(state).analytics_storage;
+  if (value === "unknown") return false;
+  if (value === "granted") return true;
+  // A banner on screen and still undecided outweighs a denied update sent at load.
+  if (state.lastRead?.analytics_storage === "unknown") return false;
+  return (
+    Object.hasOwn(state.banner, "analytics_storage") ||
+    Object.hasOwn(state.updates, "analytics_storage")
+  );
+}
 /** The whole consent logic, without DOM or clock. docs/technical-overview.md lists its rules. */
 export function nextConsent(state: ConsentState, signal: ConsentSignal): ConsentState {
   if (signal.kind === "refusal-handled") return { ...state, refusal: false };
@@ -76,5 +88,7 @@ export function createConsentObserver() {
     },
     waitMs: () => Math.max(0, waitUntil - Date.now()),
     snapshot: () => effectiveConsent(state),
+    /** False while analytics rests on a default alone or a supported banner still waits for a click. */
+    decided: () => decidedAnalytics(state),
   };
 }

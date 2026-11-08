@@ -84,7 +84,7 @@ if (script && !win.__vanillaGA) {
       visibleTime = 0;
       visibleSince = enabled && document.visibilityState !== "hidden" ? Date.now() : 0;
     }
-    tracker.update(state, waitMs, observer.takeAnalyticsDenialUpdate());
+    tracker.update(state, waitMs, observer.takeAnalyticsDenialUpdate(), observer.decided());
   }
   function process(item: unknown) {
     try {

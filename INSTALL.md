@@ -132,7 +132,7 @@ gtag("consent", "update", {
 // On withdrawal send analytics_storage: "denied" plus the actual ad choices.
 ```
 
-Decisions merge per purpose. A banner that has decided beats any Google `default`, including a regional one. A Google `update` beats what the banner reports when it is first read at load. After that the newest decision wins: a later change in the banner replaces an older `update`, and a later `update` replaces the banner's choice. An undecided banner changes nothing. Without a supported banner, a regional default stays unresolved until a direct update. GTM's internal consent API alone is not readable by this tracker. Pending events wait in RAM for at most two seconds.
+Decisions merge per purpose. A banner that has decided beats any Google `default`, including a regional one. A Google `update` beats what the banner reports when it is first read at load. After that the newest decision wins: a later change in the banner replaces an older `update`, and a later `update` replaces the banner's choice. An undecided banner changes nothing. Without a supported banner, a regional default stays unresolved until a direct update. GTM's internal consent API alone is not readable by this tracker. Events pushed before the visitor decides wait in RAM, at most 50 per page, and go out only after a grant; a refusal or leaving the page discards them.
 
 After denial the tracker requests deletion of its cookie and clears pending analytics. The normal tag has its own consent handling.
 

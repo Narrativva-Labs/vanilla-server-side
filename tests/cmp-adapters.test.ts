@@ -558,3 +558,25 @@ it("a page restored from the back/forward cache reads the banner before it measu
   await settle();
   expect(paths(p).filter((path) => path === "/e")).toHaveLength(1);
 });
+for (const kind of ["CookieYes", "Shoptet"] as const)
+  for (const choice of ["granted", "denied"] as const)
+    it(`${kind}: an event before the click, after a denied update on load, follows a later ${choice}`, async () => {
+      const p = page();
+      const state: { choice: Choice } = { choice: "undecided" };
+      const notify = banners[kind](p, state);
+      p.command("consent", "update", allDenied);
+      notify();
+      p.host.dataLayer.push({ event: "view_item", ecommerce: { items: [{ item_id: "pear" }] } });
+      poll(p);
+      await settle();
+      expect(p.fetcher).not.toHaveBeenCalled();
+      state.choice = choice;
+      notify();
+      await settle();
+      poll(p);
+      await settle();
+      const events = bodies(p)
+        .filter((_, i) => paths(p)[i] === "/e")
+        .map((b) => b.name);
+      expect(events).toEqual(choice === "granted" ? ["page_view", "view_item"] : []);
+    });
