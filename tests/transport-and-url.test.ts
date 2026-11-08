@@ -16,7 +16,6 @@ const grant = {
 const dest = {
   cookieSecret: "s".repeat(64),
   measurementId: "G-TEST",
-  apiSecret: "test",
   siteOrigin: "https://shop.example",
 };
 
@@ -66,10 +65,7 @@ it("independent: purchase 503 -> ad denial -> ad regrant -> 204 keeps restrictiv
     expect(deliveries).toHaveLength(3);
     expect(deliveries[2]!.consent.ad_user_data).toBe("denied");
     expect(deliveries[2]!.event_id).toBe(deliveries[1]!.event_id);
-    expect(JSON.parse(String(google.mock.calls[2]![1]!.body)).consent).toEqual({
-      ad_user_data: "DENIED",
-      ad_personalization: "GRANTED",
-    });
+    expect(new URL(String(google.mock.calls[2]![0])).searchParams.get("gcd")).toBe("13p3t3p2t5l1");
     expect(tracker.pending()).toBe(0);
     google.mockResolvedValue(new Response(null, { status: 503 }));
     tracker.track("purchase", { transaction_id: "audit-withdraw" });
@@ -147,9 +143,9 @@ it("slash-prefixed search and product names stay unchanged on client and server"
       payload: { ...event, params },
     });
     expect(result.statusCode).toBe(204);
-    const sent = JSON.parse(String(google.mock.calls[1]![1]!.body)).events.at(-1).params;
-    expect(sent.search_term).toBe(params.search_term);
-    expect(sent.items[0].item_name).toBe(params.items[0]!.item_name);
+    const sent = new URL(String(google.mock.calls[0]![0])).searchParams;
+    expect(sent.get("ep.search_term")).toBe(params.search_term);
+    expect(sent.get("pr1")).toBe("nm" + params.items[0]!.item_name);
   } finally {
     await app.close();
   }

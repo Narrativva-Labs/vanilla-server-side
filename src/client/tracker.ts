@@ -40,6 +40,8 @@ export function createTracker(
 ) {
   let consent = consentSnapshot(null);
   const purchases = new Set<string>();
+  let pageId = "";
+  let hitIndex = 0;
   let pageSent = false;
   let pageScheduled = false;
   let pagePinged = false;
@@ -191,7 +193,13 @@ export function createTracker(
         : undefined;
     if (transaction && purchases.has(transaction)) return;
     params = jsonSnapshot(params);
+    if (name === "page_view" || !pageId) {
+      pageId = String(parseInt(runtime.uuid().replace(/-/g, "").slice(0, 12), 16));
+      hitIndex = 0;
+    }
     const event: TrackingEvent = {
+      page_id: pageId,
+      hit_index: ++hitIndex,
       event_id: runtime.uuid(),
       name,
       client_id: id.clientId,

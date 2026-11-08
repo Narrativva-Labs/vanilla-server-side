@@ -2,7 +2,7 @@ import { expect, it, vi } from "vitest";
 import { createApp } from "../src/server/app.js";
 import { isObviousBot } from "../src/server/bots.js";
 import { configFromEnv } from "../src/server/config.js";
-import { buildGoogleRequest } from "../src/server/google.js";
+import { buildEventCollectUrl } from "../src/server/google.js";
 import { normalizeConsent } from "../src/shared/consent.js";
 
 const granted = normalizeConsent({ analytics_storage: "granted" });
@@ -12,7 +12,6 @@ const site = {
   cookieDomain: "example.com",
   cookieSecret: "s".repeat(64),
   measurementId: "G-TEST",
-  apiSecret: "test",
 };
 const trackingEvent = () => {
   const now = Date.now();
@@ -29,11 +28,7 @@ const trackingEvent = () => {
   };
 };
 const host = (region?: "eu") =>
-  buildGoogleRequest(
-    { measurementId: "G-TEST", apiSecret: "test", region },
-    trackingEvent(),
-    granted,
-  )!.url.host;
+  buildEventCollectUrl({ measurementId: "G-TEST", region }, trackingEvent(), granted)!.host;
 
 it("Google host stays the default without GA4_REGION and moves to the EU endpoint with eu", () => {
   expect(configFromEnv(env).region).toBeUndefined();
@@ -57,7 +52,7 @@ it("the collector delivers to the configured EU endpoint", async () => {
   const urls = google.mock.calls.map(([url]) => String(url));
   expect(urls.length).toBeGreaterThan(0);
   for (const url of urls)
-    expect(url).toMatch(/^https:\/\/region1\.google-analytics\.com\/(g|mp)\/collect\?/);
+    expect(url).toMatch(/^https:\/\/region1\.google-analytics\.com\/g\/collect\?/);
   await app.close();
 });
 
@@ -107,4 +102,20 @@ it("an obvious bot is answered as delivered, counted, and reaches neither Google
   expect(person.headers["set-cookie"]).toBeDefined();
   expect(google).toHaveBeenCalled();
   await app.close();
+});
+
+it("configuration needs no API secret and ignores a legacy value without logging it", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const config = { GA4_MEASUREMENT_ID: "G-TEST", COOKIE_SECRET: "s".repeat(64) };
+    expect(configFromEnv(config)).not.toHaveProperty("apiSecret");
+    expect(configFromEnv({ ...config, GA4_API_SECRET: "private-value" })).not.toHaveProperty(
+      "apiSecret",
+    );
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      "GA4_API_SECRET is ignored; all events use /g/collect",
+    );
+  } finally {
+    warn.mockRestore();
+  }
 });

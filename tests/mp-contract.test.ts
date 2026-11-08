@@ -1,12 +1,12 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { validateParams, validEventName } from "../src/server/mp-validation.js";
 import { shortenBytes } from "../src/shared/event.js";
-import { buildGoogleRequest, sendGoogle } from "../src/server/google.js";
+import { buildEventCollectUrl, sendGoogle } from "../src/server/google.js";
 import { deviceModel, deviceBrowser } from "../src/client/device.js";
 import { normalizeConsent } from "../src/shared/consent.js";
 import { createTracker } from "../src/client/tracker.js";
 import { page } from "./browser-fixture.js";
-const destination = { measurementId: "G-TEST", apiSecret: "test" };
+const destination = { measurementId: "G-TEST" };
 const granted = normalizeConsent({ analytics_storage: "granted" });
 const event = () => {
   const now = Date.now();
@@ -90,11 +90,10 @@ it("reserved events are rejected; custom page engagement and measured time are v
   expect(validEventName("user_engagement")).toBe(false);
   expect(validEventName("session_start")).toBe(false);
   const e = { ...event(), params: { engagement_time_msec: 1200, session_id: 999 } };
-  const request = buildGoogleRequest(destination, e, granted)!;
-  expect(request.body.events.at(-1)).toEqual({
-    name: "page_engagement",
-    params: { session_id: 123, engagement_time_msec: 1200 },
-  });
+  const request = buildEventCollectUrl(destination, e, granted)!;
+  expect(request.searchParams.get("en")).toBe("page_engagement");
+  expect(request.searchParams.get("sid")).toBe("123");
+  expect(request.searchParams.get("_et")).toBe("1200");
 });
 it("device model uses available browser hints with generic fallbacks", () => {
   expect(deviceModel("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")).toBe("iPhone");
@@ -179,17 +178,6 @@ it("browser family detection distinguishes shared engine signatures and provides
   ])
     expect(deviceBrowser(agent!)).toBe(browser);
 });
-it("MP always includes browser when device is present, with a fallback for missing or blank values", () => {
-  for (const browser of [undefined, "", "   ", "Firefox"]) {
-    const request = buildGoogleRequest(
-      destination,
-      { ...event(), device: { browser, model: "Desktop" } },
-      granted,
-    )!;
-    expect(request.body.device?.browser).toBe(browser === "Firefox" ? "Firefox" : "Unknown");
-  }
-  expect(buildGoogleRequest(destination, event(), granted)!.body).not.toHaveProperty("device");
-});
 it("browser entry sends a detected browser family in its device object", async () => {
   const p = page([["consent", "update", granted]]);
   for (let i = 0; i < 20; i++) await Promise.resolve();
@@ -223,4 +211,225 @@ it("the exit event cuts page text like the collector: bytes, whole characters, n
   expect(exit.name).toBe("page_engagement");
   expect(exit.params.page_location).toBe(href.slice(0, 254));
   expect(exit.params.page_title).toBe("😀".repeat(64));
+});
+
+it("purchase fields use exact collect types and item prefixes", () => {
+  const url = buildEventCollectUrl(
+    destination,
+    {
+      ...event(),
+      name: "purchase",
+      params: {
+        currency: "CZK",
+        value: 1990,
+        tax: 0,
+        shipping: 50,
+        transaction_id: "001",
+        coupon: "SAVE",
+        numeric_text: "42",
+        number: 42,
+        items: [
+          {
+            item_id: "VT1",
+            item_name: "Vanilla test",
+            price: 1990,
+            quantity: 1,
+            item_brand: "Vanilla",
+            item_category: "A",
+            item_category2: "B",
+            item_category3: "C",
+            item_category4: "D",
+            item_category5: "E",
+            item_variant: "V",
+            item_list_name: "List",
+            item_list_id: "L1",
+            index: 0,
+            affiliation: "Shop",
+            coupon: "C",
+            discount: 0,
+            location_id: "CZ",
+            custom: "červená",
+            score: 0,
+          },
+        ],
+      },
+    },
+    granted,
+  )!;
+  expect(url.pathname).toBe("/g/collect");
+  expect(Object.fromEntries(url.searchParams)).toMatchObject({
+    en: "purchase",
+    cu: "CZK",
+    "epn.value": "1990",
+    "epn.tax": "0",
+    "epn.shipping": "50",
+    "ep.transaction_id": "001",
+    "ep.coupon": "SAVE",
+    "ep.numeric_text": "42",
+    "epn.number": "42",
+    pr1: "idVT1~nmVanilla test~pr1990~qt1~brVanilla~caA~c2B~c3C~c4D~c5E~vaV~lnList~liL1~lp0~afShop~cpC~ds0~loCZ~k0custom~v0červená~k1score~v10",
+  });
+});
+it("item tildes cannot inject fields and Unicode survives outer encoding", () => {
+  const url = buildEventCollectUrl(
+    destination,
+    { ...event(), params: { items: [{ item_name: "Příliš~qt999", custom: "ž~luť" }] } },
+    granted,
+  )!;
+  const item = new URL(url.href).searchParams.get("pr1")!;
+  expect(item).toBe("nmPříliš%7Eqt999~k0custom~v0ž%7Eluť");
+  expect(item.split("~")).toHaveLength(3);
+});
+it("engagement and subsequent page views set seg, with page sequence passed through", () => {
+  for (const [name, engagement, start, expected] of [
+    ["page_view", 0, true, "0"],
+    ["page_view", 0, false, "1"],
+    ["purchase", 9999, false, "0"],
+    ["page_engagement", 10000, false, "1"],
+  ] as const) {
+    const url = buildEventCollectUrl(
+      destination,
+      {
+        ...event(),
+        name,
+        page_id: "123456",
+        hit_index: 3,
+        params: { engagement_time_msec: engagement },
+      },
+      granted,
+      { sessionStart: start, firstVisit: false },
+    )!;
+    expect(url.searchParams.get("seg")).toBe(expected);
+    expect(url.searchParams.get("_p")).toBe("123456");
+    expect(url.searchParams.get("_s")).toBe("3");
+  }
+});
+it("large encoded purchases are dropped before delivery with a value-free diagnostic", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const google = vi.fn<typeof fetch>();
+  try {
+    const result = await sendGoogle(
+      destination,
+      {
+        ...event(),
+        name: "purchase",
+        params: {
+          items: Array.from({ length: 100 }, () => ({ item_id: "sku", item_name: "č".repeat(80) })),
+        },
+      },
+      () => granted,
+      new AbortController().signal,
+      google,
+    );
+    expect(result).toBe("dropped");
+    expect(google).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith("Collect event dropped: encoded URL exceeds 8 KiB");
+  } finally {
+    warn.mockRestore();
+  }
+});
+it("all delivered events use collect, analytics-only removes clicks and sets npa", async () => {
+  const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+  for (const name of ["page_view", "purchase", "generate_lead", "page_engagement"]) {
+    await sendGoogle(
+      destination,
+      {
+        ...event(),
+        name,
+        click_ids: { gclid: "SECRET" },
+        params: { page_location: "https://shop.example/?gclid=SECRET", gclid: "SECRET" },
+      },
+      () => granted,
+      new AbortController().signal,
+      google,
+    );
+  }
+  expect(google).toHaveBeenCalledTimes(4);
+  for (const [input, init] of google.mock.calls) {
+    const url = new URL(String(input));
+    expect(url.pathname).toBe("/g/collect");
+    expect(url.searchParams.get("npa")).toBe("1");
+    expect(url.href).not.toContain("SECRET");
+    expect(init?.method).toBe("POST");
+  }
+});
+it("tracker keeps a page ID and increments hit indices across SPA boundaries", async () => {
+  const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+  const tracker = createTracker(
+    "https://collector.example/e",
+    {
+      href: () => "https://shop.example/",
+      referrer: () => "",
+      now: () => Date.now(),
+      uuid: () => crypto.randomUUID(),
+      fetch: google,
+      warn: vi.fn(),
+    },
+    new Set(["purchase"]),
+  );
+  tracker.update(granted);
+  await tracker.flush();
+  tracker.track("purchase");
+  await tracker.flush();
+  tracker.exit(1200);
+  tracker.page();
+  await tracker.flush();
+  const hits = google.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+  expect(hits.map((hit) => hit.hit_index)).toEqual([1, 2, 3, 1]);
+  expect(hits.slice(0, 3).every((hit) => hit.page_id === hits[0].page_id)).toBe(true);
+  expect(hits[3].page_id).not.toBe(hits[0].page_id);
+});
+
+it("retries preserve page and hit identifiers", async () => {
+  let now = Date.now();
+  const google = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    .mockResolvedValue(new Response(null, { status: 204 }));
+  const tracker = createTracker(
+    "https://collector.example/e",
+    {
+      href: () => "https://shop.example/",
+      referrer: () => "",
+      now: () => now,
+      uuid: () => crypto.randomUUID(),
+      fetch: google,
+      warn: vi.fn(),
+    },
+    new Set(),
+  );
+  tracker.update(granted);
+  await tracker.flush();
+  now += 1000;
+  await tracker.flush();
+  expect(google).toHaveBeenCalledTimes(2);
+  const hits = google.mock.calls.map(([, init]) => JSON.parse(String(init?.body)));
+  expect(hits[1].page_id).toBe(hits[0].page_id);
+  expect(hits.map((hit) => hit.hit_index)).toEqual([1, 1]);
+});
+it("money sent as text still counts as a number, other numeric text stays text", () => {
+  const url = buildEventCollectUrl(
+    destination,
+    {
+      ...event(),
+      name: "generate_lead",
+      params: { currency: "CZK", value: "500", shipping: "49.5", tax: "n/a", lead_id: "500" },
+    },
+    granted,
+  )!;
+  expect(Object.fromEntries(url.searchParams)).toMatchObject({
+    "epn.value": "500",
+    "epn.shipping": "49.5",
+    "ep.tax": "n/a",
+    "ep.lead_id": "500",
+  });
+});
+it("every hit keeps a long campaign URL, not only the one opening the session", () => {
+  const landing = "https://shop.example/?utm_campaign=" + "c".repeat(600);
+  const url = buildEventCollectUrl(
+    destination,
+    { ...event(), name: "add_to_cart", params: { page_location: landing } },
+    granted,
+  )!;
+  expect(url.searchParams.get("dl")).toBe(landing);
 });

@@ -10,7 +10,6 @@ Leave the existing Google Analytics tag and GTM container unchanged.
 
 In Google Analytics, open Admin -> Create -> Property. Name the new property so you can distinguish it, choose its timezone and create a Web data stream for your website. Copy its Measurement ID (G-...). **This must be a second property, never the one used by your normal Google tag.** You can compare their reports later. Do not install another Google tag for the second property.
 
-Under Admin -> Data streams -> your new web stream -> Measurement Protocol API secrets, acknowledge any terms, choose Create and copy the secret value. Keep it private; it must never go into website code.
 
 ## 2. Get a small server
 
@@ -59,7 +58,6 @@ The installer uses root or sudo. It supports Ubuntu and Debian, installs Docker 
 1. Tracker domain, without https:// (kx7qpa.example.com).
 2. Website origin, with https:// and no path (https://www.example.com).
 3. Measurement ID from the second property.
-4. Measurement Protocol API secret.
 
 The tracker waits for analytics permission: without it no event is sent and no cookie is set. A page that stays denied sends one limited ping, described in the [README](README.md#consent). To turn it off, set `DENIED_PINGS=off` in .env and rebuild as described below. Choose and disclose the appropriate behavior for your site.
 
@@ -146,7 +144,7 @@ In the **second property**, open Reports -> Realtime. Then use DebugView with a 
 dataLayer.push({ event: "generate_lead", debug_mode: true });
 ```
 
-Send that only after the required consent, remove debug flags after testing, and check development/internal traffic filters if events are missing. Use an ordinary browser for this test: headless browsers and tools such as Lighthouse identify themselves in their User-Agent and are filtered as bots. campaign_details itself does not appear in DebugView. Ordinary reports take longer than Realtime and MP reporting is partial. A successful /health delivery counter proves only Google's HTTP acceptance.
+Send that only after the required consent, remove debug flags after testing, and check development/internal traffic filters if events are missing. Use an ordinary browser for this test: headless browsers and tools such as Lighthouse identify themselves in their User-Agent and are filtered as bots. campaign_details itself does not appear in DebugView. Ordinary reports take longer than Realtime and reports can differ from the regular tag. A successful /health delivery counter proves only Google's HTTP acceptance.
 
 ## Optional: import conversions into Google Ads
 
@@ -174,11 +172,11 @@ Use this as a factual base for your privacy text, not as legal advice.
 
 - Installer says DNS mismatch: check the A record, public IPv4 and DNS propagation; remove stale AAAA and disable DNS proxying.
 - HTTPS is not ready: check ports 80/443 in both server and provider firewalls, DNS and competing web servers. Run sudo docker compose logs --tail=50 caddy.
-- No events: check the script loads, consent callback, exact SITE_ORIGIN (including www), browser network /e requests and the second property's ID/secret. If `botsFiltered` rises on /health, the test client identifies itself as automated.
+- No events: check the script loads, consent callback, exact SITE_ORIGIN (including www), browser network /e requests and the second property's Measurement ID. If `botsFiltered` rises on /health, the test client identifies itself as automated.
 - Console warning "No resolved analytics consent": the tracker found neither a Google consent command nor a supported banner. It stays silent while a supported banner is waiting for the visitor.
 - Cookie absent after grant: check both hosts are HTTPS and COOKIE_DOMAIN covers both; use sibling hosts under your own domain.
 - HTTP 429: the collector limits each IP to 300 requests/minute and 10 simultaneous deliveries, with 100 simultaneous deliveries globally. Check for repeated script installs or an event loop. The tracker sends one request at a time per visitor, so about ten visitors behind one address (an office or school network) can be active at the same moment without a refusal; beyond that some requests get 429 and the tracker retries them up to three times. Measured with a simulated Google endpoint on 2026-11-08: 10 visitors × 4 events with 2-second Google responses, no refusal; 12 visitors, 8 of 48 first attempts refused.
-- Google errors: run sudo docker compose logs --tail=50 tracker. Check outbound HTTPS, ID and secret. Logs omit visitor details. On a machine with Node 22.12 or 24, in a copy of this repository, set GA4_MEASUREMENT_ID and GA4_API_SECRET in the environment or in .env, then run `npm ci` and `npm run verify:mp`. It checks the payloads against Google's validation server, on the EU endpoint when `GA4_REGION=eu` is set.
+- Google errors: run sudo docker compose logs --tail=50 tracker. Check outbound HTTPS and the Measurement ID. Logs omit visitor details. An encoded collect URL above 8 KiB is dropped with a diagnostic; reduce item count or parameters. HTTP acceptance does not prove processing: verify the event and session source in the second property.
 - Docker package conflict on an existing machine: follow the official Docker instructions for [Ubuntu](https://docs.docker.com/engine/install/ubuntu/) or [Debian](https://docs.docker.com/engine/install/debian/) before rerunning; use a fresh VPS if unsure.
 
 ## Updates and maintenance
@@ -189,7 +187,7 @@ From the repository folder run:
 ./update.sh
 ```
 
-It requires a clean tracked checkout on a branch, backs up .env privately, pulls only a fast-forward update, refreshes the Caddy and Node base images, rebuilds the tracker and waits for healthy containers. Git runs as the checkout owner; only Docker and the handling of .env, which the installer creates as root, are elevated when required. Verify the public /health endpoint and Realtime afterward. Keep a secure off-server backup of .env and your domain/provider access. Backups contain secrets; never attach them to support messages. Rotate the API secret in Google Analytics and .env if exposed. Changing COOKIE_SECRET invalidates existing visitor cookies.
+It requires a clean tracked checkout on a branch, backs up .env privately, pulls only a fast-forward update, refreshes the Caddy and Node base images, rebuilds the tracker and waits for healthy containers. Git runs as the checkout owner; only Docker and the handling of .env, which the installer creates as root, are elevated when required. Verify the public /health endpoint and Realtime afterward. Keep a secure off-server backup of .env and your domain/provider access. Backups contain secrets; never attach them to support messages. Changing COOKIE_SECRET invalidates existing visitor cookies.
 
 Before updating, record `git rev-parse HEAD`. To roll back, run `git checkout` with that revision, restore the matching private .env backup if its format changed, then run `sudo docker compose build --pull tracker && sudo docker compose up -d --wait --wait-timeout 180`. That leaves the checkout off its branch, and `./update.sh` stops until you run `git switch main`. Never roll back by deleting Caddy volumes.
 

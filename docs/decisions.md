@@ -4,7 +4,19 @@ Author: František Bujnovský.
 
 Each decision names the alternative, the reason and the source. Source labels are explained in the [technical overview](technical-overview.md).
 
-## /g/collect opens a session, Measurement Protocol carries the rest
+## Every event goes through /g/collect
+
+**Decision:** one POST to `/g/collect` per event, including purchases and final `page_engagement`. The first event carries session flags; there is no synthetic opener or second request. The tracker supplies a page ID and increasing hit index. Measurement Protocol is no longer used.
+
+**Alternative:** keep the mixed collect/MP transport below.
+
+**Why:** Tested 2026-11-08, GA4 Data API comparison by campaign over November 7–8: collect kept 100% of tested hits in the attributed session, purchases 4/4. Hits sent through MP after a collect opener kept their source in anywhere from 0 of 8 to 8 of 8 per test group, depending on timing; purchases kept it in 2 of 4 and `generate_lead` in 0 of 4. The mixed tracker also split a visit across two sessions.
+
+**Source:** [comparison and wire-format sources](measurement-protocol-notes.md#all-collect-comparison). These are finite manual tests, not a guarantee of real Ads conversion attribution. Encoded URLs over 8 KiB are dropped with a diagnostic until POST body splitting is verified.
+
+## /g/collect opens a session, Measurement Protocol carries the rest (superseded)
+
+Superseded on 2026-11-08 by “Every event goes through /g/collect”.
 
 **Decision:** the first page view of a session goes only through `/g/collect`. Other events go through the documented Measurement Protocol, with the API secret held on the server. There are two exceptions: a session opened by another event, for example after 30 idle minutes, gets a short `/g/collect` hit first and its data follow through MP, and a page view with a click ID inside a running session goes through `/g/collect` without starting a session.
 
@@ -78,7 +90,7 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 **Alternative:** follow the [reference](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) to the letter: "If you don't get a `2xx` status code, correct any errors in your HTTP request. Don't retry the same request." Or go the other way with a durable queue.
 
-**Why:** a short network failure should not lose a purchase, and a durable queue would bring back the storage this design avoids. The trade is real: a timeout or 5xx can happen after Google accepted the data, so a retry can duplicate an event. Short-lived server deduplication by event ID cannot see Google's state, so this is not exactly-once delivery. A session counts as open once `/g/collect` answered 2xx: the cookie goes out then, even if the Measurement Protocol half fails, so a retry repeats only the event. Events wait behind a page view that is being retried, because it may be the one opening the session.
+**Why:** a short network failure should not lose a purchase, and a durable queue would bring back the storage this design avoids. The trade is real: a timeout or 5xx can happen after Google accepted the data, so a retry can duplicate an event. Short-lived server deduplication by event ID cannot see Google's state, so this is not exactly-once delivery. A session counts as open once its first `/g/collect` event answered 2xx; only then is the cookie issued. Events wait behind a page view that is being retried, because it may be the one opening the session.
 
 **Source:** Google docs. Tested 2026-11-05: `tests/mp-contract.test.ts`, `tests/delivery-and-privacy.test.ts`.
 
@@ -90,17 +102,13 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 **Why:** 100 throws away useful URLs. The Help Center values fail strict validation. 256 bytes is the largest value that passes on the validator, and the only one measured. It may be lower than what the live endpoint keeps: Not verified.
 
-**Source:** Tested 2026-11-05: `npm run verify:mp`, [notes](measurement-protocol-notes.md).
+**Source:** Tested 2026-11-05: historical MP validator run (verification script retired), [notes](measurement-protocol-notes.md).
 
 ## Device fields
 
-**Decision:** `device.model` and `device.browser` are always sent with `device`, with fallbacks. Measurement Protocol requests carry no raw User-Agent. The `/g/collect` hit does, as a browser's own hit would, in the HTTP header.
+**Decision:** every collect hit carries language and screen resolution when available and the incoming browser User-Agent header. The old MP device object is no longer sent.
 
-**Alternative:** send only `category`, as the reference recommends as a minimum, or use the `user_agent` field.
-
-**Why:** strict validation rejects a device object without those two fields although the reference calls them optional. A coarse browser family and model tell Google less about the visitor than a raw User-Agent.
-
-**Source:** Tested 2026-11-05: `npm run verify:mp`.
+**Source:** [collect notes](measurement-protocol-notes.md#gcollect).
 
 ## Bot filter by User-Agent only
 

@@ -4,7 +4,7 @@ Where the documentation, the validation server and the reports disagree, and wha
 
 Every row has a source:
 
-- **Tested**: run by this project, with date and method. `npm run verify:mp` reruns all validator rows. It needs `GA4_MEASUREMENT_ID` and `GA4_API_SECRET` and calls `https://www.google-analytics.com/debug/mp/collect` only, or the same path on `region1.google-analytics.com` with `GA4_REGION=eu`. The results below come from the default endpoint.
+- **Tested**: manual project checks with date and method. Historical validator results below were recorded before MP was removed; the validation script is retired.
 - **Google docs**: the linked page, read on 2026-11-05.
 - **Not verified**: not confirmed by this project.
 
@@ -14,11 +14,11 @@ The validator was run against a web data stream. It checks structure, and [Googl
 
 [Google docs](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference): `RELAXED` is the default and "only rejects requests that are malformed"; it "ignores parameters that exceed limits". `ENFORCE_RECOMMENDATIONS` rejects them. Google recommends the strict mode while validating and leaving the field out in production.
 
-This project sends production requests without `validation_behavior`, and `verify:mp` validates with `ENFORCE_RECOMMENDATIONS` unless a row says otherwise.
+The retired MP integration omitted `validation_behavior` in production and used `ENFORCE_RECOMMENDATIONS` for validation unless noted.
 
 ## Validator results
 
-All rows: Tested, 2026-11-05, `npm run verify:mp`.
+All rows: Tested, 2026-11-05, the historical MP validator run.
 
 | Claim checked | Documentation | Result |
 | --- | --- | --- |
@@ -43,16 +43,9 @@ Reserved names, as answered by the validator:
 - Rejected: `ad_activeview ad_click ad_exposure ad_query adunit_exposure app_clear_data app_install app_remove app_update error first_open first_visit notification_dismiss notification_foreground notification_open notification_receive os_update session_start user_engagement in_app_purchase`
 - Accepted: `ad_reward app_exception app_store_refund app_upgrade dynamic_link_app_open dynamic_link_app_update dynamic_link_first_open firebase_campaign firebase_in_app_message_action firebase_in_app_message_dismiss firebase_in_app_message_impression notification_send ad_impression screen_view`
 
-## What the repository does with this
+## Current parameter limits
 
-| Finding | Behavior |
-| --- | --- |
-| `device.model` and `device.browser` required in strict mode | Both are always present when `device` is sent, with generic fallbacks. A blank model falls back to the category |
-| Page text limit | `page_location`, `page_referrer` and `page_title` are cut to 256 UTF-8 bytes on whole characters, without a dangling `%` escape. `/g/collect` allows 1000 bytes for the URLs, so the first hit keeps long UTM values |
-| Reserved names | All 34 stay blocked. The accepted 14 are still documented as reserved, and an undocumented acceptance is not a contract |
-| `user_engagement` | Final visible time goes out as the custom event `page_engagement` |
-| Other text limits | Unchanged: values over 100 characters are dropped with a diagnostic. A value of 51 to 100 multi-byte characters passes here and would fail strict validation. Live effect: Not verified |
-| Item parameters | Unchanged: documented fields plus 27 custom. An item with more than 27 fields in total can fail strict validation. Live effect: Not verified |
+The collect serializer retains the previous validator limits: 25 parameters including automatic fields, 200 items, standard item fields plus 27 custom fields, other strings up to 100 characters, and page text trimmed to 256 UTF-8 bytes inside event parameters. `dl` and `dr` keep 1000 bytes and `dt` 300 on every hit, so long campaign values survive. Names and engagement values are checked before serialization. These are conservative local limits, not a new measurement of collect's acceptance. Browser/model fields belonged to the retired MP body; collect forwards the browser User-Agent instead. `page_engagement` remains a custom event with `_et`.
 
 ## Geography and device reach Realtime
 
@@ -86,7 +79,7 @@ Single runs on a live website, 2026-11-05. They show what happened in one setup,
 
 ## /g/collect
 
-Measurement Protocol alone could not do what this project needs, so one `/g/collect` hit now opens each session.
+Every event now uses `/g/collect`. The following captures explain the common fields; MP observations are historical.
 
 **What MP alone gave.** Tested, 2026-11-06: GA4 Data API over everything sent to the test property through MP on 2026-11-05, including sessions with `campaign_details` and UTM values.
 
@@ -108,7 +101,7 @@ Measurement Protocol alone could not do what this project needs, so one `/g/coll
 
 In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, and the full URL in `dl`, including `gclid`. Denied hits use a new `cid`. After a later grant the tag sent no second `page_view`. `dma` and `dma_cps` are left out here, because `dma` depends on the visitor's region. Vanilla sends the consent state it knows at that moment, always with `t` and `p`.
 
-**What this project sends.** `v tid _p gcs gcd npa cid sid seg _s en dl dr dt ul sr _uip _et _ss _fv`, as a POST with an empty body and the visitor's `User-Agent`. `_et` carries engagement time when the hit replaces an MP event; the captured first hits had none, so its effect in reports: Not verified. The denied ping leaves out `_uip`. The fields come from the hits above.
+**What this project sends.** `v tid _p gcs gcd npa cid sid seg _s en dl dr dt ul sr _uip _et _ss _fv`, as a POST with an empty body and the visitor's `User-Agent`. `_et` carries validated engagement time on any event. The denied ping leaves out `_uip`. The fields come from the hits above.
 
 **What came back.** Tested, 2026-11-06: 7 hits built by `buildCollectUrl` and sent to `/g/collect` of the test property, then read in Realtime through the GA4 Data API.
 
@@ -142,3 +135,27 @@ In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, a
 - Engaged sessions, with engagement time carried by `engagement_time_msec` and `page_engagement`. The first run showed 0.
 - What the live endpoint does with over-limit text and over-limit item parameters.
 - Whether [known bot exclusion](https://support.google.com/analytics/answer/9888366) applies to Measurement Protocol events. The page does not mention them.
+
+## All-collect comparison
+
+Tested 2026-11-08: manual live GA4 Data API comparison by campaign for hits sent November 7–8. The all-collect script used fixed `_p` per page, rising `_s`, `seg` and `_et`.
+
+| Transport | Session and source results |
+| --- | --- |
+| Every event through collect | 100% of tested hits in the correct attributed session; purchases 4/4 |
+| Collect opener plus MP | MP hits kept their source in 0 of 8 to 8 of 8 per test group, depending on timing; attributed purchases 2/4, `generate_lead` 0/4 |
+| Mixed production tracker | First page and later pages could form two sessions |
+
+A collect purchase used `en=purchase`, `cu=CZK`, `epn.value`, `ep.transaction_id`, and `pr1=idVT1~nmVanilla test~pr1990~qt1`. The comparison motivates removing MP entirely. Raw experiment artifacts are not stored in this repository; these are recorded manual observations. Real Ads imports remain unverified.
+
+## Collect wire format
+
+Reviewed 2026-11-08 against primary public implementations:
+
+- David Vallejo / Analytics Debugger [ga4mp schema](https://github.com/analytics-debugger/ga4mp/blob/main/src/modules/ga4Schema.js) maps currency to `cu`, page ID to `_p`, hit count to `_s`, and item fields to `id nm pr qt br ca c2 c3 c4 c5 va ln li lp af cp ds lo` (also promotion and creative fields).
+- Its [serializer](https://github.com/analytics-debugger/ga4mp/blob/main/src/ga4mp.js) uses `ep.*` for text, `epn.*` for numbers, `pr1` onwards for items, and `~` between item fields. Custom item pairs use `k0`/`v0` through `k9`/`v9`, then letters `A` onwards.
+- Cloudflare's [GA4 request builder](https://github.com/managed-components/google-analytics-4/blob/main/src/requestBuilder.ts) independently builds collect ecommerce URLs with `cu`, `ep`/`epn`, and numbered products. `value`, `tax` and `shipping` sent as numeric text go out as `epn.*`, because GA4 sums only numbers; other numeric text stays `ep.*`. Booleans serialize as text.
+
+Vanilla encodes the whole query with URLSearchParams. Within item values, literal `~` becomes `%7E` before outer encoding so it cannot introduce another field after query decoding. Whether Google displays that escape as a tilde is **Not verified**; structural safety is tested locally. Unicode otherwise round-trips unchanged.
+
+The observed Google tag capture above was POST with an empty body. The public [ga4mp transport](https://github.com/analytics-debugger/ga4mp/blob/main/src/modules/request.js) also puts parameters in the URL. The exact common-query/event-body split for large hits has **not been verified**, so Vanilla keeps this form and drops URLs over 8192 encoded bytes with a value-free diagnostic. It does not split a purchase or silently truncate its item list to fit. No collect backdating or `timestamp_micros` is used.

@@ -4,7 +4,7 @@ import { isObviousBot } from "./bots.js";
 import { createRateLimit } from "./rate-limit.js";
 import Fastify from "fastify";
 import { readFile } from "node:fs/promises";
-import { consentSnapshot, canTrack, clickConsent, jsonSnapshot } from "../shared/consent.js";
+import { consentSnapshot, canTrack, jsonSnapshot } from "../shared/consent.js";
 import { DEFAULT_EVENTS } from "../shared/settings.js";
 import { SESSION_LIMIT_MS, timely, type TrackingEvent } from "../shared/event.js";
 import { sendGoogle, sendDeniedPing, type DeniedPing, type Destination } from "./google.js";
@@ -179,6 +179,8 @@ export function createApp(
             "params",
           ],
           properties: {
+            page_id: { type: "string", pattern: "^[0-9]{1,16}$" },
+            hit_index: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
             event_id: { type: "string", format: "uuid" },
             name: { type: "string", pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,39}$" },
             client_id: {
@@ -260,8 +262,6 @@ export function createApp(
           remember(initialIdentities, browserKey, { identity, expires: Date.now() + 60_000 });
         if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey))
           return reply.code(204).send();
-        const clicked =
-          event.name === "page_view" && event.click_ids && clickConsent(event.consent);
         const withdrawn = () => isRevoked("server:" + identity.clientId) || isRevoked(browserKey);
         const fresh = identity.newSession ? recent.get(identity.clientId) : undefined;
         if (fresh && fresh.expires > Date.now()) identity = fresh.identity;
@@ -296,20 +296,18 @@ export function createApp(
           () => (withdrawn() ? consentSnapshot(null) : event.consent),
           new AbortController().signal,
           fetcher,
-          starting || clicked
-            ? {
-                sessionStart: starting,
-                firstVisit: starting && identity.newClient,
-                userAgent: req.headers["user-agent"],
-                opened() {
-                  if (!starting) return;
-                  opened = true;
-                  // A browser that keeps no cookie must not open a new session with every event.
-                  identity.newSession = identity.newClient = false;
-                  remember(recent, identity.clientId, { identity, expires: Date.now() + 60_000 });
-                },
-              }
-            : undefined,
+          {
+            sessionStart: starting,
+            firstVisit: starting && identity.newClient,
+            userAgent: req.headers["user-agent"],
+            opened() {
+              if (!starting) return;
+              opened = true;
+              // A browser that keeps no cookie must not open a new session with every event.
+              identity.newSession = identity.newClient = false;
+              remember(recent, identity.clientId, { identity, expires: Date.now() + 60_000 });
+            },
+          },
         );
         inFlight.set(event.event_id, delivery);
         let result: "sent" | "retry" | "dropped";

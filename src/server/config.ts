@@ -2,14 +2,9 @@ import { DEFAULT_EVENTS } from "../shared/settings.js";
 export function configFromEnv(env = process.env) {
   const siteOrigin = new URL(env.SITE_ORIGIN ?? "http://localhost:3000").origin;
   const measurementId = env.GA4_MEASUREMENT_ID ?? "";
-  const apiSecret = env.GA4_API_SECRET ?? "";
-  if (
-    !/^G-[A-Z0-9]+$/.test(measurementId) ||
-    measurementId === "G-XXXXXXXXXX" ||
-    !apiSecret ||
-    apiSecret.startsWith("replace-")
-  ) {
-    throw new Error("Set GA4_MEASUREMENT_ID and GA4_API_SECRET");
+  if (env.GA4_API_SECRET) console.warn("GA4_API_SECRET is ignored; all events use /g/collect");
+  if (!/^G-[A-Z0-9]+$/.test(measurementId) || measurementId === "G-XXXXXXXXXX") {
+    throw new Error("Set GA4_MEASUREMENT_ID");
   }
   const port = Number(env.PORT ?? 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");
@@ -40,7 +35,6 @@ export function configFromEnv(env = process.env) {
     cookieDomain,
     siteOrigin,
     measurementId,
-    apiSecret,
     port,
     host: env.HOST ?? "0.0.0.0",
   };

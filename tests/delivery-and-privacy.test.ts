@@ -129,7 +129,6 @@ it("oversized events are explained before fetch and independently rejected by th
     {
       cookieSecret: "s".repeat(64),
       measurementId: "G-TEST",
-      apiSecret: "test-secret",
       siteOrigin: "https://shop.example",
     },
     fetcher,
@@ -209,7 +208,6 @@ it("each delivered event renews the signed cookie and a failed delivery does not
       cookieDomain: "example.com",
       cookieSecret: "s".repeat(64),
       measurementId: "G-TEST",
-      apiSecret: "test",
     },
     google,
   );

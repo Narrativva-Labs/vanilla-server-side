@@ -14,7 +14,7 @@ Only the latest commit on `main` is supported. There are no maintained release b
 
 - Bypassing the consent checks, for example sending an event or setting a cookie after refusal
 - Forging or tampering with the signed identity cookie
-- Exposing the Measurement Protocol API secret or `COOKIE_SECRET`
+- Exposing `COOKIE_SECRET`
 - Code injection through the tracker, the collector or the install scripts
 - Logging or forwarding personal data beyond what the documentation describes
 
@@ -27,5 +27,5 @@ Only the latest commit on `main` is supported. There are no maintained release b
 ## If you run an instance
 
 - Keep `.env` private and never commit it
-- Rotate the API secret and `COOKIE_SECRET` if you suspect a leak. Rotating `COOKIE_SECRET` resets visitor identities
+- Rotate `COOKIE_SECRET` if you suspect a leak. Rotating `COOKIE_SECRET` resets visitor identities
 - Keep the server, Docker and this repository up to date. `s.js` runs on your website, so a compromised server can affect your visitors

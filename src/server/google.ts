@@ -1,8 +1,4 @@
-/**
- * All Google wire-format decisions live here. /g/collect opens a session, because Measurement
- * Protocol alone gave no session source and no new users in tests, and it is what carries click
- * IDs. Measurement Protocol carries the rest, because it is documented and it can be validated.
- */
+/** All events use the Google tag wire format; see the protocol notes. */
 import { randomInt } from "node:crypto";
 import { validateParams, validEventName } from "./mp-validation.js";
 import {
@@ -18,11 +14,10 @@ import {
 import { shortenBytes, timely, type TrackingEvent } from "../shared/event.js";
 export interface Destination {
   measurementId: string;
-  apiSecret: string;
   region?: "eu";
 }
 export type Delivery = "sent" | "retry" | "dropped";
-/** Set when this event must go through /g/collect. */
+/** Session flags and browser context for a collect hit. */
 export interface Opening {
   sessionStart: boolean;
   firstVisit: boolean;
@@ -39,6 +34,8 @@ export interface DeniedPing {
   screen_resolution?: string;
 }
 interface CollectHit {
+  pageId?: string;
+  hitIndex?: number;
   name: string;
   clientId: string;
   sessionId: number;
@@ -78,14 +75,17 @@ export function buildCollectUrl(destination: Destination, hit: CollectHit) {
   const fields: Record<string, string | undefined> = {
     v: "2",
     tid: destination.measurementId,
-    _p: String(randomInt(1, 2147483647)),
+    _p: hit.pageId ?? String(randomInt(1, 2147483647)),
     gcs: `G1${bit(ad_storage)}${bit(analytics_storage)}`,
     gcd: `13${mark(ad_storage)}3${mark(analytics_storage)}3${mark(ad_user_data)}2${mark(ad_personalization)}5l1`,
     npa: ad_personalization === "granted" ? "0" : "1",
     cid: hit.clientId,
     sid: String(hit.sessionId),
-    seg: "0",
-    _s: "1",
+    seg:
+      (hit.name === "page_view" && !hit.sessionStart) || Number(hit.engagement) >= 10000
+        ? "1"
+        : "0",
+    _s: String(hit.hitIndex ?? 1),
     en: hit.name,
     dl: landingUrl(hit.location, hit.clicks),
     dr: shortenBytes(sanitizeUrl(text(hit.referrer)), COLLECT_URL_BYTES),
@@ -104,50 +104,112 @@ export function buildCollectUrl(destination: Destination, hit: CollectHit) {
   for (const [key, value] of Object.entries(fields)) if (value) url.searchParams.set(key, value);
   return url;
 }
-export function buildGoogleRequest(
+const itemFields: Record<string, string> = {
+  item_id: "id",
+  item_name: "nm",
+  price: "pr",
+  quantity: "qt",
+  item_brand: "br",
+  item_category: "ca",
+  item_category2: "c2",
+  item_category3: "c3",
+  item_category4: "c4",
+  item_category5: "c5",
+  item_variant: "va",
+  item_list_name: "ln",
+  item_list_id: "li",
+  index: "lp",
+  affiliation: "af",
+  coupon: "cp",
+  discount: "ds",
+  location_id: "lo",
+  promotion_id: "pi",
+  promotion_name: "pn",
+  creative_name: "cn",
+  creative_slot: "cs",
+};
+function itemValue(value: unknown) {
+  // A literal tilde would become another item field after the outer URL decoding.
+  return String(value).replaceAll("~", "%7E");
+}
+function encodeItem(item: Record<string, unknown>) {
+  const fields: string[] = [];
+  let custom = 0;
+  for (const [key, value] of Object.entries(item)) {
+    const field = Object.hasOwn(itemFields, key) ? itemFields[key] : undefined;
+    if (field) fields.push(field + itemValue(value));
+    else {
+      const index = custom < 10 ? String(custom) : String.fromCharCode(65 + custom - 10);
+      fields.push(`k${index}${key}`, `v${index}${itemValue(value)}`);
+      custom++;
+    }
+  }
+  return fields.join("~");
+}
+export function buildEventCollectUrl(
   destination: Destination,
   event: TrackingEvent,
   current: Consent,
+  opening?: Opening,
 ) {
   const consent = intersect(normalizeConsent(event.consent), normalizeConsent(current));
-  if (!canTrack(event.consent) || !canTrack(current) || !timely(event)) return undefined;
+  if (!canTrack(consent) || !timely(event)) return undefined;
   if (!validEventName(event.name)) {
-    console.warn("MP event dropped: invalid or reserved name");
+    console.warn("Event dropped: invalid or reserved name");
     return undefined;
   }
-  // Click IDs are not a documented MP attribution mechanism. Remove them even from URLs.
   // URLs are cleaned here too: a request does not have to come from the tracker.
-  const params = validateParams({
-    ...(cleanUrls(redactAds(event.params)) as Record<string, unknown>),
-    session_id: event.session_id,
+  const cleaned = cleanUrls(redactAds(event.params)) as Record<string, unknown>;
+  const params = validateParams({ ...cleaned, session_id: event.session_id });
+  const url = buildCollectUrl(destination, {
+    name: event.name,
+    clientId: event.client_id,
+    sessionId: event.session_id,
+    consent,
+    pageId: event.page_id,
+    hitIndex: event.hit_index,
+    // Collect keeps 1000 bytes of URL, so long campaign values survive on every hit.
+    location: cleaned.page_location,
+    referrer: cleaned.page_referrer,
+    title: cleaned.page_title,
+    language: event.device?.language,
+    screen: event.device?.screen_resolution,
+    ip: event.ip_override,
+    clicks: event.name === "page_view" && clickConsent(consent) ? event.click_ids : undefined,
+    engagement: params.engagement_time_msec,
+    sessionStart: opening?.sessionStart ?? false,
+    firstVisit: opening?.firstVisit ?? false,
   });
-  const url = new URL(`https://${host(destination)}/mp/collect`);
-  url.searchParams.set("measurement_id", destination.measurementId);
-  url.searchParams.set("api_secret", destination.apiSecret);
-  return {
-    url,
-    body: {
-      client_id: event.client_id,
-      timestamp_micros: event.timestamp_ms * 1000,
-      consent: {
-        ad_user_data: consent.ad_user_data === "granted" ? "GRANTED" : "DENIED",
-        ad_personalization: consent.ad_personalization === "granted" ? "GRANTED" : "DENIED",
-      },
-      ...(event.device
-        ? {
-            device: {
-              ...event.device,
-              browser: event.device.browser?.trim() || "Unknown",
-              model: event.device.model || event.device.category || "Unknown",
-            },
-          }
-        : {}),
-      ...(consent.analytics_storage === "granted" && event.ip_override
-        ? { ip_override: event.ip_override }
-        : {}),
-      events: [{ name: event.name, params }],
-    },
-  };
+  for (const [key, value] of Object.entries(params)) {
+    if (
+      [
+        "session_id",
+        "page_location",
+        "page_referrer",
+        "page_title",
+        "engagement_time_msec",
+      ].includes(key)
+    )
+      continue;
+    if (key === "items" && Array.isArray(value))
+      value.forEach((item, i) => url.searchParams.set(`pr${i + 1}`, encodeItem(item)));
+    else {
+      // GA4 sums only numeric money fields, and sites often push them as text.
+      const money =
+        ["value", "tax", "shipping"].includes(key) && /^-?\d+(\.\d+)?$/.test(String(value));
+      const numeric = typeof value === "number" || money;
+      url.searchParams.set(
+        key === "currency" ? "cu" : `${numeric ? "epn" : "ep"}.${key}`,
+        String(value),
+      );
+    }
+  }
+  // Keep the proven URL transport until the body split is verified against a Google tag.
+  if (Buffer.byteLength(url.href) > 8 * 1024) {
+    console.warn("Collect event dropped: encoded URL exceeds 8 KiB");
+    return undefined;
+  }
+  return url;
 }
 async function post(
   url: URL,
@@ -178,42 +240,11 @@ export async function sendGoogle(
   fetcher: typeof fetch = fetch,
   opening?: Opening,
 ): Promise<Delivery> {
-  const current = getCurrent();
-  const request = buildGoogleRequest(destination, event, current);
-  if (!request || signal.aborted) return "dropped";
-  if (opening) {
-    const consent = intersect(normalizeConsent(event.consent), normalizeConsent(current));
-    const pageView = event.name === "page_view";
-    // These two carry all their data in the hit. Any other event needs its own MP request.
-    const complete = pageView || event.name === "page_engagement";
-    const url = buildCollectUrl(destination, {
-      name: pageView ? "page_view" : "page_engagement",
-      clientId: event.client_id,
-      sessionId: event.session_id,
-      consent,
-      location: event.params.page_location,
-      referrer: event.params.page_referrer,
-      title: event.params.page_title,
-      language: event.device?.language,
-      screen: event.device?.screen_resolution,
-      ip: event.ip_override,
-      clicks: pageView && clickConsent(consent) ? event.click_ids : undefined,
-      engagement: complete ? event.params.engagement_time_msec : undefined,
-      sessionStart: opening.sessionStart,
-      firstVisit: opening.firstVisit,
-    });
-    const delivery = await post(url, { headers: browser(opening.userAgent) }, signal, fetcher);
-    if (delivery === "sent") opening.opened?.();
-    if (delivery !== "sent" || complete) return delivery;
-    // Consent may have been withdrawn while the first request was on its way.
-    if (!canTrack(getCurrent())) return "dropped";
-  }
-  return post(
-    request.url,
-    { headers: { "content-type": "application/json" }, body: JSON.stringify(request.body) },
-    signal,
-    fetcher,
-  );
+  const url = buildEventCollectUrl(destination, event, getCurrent(), opening);
+  if (!url || signal.aborted) return "dropped";
+  const delivery = await post(url, { headers: browser(opening?.userAgent) }, signal, fetcher);
+  if (delivery === "sent") opening?.opened?.();
+  return delivery;
 }
 /** Advanced Consent Mode ping: a one-off ID, no visitor IP, no click IDs, no cookie. */
 export function sendDeniedPing(

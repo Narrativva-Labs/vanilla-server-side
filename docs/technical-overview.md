@@ -4,7 +4,7 @@ How Vanilla Server-Side works and why it is built this way, for analysts and eng
 
 Facts carry their source:
 
-- **Tested**: run by this project, with date and method. `npm test`, `npm run test:e2e` and `npm run verify:mp` can be rerun by anyone. Realtime results and the [browser checks](measurement-protocol-notes.md#browser-checks) are single manual runs and cannot be repeated by a command.
+- **Tested**: run by this project, with date and method. `npm test` and `npm run test:e2e` can be rerun by anyone. Realtime results and the [browser checks](measurement-protocol-notes.md#browser-checks) are single manual runs and cannot be repeated by a command.
 - **Google docs** and other linked pages: read on 2026-11-05.
 - **Not verified**: not confirmed by this project.
 
@@ -27,11 +27,10 @@ A second, independent GA4 pipeline runs next to the regular tag. It exists for c
         v
 +-- collector (Node, Fastify, behind Caddy) ----------------------+
 | origin check -> bot filter -> consent -> allowlist -> rate limit|
-| signed cookie -> identity -> MP limits -> single Google module  |
+| signed cookie -> identity -> parameter limits -> single Google module  |
 +-----------------------------------------------------------------+
         |
-        | POST /g/collect (opens a session, denied ping)
-        | POST /mp/collect (everything else, API secret stays here)
+        | POST /g/collect (every event, denied ping)
         v
   second GA4 property
 ```
@@ -54,8 +53,8 @@ The one runtime dependency is Fastify. There is no database.
 4. The tracker posts JSON to `/e`, resolved relative to the script URL, so a same-origin path proxy works.
 5. The collector checks origin and content type, the [bot filter](#bot-filter), consent, the event allowlist, freshness and rate limits. The consent check reads the state the browser reports; the server cannot confirm it independently.
 6. It replaces the browser's temporary identity with the signed server identity and adds the visitor IP.
-7. The first page view of a session goes to `/g/collect` with `_ss`, `_fv` for a new visitor, `_uip` and the click IDs, and to nothing else. A page view with a click ID inside a running session goes there too, without `_ss`. A session opened by another event sends a `page_engagement` hit to `/g/collect`, then the event itself, unless consent was withdrawn in between. A final `page_engagement` that opens a session is that hit, with its time in `_et`. A parallel event waits for the opening to finish. The tracker's requests send no `Referer`, so a same-origin proxy does not receive the landing URL with its click ID that way.
-8. Everything else goes through `buildGoogleRequest`, which applies the limits and sends one MP request.
+7. Every event goes through `buildEventCollectUrl`, which cleans URLs, removes advertising identifiers outside consent, validates parameters and builds one `/g/collect` POST with the real event name. The first event carries `_ss` and, for a new visitor, `_fv`. Parallel events wait for session opening; failed openings remain retryable. There is no second upstream request.
+8. Text parameters use `ep.*`, numbers `epn.*`, currency `cu`, items `pr1`…`prN`. `_p` identifies a tracker page and `_s` counts its events, including final `page_engagement`; retries retain both. Without tracker metadata, each hit gets random `_p` and `_s=1`. `seg=1` on a non-opening page view or `_et >= 10000`. Encoded URLs above 8 KiB are dropped with a diagnostic. Collect cannot backdate events: `timely()` and the tracker's 30-second queue limit remain in force. See [wire format](measurement-protocol-notes.md#collect-wire-format).
 9. The cookie is set or renewed only after Google answered 2xx.
 
 Tested 2026-11-06: `tests/collect.test.ts`, `tests/consent-and-collector.test.ts`, `tests/transport-and-url.test.ts`, `tests/parallel.test.ts`.
@@ -187,7 +186,9 @@ Limits: the demo runs on plain `http://localhost`, so it drops the `Secure` and 
 
 The regular tag has its own consent handling and is not affected.
 
-## What Measurement Protocol can and cannot do
+## Historical Measurement Protocol findings
+
+Measurement Protocol was removed on 2026-11-08 after the [mixed transport comparison](measurement-protocol-notes.md#all-collect-comparison). The table below records earlier experiments, not the current transport.
 
 | | Status | Source |
 | --- | --- | --- |
@@ -197,7 +198,7 @@ The regular tag has its own consent handling and is not affected.
 | Device category from `device` | Can, shown in Realtime | Tested 2026-11-05 |
 | `ad_user_data`, `ad_personalization` | Can | [Google docs](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) |
 | Reject bad payloads on the live endpoint | Cannot: "doesn't return an error code if the payload is malformed" | [Google docs](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) |
-| Send `first_visit`, `session_start`, `user_engagement` | Cannot: reserved | Tested 2026-11-05, `npm run verify:mp` |
+| Send `first_visit`, `session_start`, `user_engagement` | Cannot: reserved | Tested 2026-11-05, historical MP validator run (script retired) |
 | Show `campaign_details` in DebugView | Cannot | [Google docs](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference/events#campaign_details) |
 | Run rules that create or rename events | Cannot | [Google docs](https://developers.google.com/analytics/devguides/collection/protocol/ga4) |
 | Session source from `campaign_details` in standard reports | Not in our test: 70 of 70 sessions `(not set)` | Tested 2026-11-06, [notes](measurement-protocol-notes.md#gcollect) |
@@ -213,10 +214,10 @@ Where the documentation and the validator disagree, see [Measurement Protocol no
 
 > While it's possible to send events to Google Analytics solely with the Measurement Protocol, only partial reporting may be available. The purpose of the Measurement Protocol is to augment existing events collected using gtag, GTM, or Firebase.
 
-Vanilla does not pretend otherwise. The second property has no tag of its own, which puts it in the case Google describes as partial reporting, and a test confirmed it: without `/g/collect` there was no session source and no new users. That hit closes the biggest gap, and the rest stays a deliberate trade. It is why the design has two properties:
+Vanilla does not pretend otherwise. The second property has no tag of its own, which puts it in the case Google describes as partial reporting, and a test confirmed it: without `/g/collect` there was no session source and no new users. All events now use collect to keep their session attribution. It is why the design has two properties:
 
 - **The regular tag stays untouched** and keeps delivering full reporting, its own consent handling and Ads integrations.
-- **The second property takes the partial reporting** in return for independence. Nothing on the production measurement depends on this project, and if the server stops, the regular property does not notice.
+- **The second property keeps an independent identity and transport.** Nothing on the production measurement depends on this project, and if the server stops, the regular property does not notice.
 - **The streams stay apart.** Nothing deduplicates them, so sharing a property would double-count. Separate properties can also be compared.
 
 The other reading, attaching MP events to a tagged session in the same property, is what Google's [session attribution](https://developers.google.com/analytics/devguides/collection/protocol/ga4/use-cases) covers. This project does not do that: it would need the tag's `client_id` and `session_id`, so the identity would no longer be independent.
@@ -229,7 +230,7 @@ The [Measurement Protocol pages](https://developers.google.com/analytics/devguid
 
 So the base is stable, and Google points future work elsewhere. The Data Manager API is not used here, for three reasons:
 
-1. **Setup.** It [needs a Google Cloud project and service or user account credentials](https://developers.google.com/data-manager/api/devguides/quickstart/set-up-access). Measurement Protocol needs one API secret from the Analytics admin screen, which a beginner can copy into an installer.
+1. **Setup.** It [needs a Google Cloud project and service or user account credentials](https://developers.google.com/data-manager/api/devguides/quickstart/set-up-access). Collect needs only the web stream Measurement ID.
 2. **Same constraint.** Google's [guide](https://developers.google.com/data-manager/api/devguides/events/analytics/recommended-custom-events) says its intent is also "to augment automatic collection", not to replace it. It would not lift partial reporting by itself. Not verified by this project: a [third-party test](https://www.markus-baersch.de/blog/data-manager-api-echter-ersatz-fuer-das-measurement-protocol/) reports no functional gain for GA4 alone and higher latency.
 3. **Size.** The transport is one `fetch` in `src/server/google.ts`, with no new runtime dependency.
 
@@ -268,7 +269,7 @@ None of this is new, and the work below came first.
 
 - **Simo Ahava, 2015.** [Measure ad and content blocker impact](https://www.simoahava.com/analytics/measure-ad-content-blocker-impact-on-traffic/): a bait file detects blockers, and a fallback hit sent by Measurement Protocol to a separate Universal Analytics property, with a server relay suggested.
 - **Markus Baersch, 2022.** [GA4 Measurement Protocol for websites, an experiment](https://www.markus-baersch.de/blog/google-analytics-4-measurement-protocol-fuer-websites-experiment/): parallel MP collection compared with gtag. His findings on attribution, `first_visit` and New users are what the [Pending](measurement-protocol-notes.md#pending) list tests against. He pre-dates `ip_override` and `device`, and repeated the test in 2026 with the Data Manager API.
-- **[ga4mp](https://github.com/analytics-debugger/ga4mp).** The opposite route: an open implementation of the client-side protocol, with `/g/collect` as its default endpoint. It stays closer to the regular tag; Vanilla uses `/g/collect` only to open a session and stays on the published Measurement Protocol for everything else.
+- **[ga4mp](https://github.com/analytics-debugger/ga4mp).** The opposite route: an open implementation of the client-side protocol, with `/g/collect` as its default endpoint. It stays closer to the regular tag; Vanilla now uses the same collect transport for every event.
 - **[Cloudflare Zaraz](https://developers.cloudflare.com/zaraz/).** Offloads third-party tools to Cloudflare's edge. Its [GA4 component](https://github.com/managed-components/google-analytics-4) also builds requests for `/g/collect`.
 - **[ga4-server-side-relay](https://github.com/catesandrew/ga4-server-side-relay).** A self-hosted first-party relay to Measurement Protocol for Next.js and Vercel, close to this project in approach.
 

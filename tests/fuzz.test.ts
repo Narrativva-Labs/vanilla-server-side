@@ -13,7 +13,7 @@ const START = Number(process.env.FUZZ_SEED ?? 1);
 const config = {
   cookieSecret: "s".repeat(64),
   measurementId: "G-FUZZ",
-  apiSecret: "fuzz",
+
   siteOrigin: "https://shop.example",
 };
 const consents = [
@@ -41,7 +41,6 @@ interface Hit {
   sid: string;
   ip?: string;
   query: URLSearchParams;
-  body?: { events: { name: string; params: Record<string, unknown> }[] };
   ok: boolean;
   raw: string;
   time: number;
@@ -66,9 +65,9 @@ async function scenario(seed: number) {
   const google: typeof fetch = async (input, init) => {
     const url = new URL(String(input));
     const raw = url.href + String(init?.body ?? "");
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    if (url.pathname !== "/g/collect") problem("unexpected upstream endpoint");
     const query = url.searchParams;
-    const measured = url.pathname === "/mp/collect" || query.get("gcs")?.[3] === "1";
+    const measured = query.get("gcs")?.[3] === "1";
     if (quiet && measured) problem(`measured hit ${url.pathname} after withdrawal`);
     trace(
       `GOOGLE> ${url.pathname} en=${query.get("en")} ss=${query.get("_ss")} sid=${query.get("sid")} cid=${query.get("cid")}`,
@@ -80,11 +79,10 @@ async function scenario(seed: number) {
     trace(`GOOGLE< ${url.pathname} ${status}`);
     hits.push({
       path: url.pathname,
-      cid: body?.client_id ?? query.get("cid") ?? "",
-      sid: String(body?.events?.[0]?.params?.session_id ?? query.get("sid")),
-      ip: body?.ip_override ?? query.get("_uip") ?? undefined,
+      cid: query.get("cid") ?? "",
+      sid: String(query.get("sid")),
+      ip: query.get("_uip") ?? undefined,
       query,
-      body,
       ok: status === 204,
       raw,
       time: Date.now(),
@@ -227,7 +225,6 @@ async function scenario(seed: number) {
       continue;
     }
     if (hit.ip !== ip) problem(`wrong or missing IP ${hit.path}`);
-    if (hit.path === "/mp/collect" && hit.raw.includes(SECRET)) problem("click ID in MP");
     if (hit.path === "/g/collect") {
       const clicked = hit.query.get("dl")?.includes("gclid=");
       const gcd = hit.query.get("gcd") ?? "";
@@ -243,9 +240,8 @@ async function scenario(seed: number) {
     // Two minutes over: an event already in the queue keeps its session.
     if (hit.time - openedAt.get(key)! > 24 * 3_600_000 + 120_000)
       problem("session longer than 24 hours");
-    for (const event of hit.body?.events ?? []) {
-      if (event.name !== "purchase") continue;
-      const id = String(event.params.transaction_id);
+    if (hit.query.get("en") === "purchase") {
+      const id = hit.query.get("ep.transaction_id") ?? "";
       purchases.set(id, (purchases.get(id) ?? 0) + 1);
     }
   }

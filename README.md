@@ -2,21 +2,21 @@
 
 **[Install it](INSTALL.md)** | **[Understand how it works](docs/technical-overview.md)**
 
-A small, self-hosted analytics collector by František Bujnovský. Your regular Google Analytics stays exactly as it is. Next to it, a tiny script sends events to your own server, and your server forwards them to a **second, separate** Google Analytics property. A `/g/collect` hit opens each session, the same transport the Google tag uses, and the documented Measurement Protocol carries almost everything else.
+A small, self-hosted analytics collector by František Bujnovský. Your regular Google Analytics stays exactly as it is. Next to it, a tiny script sends events to your own server, and your server forwards them to a **second, separate** Google Analytics property. Every event uses `/g/collect`, the transport used by the Google tag.
 
 It measures for Google Analytics only and sends nothing to Meta or other platforms.
 
 Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).
 
-You get a second measurement under your own control: a signed cookie set by your server, a consent check on your server, and the Google API secret kept off the website. The server checks the consent state the browser reports and cannot confirm it independently, and the data still ends up in Google Analytics. It runs on a small VPS with no database. MIT licensed.
+You get a second measurement under your own control: a signed cookie set by your server, a consent check on your server, and one Google transport for sessions and purchases. The server checks the consent state the browser reports and cannot confirm it independently, and the data still ends up in Google Analytics. It runs on a small VPS with no database. MIT licensed.
 
 ```text
 Browser -- regular Google tag / GTM -----------------> regular property (unchanged)
    |
    `-- Vanilla script --> your server --------------> second property
-        waits for consent   signed cookie              /g/collect opens a session
-                            consent check              Measurement Protocol for the rest
-                            bot filter                 API secret stays here
+        waits for consent   signed cookie              /g/collect for every event
+                            consent check              session flags on the first hit
+                            bot filter
 ```
 
 Use the second property for Vanilla only. Never point it at the property your regular tag uses: nothing deduplicates the two streams.
@@ -80,11 +80,12 @@ If the regular property already imports the same conversion, set this one as sec
 
 ## Limits
 
-- **Partial reporting.** Google says Measurement Protocol alone gives [only partial reporting](https://developers.google.com/analytics/devguides/collection/protocol/ga4). In this project's test all 70 sessions sent that way had source `(not set)` and 0 new users, which is why a `/g/collect` hit now opens each session. Expect reports to differ from the regular property.
+- **Reporting can differ from the regular tag.** In the November 7–8 comparison, collect kept all tested hits in the attributed session; mixed transport lost attribution on some MP events. See the [test notes](docs/measurement-protocol-notes.md#all-collect-comparison).
 - **`/g/collect` has no public contract.** Google can change it without notice, and it returns 204 for anything. The fields follow captured Google tag hits, so they need a recheck over time. See the [notes](docs/measurement-protocol-notes.md#gcollect).
 - **Safari kept the cookie for 7 days in the one run measured.** Safari 26.6.2 stored it for 7.0 days with the tracker on a different IPv4 /16 from the website, the case [WebKit's cap](https://webkit.org/blog/15697/private-browsing-2-0/) describes. A default install runs on a different server, so expect the same. The server renews the cookie on each delivered event; whether a returning visitor keeps the identity in Safari: Not verified. [Details](docs/technical-overview.md#safari).
 - **Content blockers.** Getting past them is a side benefit, not the purpose of this project. A neutral random subdomain and neutral paths lower the chance of a filter list match, but guarantee nothing: first-party does not mean unblockable. In one run, uBlock Origin Lite with default lists did not stop the tracker. Consent rules stay the same: no event is sent without consent, and a refusal stops regular measurement, apart from the limited ping. [Details](docs/technical-overview.md#content-blockers)
 - **Bots.** A short User-Agent filter stops obvious ones. Anything that claims to be a browser passes.
+- **Encoded collect URLs above 8 KiB are dropped with a diagnostic.** Reduce the number of items or parameters.
 - **No cross-domain identity, durable queue or backfill.** If your server is down, its events are lost; the regular tag is unaffected.
 - **Each open tab keeps its own consent state** until it reloads, so a refusal in one tab does not stop a second open tab at once.
 - **HTTP 2xx proves delivery only.** Google [does not report errors](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) on the live endpoint.
@@ -98,6 +99,6 @@ If the regular property already imports the same conversion, set this one as sec
 - [Cookie banners](docs/cookie-banners.md): what consent banners really send
 - [Design decisions](docs/decisions.md): each decision with its alternative and source
 
-For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `tests/fuzz.test.ts` runs random sequences against rules that must always hold. `npm run verify:mp` checks real payloads against Google's validation server and sends nothing to reports.
+For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `tests/fuzz.test.ts` runs random sequences against rules that must always hold.
 
 Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a security issue? See [SECURITY.md](SECURITY.md).

@@ -1,9 +1,6 @@
 import { afterEach, expect, it } from "vitest";
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 const children: ChildProcess[] = [];
 afterEach(() => {
@@ -85,7 +82,7 @@ it("demo serves the page and tracker, prints what would go to Google and what wa
     /^vanilla_session=[^;]+; Path=\/; HttpOnly; SameSite=Lax/,
   );
   await until(() => demo.output().includes("TO GOOGLE  generate_lead"));
-  expect(demo.output()).toContain("www.google-analytics.com/mp/collect");
+  expect(demo.output()).toContain("www.google-analytics.com/g/collect");
   expect(demo.output()).not.toContain("api_secret");
   expect(demo.output()).not.toContain("network used");
 
@@ -115,95 +112,4 @@ it("demo does not report an event as blocked once it reached the stub", async ()
   await until(() => demo.output().includes("TO GOOGLE  generate_lead"));
   await new Promise((resolve) => setTimeout(resolve, 3200));
   expect(demo.output()).not.toContain("BLOCKED");
-});
-
-const credentials = { GA4_MEASUREMENT_ID: "G-TEST123", GA4_API_SECRET: "super-secret-value" };
-const clean = Object.fromEntries(
-  Object.entries(process.env).filter(([key]) => !key.startsWith("GA4_")),
-);
-
-it("verify:mp explains the missing credentials and sends nothing", () => {
-  const result = spawnSync(process.execPath, ["--import", noNetwork, "scripts/verify-mp.mjs"], {
-    env: clean,
-    encoding: "utf8",
-  });
-  expect(result.status).toBe(2);
-  expect(result.stderr).toContain("GA4_MEASUREMENT_ID and GA4_API_SECRET");
-  expect(result.stderr).toContain("has sent nothing");
-});
-
-it("verify:mp calls only the validation server and never prints the credentials", () => {
-  const root = mkdtempSync(join(tmpdir(), "verify-mp-"));
-  const log = join(root, "urls.log");
-  const stub = join(root, "stub.mjs");
-  writeFileSync(
-    stub,
-    `import { appendFileSync } from "node:fs";
-    globalThis.fetch = async (url) => { appendFileSync(${JSON.stringify(log)}, url + "\\n");
-      return new Response(JSON.stringify({ validationMessages: [] })); };`,
-  );
-  try {
-    const result = spawnSync(process.execPath, ["--import", stub, "scripts/verify-mp.mjs"], {
-      env: { ...clean, ...credentials },
-      encoding: "utf8",
-    });
-    expect(result.status, result.stderr).toBe(0);
-    const urls = readFileSync(log, "utf8").trim().split("\n");
-    expect(urls.length).toBeGreaterThan(50);
-    for (const url of urls)
-      expect(new URL(url).origin + new URL(url).pathname).toBe(
-        "https://www.google-analytics.com/debug/mp/collect",
-      );
-    const output = result.stdout + result.stderr;
-    expect(output).not.toContain(credentials.GA4_MEASUREMENT_ID);
-    expect(output).not.toContain(credentials.GA4_API_SECRET);
-    expect(output).toContain("All repository payloads accepted");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-it("verify:mp follows GA4_REGION to the EU validation server", () => {
-  const root = mkdtempSync(join(tmpdir(), "verify-mp-"));
-  const log = join(root, "urls.log");
-  const stub = join(root, "stub.mjs");
-  writeFileSync(
-    stub,
-    `import { appendFileSync } from "node:fs";
-    globalThis.fetch = async (url) => { appendFileSync(${JSON.stringify(log)}, url + "\\n");
-      return new Response(JSON.stringify({ validationMessages: [] })); };`,
-  );
-  try {
-    const result = spawnSync(process.execPath, ["--import", stub, "scripts/verify-mp.mjs"], {
-      env: { ...clean, ...credentials, GA4_REGION: "eu" },
-      encoding: "utf8",
-    });
-    expect(result.status, result.stderr).toBe(0);
-    for (const url of readFileSync(log, "utf8").trim().split("\n"))
-      expect(new URL(url).origin + new URL(url).pathname).toBe(
-        "https://region1.google-analytics.com/debug/mp/collect",
-      );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-it("verify:mp exits with failure when Google rejects a repository payload", () => {
-  const root = mkdtempSync(join(tmpdir(), "verify-mp-"));
-  const stub = join(root, "stub.mjs");
-  writeFileSync(
-    stub,
-    `globalThis.fetch = async () => new Response(JSON.stringify({ validationMessages:
-    [{ validationCode: "VALUE_INVALID", fieldPath: "events", description: "bad" }] }));`,
-  );
-  try {
-    const result = spawnSync(process.execPath, ["--import", stub, "scripts/verify-mp.mjs"], {
-      env: { ...clean, ...credentials },
-      encoding: "utf8",
-    });
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain("VALUE_INVALID");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 });

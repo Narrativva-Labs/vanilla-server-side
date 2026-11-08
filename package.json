@@ -16,7 +16,6 @@
     "start": "node --env-file-if-exists=.env dist/server/index.js",
     "dev": "npm run build && npm start",
     "demo": "npm run build --silent && node scripts/demo.mjs",
-    "verify:mp": "npm run build --silent && node --env-file-if-exists=.env scripts/verify-mp.mjs",
     "format": "prettier --write src tests scripts",
     "format:check": "prettier --check src tests scripts"
   },

@@ -8,7 +8,6 @@ const config = {
   cookieDomain: "example.com",
   cookieSecret: "s".repeat(64),
   measurementId: "G-TEST",
-  apiSecret: "test",
 };
 const consent = normalizeConsent({ analytics_storage: "granted" });
 const event = (id = crypto.randomUUID()) => {

@@ -44,7 +44,6 @@ it("same-origin path proxy strips the prefix and serves working tracker, collect
       cookieDomain: "127.0.0.1",
       cookieSecret: "s".repeat(64),
       measurementId: "G-TEST",
-      apiSecret: "test",
     },
     google,
   );
@@ -124,7 +123,7 @@ it("same-origin path proxy strips the prefix and serves working tracker, collect
     host.dataLayer.push(["event", "generate_lead"] as string[]);
     await vi.waitFor(() => expect(google).toHaveBeenCalledTimes(2));
     await Promise.all([...pending]);
-    expect(JSON.parse(String(google.mock.calls[1]![1]?.body)).client_id).toBe(firstId);
+    expect(new URL(String(google.mock.calls[1]![0])).searchParams.get("cid")).toBe(firstId);
     host.dataLayer.push(["consent", "update", { analytics_storage: "denied" }]);
     await Promise.all([...pending]);
     expect(paths.at(-1)).toBe("/kx7qpa/p");

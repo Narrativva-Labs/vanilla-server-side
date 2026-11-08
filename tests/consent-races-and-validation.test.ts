@@ -1,4 +1,4 @@
-/** Regression coverage for consent races, interrupted navigation and MP validation. */
+/** Regression coverage for consent races, interrupted navigation and parameter validation. */
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp } from "../src/server/app.js";
 import { serverIdentity } from "../src/server/identity.js";
@@ -9,7 +9,6 @@ const config = {
   cookieDomain: "shop.example",
   cookieSecret: "s".repeat(64),
   measurementId: "G-TEST",
-  apiSecret: "test",
 };
 const granted = { analytics_storage: "granted" };
 const settle = async () => {
@@ -181,11 +180,11 @@ it("collector limits final parameters and drops invalid names and long custom va
       payload: { ...event(), name: "generate_lead", params },
     });
     expect(response.statusCode).toBe(204);
-    const sent = JSON.parse(String(google.mock.calls[1]![1]!.body)).events.at(-1).params;
-    expect(Object.keys(sent)).toHaveLength(25);
-    expect(sent.session_id).toEqual(expect.any(Number));
-    expect(sent["bad-name"]).toBeUndefined();
-    expect(sent.custom).toBeUndefined();
+    const sent = new URL(String(google.mock.calls[0]![0])).searchParams;
+    expect([...sent.keys()].filter((key) => key.startsWith("epn."))).toHaveLength(24);
+    expect(sent.get("sid")).toMatch(/^[0-9]+$/);
+    expect(sent.has("ep.bad-name")).toBe(false);
+    expect(sent.has("ep.custom")).toBe(false);
   } finally {
     await app.close();
   }

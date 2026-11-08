@@ -26,7 +26,7 @@ function received(name) {
 }
 
 /** Stands in for fetch in the collector: prints what would leave and answers like Google. */
-async function fakeGoogle(url, init) {
+async function fakeGoogle(url) {
   const { host, pathname, searchParams } = new URL(url);
   if (pathname === "/g/collect") {
     const name = searchParams.get("en");
@@ -36,18 +36,7 @@ async function fakeGoogle(url, init) {
     ]);
     return new Response(null, { status: 204 });
   }
-  const { events, client_id, consent, device, ip_override } = JSON.parse(init.body);
-  for (const { name, params } of events) {
-    received(name);
-    line("TO GOOGLE", `${name}  ->  ${host}${pathname}`, [
-      `client_id ${client_id}  session_id ${params.session_id}`,
-      `ad_user_data ${consent.ad_user_data}  ad_personalization ${consent.ad_personalization}`,
-      ...(device ? [`device ${device.browser} / ${device.model} / ${device.category}`] : []),
-      `ip_override ${ip_override}`,
-      `params ${JSON.stringify(params)}`,
-    ]);
-  }
-  return new Response(null, { status: 204 });
+  throw new Error("Unexpected Google endpoint");
 }
 
 const reasons = {
@@ -122,7 +111,6 @@ const app = createApp(
     cookieDomain: "localhost",
     cookieSecret: "demo-only-".repeat(4),
     measurementId: "G-DEMO",
-    apiSecret: "demo",
   },
   fakeGoogle,
 );

@@ -37,13 +37,14 @@ it("installer validates inputs, preserves existing env and uses compose with a f
     const first = spawnSync("bash", [join(root, "install.sh")], {
       env,
       input:
-        "https://bad-domain\nkx7qpa.example.com\nhttp://wrong.example.com\nhttps://www.example.com\nBAD\nG-TEST\nshort\nabcdefghijklmnop\n",
+        "https://bad-domain\nkx7qpa.example.com\nhttp://wrong.example.com\nhttps://www.example.com\nBAD\nG-TEST\n",
       encoding: "utf8",
     });
     expect(first.status, first.stderr).toBe(0);
     expect(first.stdout).toContain('<script defer src="https://kx7qpa.example.com/s.js"></script>');
     const initial = readFileSync(join(root, ".env"), "utf8");
     expect(initial).toContain("COOKIE_DOMAIN=example.com");
+    expect(initial).not.toContain("GA4_API_SECRET");
     expect(initial).toMatch(/COOKIE_SECRET=[a-f0-9]{64}/);
     expect(statSync(join(root, ".env")).mode & 0o777).toBe(0o600);
     const second = spawnSync("bash", [join(root, "install.sh")], {
@@ -90,7 +91,7 @@ for (const [tracker, site, domain, succeeds] of [
     try {
       const result = spawnSync("bash", [join(root, "install.sh")], {
         env: { ...process.env, PATH: bin + ":" + process.env.PATH },
-        input: `${tracker}\n${site}\nG-TEST\nabcdefghijklmnop\n`,
+        input: `${tracker}\n${site}\nG-TEST\n`,
         encoding: "utf8",
       });
       expect(result.status, result.stderr).toBe(succeeds ? 0 : 1);

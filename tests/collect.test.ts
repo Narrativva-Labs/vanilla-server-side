@@ -9,7 +9,6 @@ afterEach(() => vi.useRealTimers());
 const config = {
   cookieSecret: "s".repeat(64),
   measurementId: "G-TEST",
-  apiSecret: "test-secret",
   siteOrigin: "https://shop.example",
 };
 const all = {
@@ -96,7 +95,7 @@ it("the first page_view of a session goes only through /g/collect", async () => 
 
     const cookie = String(reply.headers["set-cookie"]);
     await post("/e", event(), cookie);
-    expect(urls().map((url) => url.pathname)).toEqual(["/g/collect", "/mp/collect"]);
+    expect(urls().map((url) => url.pathname)).toEqual(["/g/collect", "/g/collect"]);
   } finally {
     await app.close();
   }
@@ -120,14 +119,13 @@ it("a returning visitor opens a new session without counting as a first visit", 
   }
 });
 
-it("a session opened by another event starts through /g/collect and keeps its data in MP", async () => {
+it("a session opened by another event carries its name in one collect hit", async () => {
   const { app, post, urls, google } = setup();
   try {
     await post("/e", event({ name: "generate_lead" }));
-    expect(urls().map((url) => url.pathname)).toEqual(["/g/collect", "/mp/collect"]);
-    expect(urls()[0]!.searchParams.get("en")).toBe("page_engagement");
-    const body = JSON.parse(String(google.mock.calls[1]![1]!.body));
-    expect(body.events[0].name).toBe("generate_lead");
+    expect(urls().map((url) => url.pathname)).toEqual(["/g/collect"]);
+    expect(urls()[0]!.searchParams.get("en")).toBe("generate_lead");
+    expect(google).toHaveBeenCalledTimes(1);
   } finally {
     await app.close();
   }
@@ -202,7 +200,7 @@ it("a browser that keeps no cookie does not open a session with every event", as
   try {
     await post("/e", event());
     await post("/e", event());
-    expect(urls().map((url) => url.pathname)).toEqual(["/g/collect", "/mp/collect"]);
+    expect(urls().map((url) => url.pathname)).toEqual(["/g/collect", "/g/collect"]);
   } finally {
     await app.close();
   }
@@ -337,7 +335,7 @@ it("an undecided visitor and a withdrawal on a measured page send no ping", asyn
   expect(withdrawn.sent().map((item) => item.path)).toEqual(["/e", "/p"]);
 });
 
-it("a withdrawal during session opening stops the Measurement Protocol request", async () => {
+it("a withdrawal during session opening prevents renewing the cookie", async () => {
   let release!: () => void;
   let entered!: () => void;
   const gate = new Promise<void>((resolve) => (release = resolve));
@@ -402,36 +400,28 @@ it("a click ID in the page title reaches Google in no ping", async () => {
   expect(title.sent()[0]!.init.referrerPolicy).toBe("no-referrer");
 });
 
-it("a failed measurement request after an open session does not open it again", async () => {
-  const google = vi.fn<typeof fetch>(
-    async (url) =>
-      new Response(null, { status: String(url).includes("/mp/") && !retried() ? 503 : 204 }),
-  );
-  let attempts = 0;
-  const retried = () => attempts++ > 0;
+it("a failed opening retries the same event without an extra request", async () => {
+  const google = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    .mockResolvedValue(new Response(null, { status: 204 }));
   const app = createApp(config, google);
-  const log = vi.spyOn(console, "error").mockImplementation(() => {});
-  const headers = { origin: config.siteOrigin };
+  const payload = event({ name: "purchase" });
+  const post = () =>
+    app.inject({ method: "POST", url: "/e", headers: { origin: config.siteOrigin }, payload });
   try {
-    const payload = event({ name: "purchase" });
-    const first = await app.inject({ method: "POST", url: "/e", headers, payload });
+    const first = await post();
     expect(first.statusCode).toBe(503);
-    const cookie = String(first.headers["set-cookie"]);
-    expect(cookie).toContain("vanilla_session=");
-    const second = await app.inject({
-      method: "POST",
-      url: "/e",
-      headers: { ...headers, cookie },
-      payload,
-    });
-    expect(second.statusCode).toBe(204);
-    expect(google.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual([
-      "/g/collect",
-      "/mp/collect",
-      "/mp/collect",
-    ]);
+    expect(first.headers["set-cookie"]).toBeUndefined();
+    expect((await post()).statusCode).toBe(204);
+    expect(google).toHaveBeenCalledTimes(2);
+    for (const [input] of google.mock.calls) {
+      const url = new URL(String(input));
+      expect(url.pathname).toBe("/g/collect");
+      expect(url.searchParams.get("en")).toBe("purchase");
+      expect(url.searchParams.get("_ss")).toBe("1");
+    }
   } finally {
-    log.mockRestore();
     await app.close();
   }
 });
@@ -477,7 +467,7 @@ it("a parallel event waits for the opening and answers with one cookie", async (
     expect(urls).toHaveLength(1);
     release();
     const replies = await Promise.all([first, second]);
-    expect(urls.map((url) => url.pathname)).toEqual(["/g/collect", "/mp/collect"]);
+    expect(urls.map((url) => url.pathname)).toEqual(["/g/collect", "/g/collect"]);
     expect(urls.filter((url) => url.searchParams.get("_ss") === "1")).toHaveLength(1);
     for (const reply of replies) expect(typeof reply.headers["set-cookie"]).toBe("string");
   } finally {
@@ -526,7 +516,7 @@ it("the same event waiting for an opening is delivered once", async () => {
     await moment();
     release();
     await Promise.all([first, ...twins]);
-    expect(urls.filter((url) => url.pathname === "/mp/collect")).toHaveLength(1);
+    expect(urls.filter((url) => url.searchParams.get("en") === "generate_lead")).toHaveLength(1);
   } finally {
     await app.close();
   }
@@ -611,7 +601,7 @@ it("a session ends after 24 hours even with steady activity", async () => {
   }
 });
 
-it("engagement time survives a hit that replaces the MP request", async () => {
+it("engagement time survives a later page view", async () => {
   const { app, post, urls } = setup();
   try {
     const params = { ...event().params, engagement_time_msec: 5000 };
@@ -762,7 +752,7 @@ it("the server cleans URLs itself, for a request that skipped the tracker", asyn
   try {
     const page_location = "https://alice:password@shop.example/a?token=PRIVATE&utm_source=x#frag";
     await post("/e", event({ name: "generate_lead", params: { page_location } }));
-    const body = String(google.mock.calls[1]![1]!.body);
+    const body = new URL(String(google.mock.calls[0]![0])).searchParams.get("dl")!;
     for (const secret of ["alice", "password", "PRIVATE", "frag"])
       expect(body).not.toContain(secret);
     expect(body).toContain("utm_source=x");

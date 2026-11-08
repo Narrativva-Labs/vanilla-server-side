@@ -56,12 +56,6 @@ else
     [[ $measurement =~ ^G-[A-Z0-9]+$ && $measurement != G-XXXXXXXXXX ]] && break
     echo "Expected G- followed by letters and digits."
   done
-  while true; do
-    read -r -s -p "Measurement Protocol API secret: " api_secret
-    echo
-    [[ $api_secret =~ ^[a-zA-Z0-9_-]{10,128}$ ]] && break
-    echo "Expected a 10–128 character API secret (letters, digits, _ or -)."
-  done
   secret=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
   # The shared parent allows the sibling tracker to set the website cookie.
   umask 077
@@ -70,7 +64,6 @@ else
 TRACKER_DOMAIN=$tracker
 SITE_ORIGIN=$site
 GA4_MEASUREMENT_ID=$measurement
-GA4_API_SECRET=$api_secret
 COOKIE_SECRET=$secret
 COOKIE_DOMAIN=$cookie_domain
 ENV

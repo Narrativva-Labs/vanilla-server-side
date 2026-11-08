@@ -11,7 +11,6 @@ const config = {
   cookieDomain: "example.com",
   cookieSecret: "s".repeat(64),
   measurementId: "G-TEST",
-  apiSecret: "test",
 };
 const settle = async () => {
   for (let i = 0; i < 30; i++) await Promise.resolve();
@@ -82,13 +81,12 @@ it("server consent, credentials, device, campaign, geography and health", async 
     expect(opening.searchParams.get("cid")).not.toBe(event.client_id);
     const cookie = String(response.headers["set-cookie"]);
     await post({ ...event, event_id: crypto.randomUUID() }, cookie);
-    const second = JSON.parse(String(google.mock.calls[1]![1]?.body));
-    expect(second.client_id).toBe(opening.searchParams.get("cid"));
-    expect(second.device).toEqual(event.device);
-    expect(second.events.map((e: { name: string }) => e.name)).toEqual(["page_view"]);
-    expect(second.events[0].params.engagement_time_msec).toBe(50);
-    expect(second.consent).toEqual({ ad_user_data: "DENIED", ad_personalization: "DENIED" });
-    expect(second.ip_override).toBe("127.0.0.1");
+    const second = new URL(String(google.mock.calls[1]![0])).searchParams;
+    expect(second.get("cid")).toBe(opening.searchParams.get("cid"));
+    expect(second.get("en")).toBe("page_view");
+    expect(second.get("_et")).toBe("50");
+    expect(second.get("gcd")).toBe("13p3t3p2p5l1");
+    expect(second.get("_uip")).toBe("127.0.0.1");
     const deleted = await app.inject({
       method: "POST",
       url: "/p",
