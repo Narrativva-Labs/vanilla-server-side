@@ -135,10 +135,15 @@ if (script && !win.__vanillaGA) {
     if (!event.persisted) return;
     lastPage = location.href;
     previousPage = undefined;
+    visibleSince = engagementEnabled && document.visibilityState !== "hidden" ? Date.now() : 0;
+    visibleTime = 0;
     tracker.page(sync);
   });
   window.addEventListener("pagehide", () => {
-    tracker.exit();
+    const elapsed = engagement();
+    // The page is gone: a visibilitychange that follows must not report a few more milliseconds.
+    visibleSince = 0;
+    tracker.exit(elapsed);
   });
   document.addEventListener?.("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
