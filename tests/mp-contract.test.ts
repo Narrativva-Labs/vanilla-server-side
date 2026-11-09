@@ -273,12 +273,13 @@ it("purchase fields use exact collect types and item prefixes", () => {
 it("item tildes cannot inject fields and Unicode survives outer encoding", () => {
   const url = buildEventCollectUrl(
     destination,
-    { ...event(), params: { items: [{ item_name: "Příliš~qt999", custom: "ž~luť" }] } },
+    { ...event(), params: { items: [{ item_name: "Příliš~qt999", custom: "ž~luť~" }] } },
     granted,
   )!;
   const item = new URL(url.href).searchParams.get("pr1")!;
-  expect(item).toBe("nmPříliš%7Eqt999~k0custom~v0ž%7Eluť");
-  expect(item.split("~")).toHaveLength(3);
+  // Same escape as the Google tag: a doubled tilde is a literal one.
+  expect(item).toBe("nmPříliš~~qt999~k0custom~v0ž~~luť~~");
+  expect(item.match(/(?:[^~]|~~)+/g)).toEqual(["nmPříliš~~qt999", "k0custom", "v0ž~~luť~~"]);
 });
 it("engagement and subsequent page views set seg, with page sequence passed through", () => {
   for (const [name, engagement, start, expected] of [

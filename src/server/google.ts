@@ -129,8 +129,8 @@ const itemFields: Record<string, string> = {
   creative_slot: "cs",
 };
 function itemValue(value: unknown) {
-  // A literal tilde would become another item field after the outer URL decoding.
-  return String(value).replaceAll("~", "%7E");
+  // The Google tag doubles a literal tilde, so it cannot start another item field.
+  return String(value).replaceAll("~", "~~");
 }
 function encodeItem(item: Record<string, unknown>) {
   const fields: string[] = [];
