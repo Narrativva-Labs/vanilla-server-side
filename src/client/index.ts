@@ -112,8 +112,13 @@ if (script && !win.__vanillaGA) {
     }
   };
   let lastPage = location.href;
+  const withoutHash = (href: string) => href.split("#")[0];
   const navigate = () => {
-    if (location.href === lastPage) return;
+    // Like the Google tag, a change of the fragment alone is the same page.
+    if (withoutHash(location.href) === withoutHash(lastPage)) {
+      lastPage = location.href;
+      return;
+    }
     // The time spent so far belongs to the page being left.
     tracker.leave(lastPage);
     // A page visited without settled consent is never reported, not even as a referrer.

@@ -163,6 +163,19 @@ In BigQuery every hit carried the visitor's `user_pseudo_id` and `ga_session_id`
 
 So the hits leave this server with the right identity and session; the `(not set)` comes from how GA4 processes standard reports. Neither concurrency nor time since a server restart explained it. Whether the Google tag shows the same under these conditions was not tested, and neither was its effect on conversions imported into Google Ads.
 
+## History changes
+
+Captured 2026-11-10: `gtag.js` in Chromium with enhanced measurement and its page changes on, each change on a freshly loaded page, hits answered locally.
+
+| Change | Google tag | Vanilla |
+| --- | --- | --- |
+| `replaceState` removes a query parameter | 1 more `page_view` | Same |
+| `replaceState` or `pushState` to another path or query | 1 more `page_view` | Same |
+| Only the fragment (`#…`): link, `location.hash`, back | None | Same since 2026-11-10; before, 1 more `page_view` |
+| `replaceState` to the same URL | None | Same |
+
+A site whose Google tag has page changes turned off, like the demo shop's GTM setup, counts fewer page views there than Vanilla.
+
 ## Collect wire format
 
 Reviewed 2026-11-08 against primary public implementations:

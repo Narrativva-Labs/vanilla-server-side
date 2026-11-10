@@ -39,6 +39,22 @@ it("a page restored from the back/forward cache sends a page view", async () => 
   expect(p.fetcher.mock.calls.length).toBe(before + 1);
   expect(JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]!.body)).name).toBe("page_view");
 });
+it("a fragment change is the same page, a new path is a page view", async () => {
+  const p = page([["consent", "update", { analytics_storage: "granted" }]]);
+  await flushAsync();
+  const before = p.fetcher.mock.calls.length;
+  p.host.history.pushState({}, "", p.host.location.href + "#contact");
+  p.host.location.href = p.host.location.href.replace("#contact", "#prices");
+  p.host.dispatchEvent(new Event("popstate"));
+  (p.host.setInterval.mock.calls[0]![0] as () => void)();
+  await flushAsync();
+  expect(p.fetcher.mock.calls.length).toBe(before);
+  p.host.history.pushState({}, "", "https://shop.example/b#top");
+  (p.host.setInterval.mock.calls[0]![0] as () => void)();
+  await flushAsync();
+  const names = p.fetcher.mock.calls.slice(before).map(([, o]) => JSON.parse(String(o?.body)).name);
+  expect(names.filter((name) => name === "page_view")).toHaveLength(1);
+});
 it("a restored page and its popstate send one page view", async () => {
   const p = page([["consent", "update", { analytics_storage: "granted" }]]);
   await flushAsync();
