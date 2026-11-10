@@ -305,26 +305,48 @@ it("engagement and subsequent page views set seg, with page sequence passed thro
     expect(url.searchParams.get("_s")).toBe("3");
   }
 });
-it("large encoded purchases are dropped before delivery with a value-free diagnostic", async () => {
+it("a large purchase goes in the body like the Google tag, an oversized one is dropped", async () => {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-  const google = vi.fn<typeof fetch>();
-  try {
-    const result = await sendGoogle(
+  const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+  const purchase = (items: Record<string, unknown>[]) =>
+    sendGoogle(
       destination,
-      {
-        ...event(),
-        name: "purchase",
-        params: {
-          items: Array.from({ length: 100 }, () => ({ item_id: "sku", item_name: "č".repeat(80) })),
-        },
-      },
+      { ...event(), name: "purchase", params: { transaction_id: "T1", value: 1, items } },
       () => granted,
       new AbortController().signal,
       google,
     );
-    expect(result).toBe("dropped");
+  try {
+    const big = Array.from({ length: 100 }, (_, i) => ({
+      item_id: `sku${i}`,
+      item_name: "č".repeat(80),
+    }));
+    expect(await purchase(big)).toBe("sent");
+    const [target, init] = google.mock.calls[0]!;
+    const url = new URL(String(target));
+    expect(Buffer.byteLength(url.href)).toBeLessThan(2000);
+    expect(url.searchParams.get("cid")).toBeTruthy();
+    expect(url.searchParams.get("en")).toBeNull();
+    const body = new URLSearchParams(String(init!.body));
+    expect(String(init!.body)).not.toContain("\n");
+    expect(body.get("en")).toBe("purchase");
+    expect(body.get("ep.transaction_id")).toBe("T1");
+    expect(body.get("pr100")).toBe(`idsku99~nm${"č".repeat(80)}`);
+
+    google.mockClear();
+    const small = await purchase([{ item_id: "a", item_name: "b" }]);
+    expect(small).toBe("sent");
+    expect(google.mock.calls[0]![1]!.body).toBeUndefined();
+    expect(new URL(String(google.mock.calls[0]![0])).searchParams.get("pr1")).toBe("ida~nmb");
+
+    google.mockClear();
+    const custom = Object.fromEntries(
+      Array.from({ length: 27 }, (_, i) => [`c${i}`, "č".repeat(100)]),
+    );
+    const huge = Array.from({ length: 200 }, (_, i) => ({ item_id: `sku${i}`, ...custom }));
+    expect(await purchase(huge)).toBe("dropped");
     expect(google).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith("Collect event dropped: encoded URL exceeds 8 KiB");
+    expect(warn).toHaveBeenCalledWith("Collect event dropped: encoded event exceeds 64 KiB");
   } finally {
     warn.mockRestore();
   }

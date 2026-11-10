@@ -210,12 +210,28 @@ export function buildEventCollectUrl(
       );
     }
   }
-  // Keep the proven URL transport until the body split is verified against a Google tag.
-  if (Buffer.byteLength(url.href) > 8 * 1024) {
-    console.warn("Collect event dropped: encoded URL exceeds 8 KiB");
+  return url;
+}
+/** Fields the Google tag moves into the POST body once the URL grows long. */
+const bodyField = (key: string) =>
+  key === "en" || key === "_et" || /^epn?\./.test(key) || /^pr\d+$/.test(key);
+const COLLECT_BODY_BYTES = 64 * 1024;
+/**
+ * Like the Google tag, a URL over 2000 bytes keeps the shared fields in the query and sends
+ * the event, its parameters and items as a one-line body, so a large basket is not dropped.
+ */
+export function collectRequest(url: URL): { url: URL; body?: string } | undefined {
+  if (Buffer.byteLength(url.href) <= 2000) return { url };
+  const head = new URL(url.origin + url.pathname);
+  const body = new URLSearchParams();
+  for (const [key, value] of url.searchParams)
+    (bodyField(key) ? body : head.searchParams).append(key, value);
+  const text = body.toString();
+  if (Buffer.byteLength(text) > COLLECT_BODY_BYTES) {
+    console.warn("Collect event dropped: encoded event exceeds 64 KiB");
     return undefined;
   }
-  return url;
+  return { url: head, body: text };
 }
 async function post(
   url: URL,
@@ -247,8 +263,14 @@ export async function sendGoogle(
   opening?: Opening,
 ): Promise<Delivery> {
   const url = buildEventCollectUrl(destination, event, getCurrent(), opening);
-  if (!url || signal.aborted) return "dropped";
-  const delivery = await post(url, { headers: browser(opening?.userAgent) }, signal, fetcher);
+  const request = url && collectRequest(url);
+  if (!request || signal.aborted) return "dropped";
+  const delivery = await post(
+    request.url,
+    { headers: browser(opening?.userAgent), body: request.body },
+    signal,
+    fetcher,
+  );
   if (delivery === "sent") opening?.opened?.();
   return delivery;
 }
