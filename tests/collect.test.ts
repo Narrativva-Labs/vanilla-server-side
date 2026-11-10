@@ -828,3 +828,42 @@ it("leaving a page after an expired session sends nothing for the old page", asy
     .at(-1)!;
   expect(view.body.params.engagement_time_msec).toBeLessThan(5000);
 });
+
+it("LOG_EVENTS writes the event name, answer and outcome, nothing about the visitor", async () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  try {
+    const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+    const app = createApp({ ...config, logEvents: true }, google);
+    const post = (payload: object, agent = "Mozilla/5.0 Chrome/140.0") =>
+      app.inject({
+        method: "POST",
+        url: "/e",
+        headers: { origin: config.siteOrigin, "user-agent": agent },
+        payload,
+      });
+    const first = event();
+    expect((await post(first)).statusCode).toBe(204);
+    expect((await post(first)).statusCode).toBe(204);
+    await post(event(), "Googlebot/2.1");
+    await post({ ...event(), name: "not allowed!" });
+    const lines = info.mock.calls.map(([line]) => line);
+    expect(lines).toEqual([
+      "Event page_view 204 sent",
+      "Event page_view 204 duplicate",
+      "Event page_view 204 bot",
+      "Event ? 400 -",
+    ]);
+    expect(lines.join(" ")).not.toMatch(/123\.456|127\.0\.0\.1|shop\.example|Landing/);
+    info.mockClear();
+    const quiet = createApp(config, google);
+    await quiet.inject({
+      method: "POST",
+      url: "/e",
+      headers: { origin: config.siteOrigin, "user-agent": "Mozilla/5.0 Chrome/140.0" },
+      payload: event(),
+    });
+    expect(info).not.toHaveBeenCalled();
+  } finally {
+    info.mockRestore();
+  }
+});

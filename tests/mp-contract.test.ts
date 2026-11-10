@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { validateParams, validEventName } from "../src/server/mp-validation.js";
 import { shortenBytes } from "../src/shared/event.js";
-import { buildEventCollectUrl, sendGoogle } from "../src/server/google.js";
+import { buildEventCollectUrl, collectRequest, sendGoogle } from "../src/server/google.js";
 import { deviceModel, deviceBrowser } from "../src/client/device.js";
 import { normalizeConsent } from "../src/shared/consent.js";
 import { createTracker } from "../src/client/tracker.js";
@@ -354,7 +354,7 @@ it("engagement and subsequent page views set seg, with page sequence passed thro
     expect(url.searchParams.get("_s")).toBe("3");
   }
 });
-it("a large purchase goes in the body like the Google tag, an oversized one is dropped", async () => {
+it("a large purchase goes in the body like the Google tag, an oversized one keeps the first items", async () => {
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const purchase = (items: Record<string, unknown>[]) =>
@@ -368,7 +368,7 @@ it("a large purchase goes in the body like the Google tag, an oversized one is d
   try {
     const big = Array.from({ length: 100 }, (_, i) => ({
       item_id: `sku${i}`,
-      item_name: "č".repeat(80),
+      item_name: `Jablka Golden Delicious ${i} kg bedna`,
     }));
     expect(await purchase(big)).toBe("sent");
     const [target, init] = google.mock.calls[0]!;
@@ -380,7 +380,24 @@ it("a large purchase goes in the body like the Google tag, an oversized one is d
     expect(String(init!.body)).not.toContain("\n");
     expect(body.get("en")).toBe("purchase");
     expect(body.get("ep.transaction_id")).toBe("T1");
-    expect(body.get("pr100")).toBe(`idsku99~nm${"č".repeat(80)}`);
+    expect(body.get("pr100")).toBe("idsku99~nmJablka Golden Delicious 99 kg bedna");
+    expect(warn).not.toHaveBeenCalled();
+
+    google.mockClear();
+    const long = big.map((item) => ({ ...item, item_name: "č".repeat(80) }));
+    expect(await purchase(long)).toBe("sent");
+    const trimmed = String(google.mock.calls[0]![1]!.body);
+    expect(Buffer.byteLength(trimmed)).toBeLessThanOrEqual(16 * 1024);
+    const kept = new URLSearchParams(trimmed);
+    expect(kept.get("ep.transaction_id")).toBe("T1");
+    expect(kept.get("epn.value")).toBe("1");
+    expect(kept.get("pr1")).toBe(`idsku0~nm${"č".repeat(80)}`);
+    expect(kept.get("pr100")).toBeNull();
+    const count = [...kept.keys()].filter((key) => /^pr\d+$/.test(key)).length;
+    expect(count).toBeGreaterThan(20);
+    expect(warn).toHaveBeenCalledWith(
+      `Collect event trimmed: ${100 - count} items left out to fit 16 KiB`,
+    );
 
     google.mockClear();
     const small = await purchase([{ item_id: "a", item_name: "b" }]);
@@ -388,14 +405,12 @@ it("a large purchase goes in the body like the Google tag, an oversized one is d
     expect(google.mock.calls[0]![1]!.body).toBeUndefined();
     expect(new URL(String(google.mock.calls[0]![0])).searchParams.get("pr1")).toBe("ida~nmb");
 
-    google.mockClear();
-    const custom = Object.fromEntries(
-      Array.from({ length: 27 }, (_, i) => [`c${i}`, "č".repeat(100)]),
+    const huge = new URL("https://region1.google-analytics.com/g/collect?v=2&en=x");
+    for (let i = 0; i < 30; i++) huge.searchParams.set(`ep.p${i}`, "č".repeat(100));
+    expect(collectRequest(huge)).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(
+      "Collect event dropped: encoded event exceeds 16 KiB without items",
     );
-    const huge = Array.from({ length: 200 }, (_, i) => ({ item_id: `sku${i}`, ...custom }));
-    expect(await purchase(huge)).toBe("dropped");
-    expect(google).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith("Collect event dropped: encoded event exceeds 64 KiB");
   } finally {
     warn.mockRestore();
   }

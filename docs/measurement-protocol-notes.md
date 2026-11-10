@@ -162,7 +162,9 @@ In BigQuery every hit carried the visitor's `user_pseudo_id` and `ga_session_id`
 
 Engaged sessions work: in the demo shop on 2026-11-08 both properties counted 12 engaged sessions of 12.
 
-So the hits leave this server with the right identity and session; the `(not set)` comes from how GA4 processes standard reports. Neither concurrency nor time since a server restart explained it. Whether the Google tag shows the same under these conditions was not tested, and neither was its effect on conversions imported into Google Ads.
+So the hits leave this server with the right identity and session; the `(not set)` comes from how GA4 processes standard reports. Neither concurrency nor time since a server restart explained it.
+
+The Google tag shows the same. On 2026-11-10 the demo shop ran GTM and Vanilla in the same visits, 24 at once, three times: the GTM property put later hits under `(not set)` in each run (16 events in one of them), including a purchase. After `sct` and `_nsi` were added, Vanilla had none in those demo runs, but on the main site 2 of 16 and 3 of 16 visits still lost the source, so the two fields align the hit with the Google tag without removing the effect. Its effect on conversions imported into Google Ads was not tested.
 
 ## History changes
 
@@ -187,4 +189,6 @@ Reviewed 2026-11-08 against primary public implementations:
 
 Vanilla encodes the whole query with URLSearchParams. Within item values, a literal `~` is doubled to `~~`, the same escape the Google tag uses (captured 2026-11-09: `item_brand: "a~~b"` went out as `bra~~~~b`), so it cannot introduce another field. An earlier `%7E` escape showed up literally in GA4 item reports. Unicode otherwise round-trips unchanged.
 
-Small hits from the Google tag are a POST with an empty body. Captured 2026-11-10 (`gtag.js` in Chromium, hits answered locally): a purchase stayed in the URL up to about 1850 bytes (10 items) and moved to the body from about 2080 bytes (12 items). Then the URL keeps the shared fields (`v tid _p gcs gcd npa cid sid sct seg _s dl dt ul sr cu` and session flags) and a one-line body carries `en`, `ep.*`, `epn.*`, `pr1`…`prN` and `_et`. 200 items made a 23 KiB body in one request. Vanilla splits the same way above 2000 URL bytes and drops only an event above 64 KiB, with a value-free diagnostic. It does not split a purchase into several hits or silently truncate its item list. No collect backdating or `timestamp_micros` is used.
+Small hits from the Google tag are a POST with an empty body. Captured 2026-11-10 (`gtag.js` in Chromium, hits answered locally): a purchase stayed in the URL up to about 1850 bytes (10 items) and moved to the body from about 2080 bytes (12 items). Then the URL keeps the shared fields (`v tid _p gcs gcd npa cid sid sct seg _s dl dt ul sr cu` and session flags) and a one-line body carries `en`, `ep.*`, `epn.*`, `pr1`…`prN` and `_et`. 200 items made a 23 KiB body in one request.
+
+Google accepts at most 16,384 bytes of body; the URL does not count. Measured 2026-11-10 with a placeholder Measurement ID: a body of 16,384 bytes gave 204, 16,385 bytes 413, also with a 1,900-byte URL. The Google tag sent live to a test property: 80 and 120 items (9.3 and 14.0 KiB) 204, 160 and 200 items (18.7 and 23.5 KiB) 413, so the purchase was lost. Vanilla splits the same way above 2000 URL bytes. Above 16 KiB it leaves out the last items until the body fits and logs how many, so the purchase, its value and transaction ID still arrive. It does not split a purchase into several hits. No collect backdating or `timestamp_micros` is used.

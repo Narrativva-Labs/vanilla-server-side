@@ -215,23 +215,35 @@ export function buildEventCollectUrl(
 /** Fields the Google tag moves into the POST body once the URL grows long. */
 const bodyField = (key: string) =>
   key === "en" || key === "_et" || /^epn?\./.test(key) || /^pr\d+$/.test(key);
-const COLLECT_BODY_BYTES = 64 * 1024;
+/** Google answers 413 to a larger body (measured 2026-11-10); the URL does not count. */
+const COLLECT_BODY_BYTES = 16 * 1024;
 /**
  * Like the Google tag, a URL over 2000 bytes keeps the shared fields in the query and sends
- * the event, its parameters and items as a one-line body, so a large basket is not dropped.
+ * the event, its parameters and items as a one-line body. Google rejects a body over 16 KiB
+ * (about 130 items), where the Google tag loses the whole purchase; here the last items are
+ * left out instead, so revenue, transaction ID and the conversion still arrive.
  */
 export function collectRequest(url: URL): { url: URL; body?: string } | undefined {
   if (Buffer.byteLength(url.href) <= 2000) return { url };
   const head = new URL(url.origin + url.pathname);
-  const body = new URLSearchParams();
+  const parts: { key: string; text: string }[] = [];
   for (const [key, value] of url.searchParams)
-    (bodyField(key) ? body : head.searchParams).append(key, value);
-  const text = body.toString();
-  if (Buffer.byteLength(text) > COLLECT_BODY_BYTES) {
-    console.warn("Collect event dropped: encoded event exceeds 64 KiB");
+    if (bodyField(key)) parts.push({ key, text: new URLSearchParams([[key, value]]).toString() });
+    else head.searchParams.append(key, value);
+  let size = parts.reduce((n, part) => n + Buffer.byteLength(part.text) + 1, -1);
+  let left = 0;
+  for (let i = parts.length - 1; i >= 0 && size > COLLECT_BODY_BYTES; i--) {
+    if (!/^pr\d+$/.test(parts[i]!.key)) continue;
+    size -= Buffer.byteLength(parts[i]!.text) + 1;
+    parts.splice(i, 1);
+    left++;
+  }
+  if (size > COLLECT_BODY_BYTES) {
+    console.warn("Collect event dropped: encoded event exceeds 16 KiB without items");
     return undefined;
   }
-  return { url: head, body: text };
+  if (left) console.warn(`Collect event trimmed: ${left} items left out to fit 16 KiB`);
+  return { url: head, body: parts.map((part) => part.text).join("&") };
 }
 async function post(
   url: URL,

@@ -14,7 +14,8 @@ export function remember<T>(map: Map<string, T>, key: string, value: T, limit = 
   map.set(key, value);
 }
 export function createApp(
-  config: Destination & CookieConfig & { allowedEvents?: string[]; deniedPings?: boolean },
+  config: Destination &
+    CookieConfig & { allowedEvents?: string[]; deniedPings?: boolean; logEvents?: boolean },
   fetcher: typeof fetch = fetch,
 ) {
   const app = Fastify({
@@ -22,12 +23,21 @@ export function createApp(
     // Production uses exactly one private Caddy hop; never expose the tracker port.
     trustProxy:
       process.env.NODE_ENV === "production" ? (_address: string, hop: number) => hop === 0 : false,
-    // The browser keepalive limit; 200 items with long names fit.
+    // The browser keepalive limit. Google takes at most 16 KiB per hit; see collectRequest.
     bodyLimit: 64 * 1024,
     requestTimeout: 10000,
   });
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));
   const pings = config.deniedPings !== false;
+  // LOG_EVENTS=on: one line per event with its name, the answer and Google's outcome only.
+  const outcomes = new WeakMap<object, string>();
+  if (config.logEvents)
+    app.addHook("onResponse", async (req, reply) => {
+      if (req.routeOptions.url !== "/e") return;
+      const name = (req.body as { name?: unknown } | undefined)?.name;
+      const label = typeof name === "string" && validEventName(name) ? name : "?";
+      console.info(`Event ${label} ${reply.statusCode} ${outcomes.get(req) ?? "-"}`);
+    });
   const limiter = createRateLimit();
   // Longer than the bounded Google request timeout; never retain visitor data in logs.
   const revoked = new Map<string, number>();
@@ -222,6 +232,7 @@ export function createApp(
       // Answer as delivered so a bot has no reason to retry; it receives no cookie either.
       if (isObviousBot(req.headers["user-agent"])) {
         status.botsFiltered++;
+        outcomes.set(req, "bot");
         return reply.code(204).send();
       }
       const event = req.body;
@@ -243,7 +254,10 @@ export function createApp(
       if (!release) return reply.code(429).send({ error: "rate_limit" });
       try {
         prune();
-        if (seen.has(event.event_id)) return reply.code(204).send();
+        if (seen.has(event.event_id)) {
+          outcomes.set(req, "duplicate");
+          return reply.code(204).send();
+        }
         const browserKey = "browser:" + event.client_id;
         // Not async: a twin must not slip in between this check and the inFlight entry below.
         const duplicate = () => {
@@ -261,8 +275,10 @@ export function createApp(
         let identity = earlier ?? serverIdentity(config, req.headers.cookie);
         if (!hasCookie)
           remember(initialIdentities, browserKey, { identity, expires: Date.now() + 60_000 });
-        if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey))
+        if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey)) {
+          outcomes.set(req, "withdrawn");
           return reply.code(204).send();
+        }
         const withdrawn = () => isRevoked("server:" + identity.clientId) || isRevoked(browserKey);
         const fresh = identity.newSession ? recent.get(identity.clientId) : undefined;
         if (fresh && fresh.expires > Date.now()) identity = fresh.identity;
@@ -315,6 +331,7 @@ export function createApp(
         let result: "sent" | "retry" | "dropped";
         try {
           result = await delivery;
+          outcomes.set(req, result);
         } finally {
           inFlight.delete(event.event_id);
           if (starting) {
