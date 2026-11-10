@@ -102,7 +102,7 @@ if (script && !win.__vanillaGA) {
     }
   }
   adapters.forEach((adapter) => adapter.subscribe(sync));
-  // Preserve chronological consent and events, including inline purchases before defer runs.
+  // Preserve chronological consent and events, including inline purchases from before this script ran.
   [...layer].forEach(process);
   sync();
   tracker.start();

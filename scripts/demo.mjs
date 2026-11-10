@@ -101,7 +101,7 @@ const page = `<!doctype html>
       items: [{ item_id: "book", item_name: "Book", price: 42, quantity: 1 }] } });
   });
 </script>
-<script defer src="/s.js"></script>
+<script async src="/s.js"></script>
 </body>
 </html>`;
 

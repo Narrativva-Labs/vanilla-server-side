@@ -76,6 +76,7 @@ Single runs on a live website, 2026-11-05. They show what happened in one setup,
 | Safari 26.6.2 on macOS, server-set `vanilla_session`, tracker subdomain on a different IPv4 /16 than the website | Stored expiry 7.0 days, the server requested 400 | Tested: real Safari profile, expiry read from `Cookies.binarycookies` |
 | Same Safari visit, `_ga` set by the regular Google tag through GTM, no server container | Stored expiry 400 days. This contradicts WebKit's [published 7-day cap](https://webkit.org/blog/8613/intelligent-tracking-prevention-2-1/) for cookies set with `document.cookie` | Tested: same file, one measurement. The cause is Not verified |
 | uBlock Origin Lite with default lists, Chromium | GTM was neutralised and `_ga` was not created. `s.js` loaded, `/e` returned 204 and `vanilla_session` was set | Tested: one run, consent accepted. Other blockers, stricter lists and other browsers are Not verified |
+| Tracker server unreachable, 2026-11-10: the tracker host resolved to an address that never answers, Chromium on macOS, live website | With `<script defer>`: `DOMContentLoaded` and the cookie banner after 75 s. With `async`: banner after 0.35 s, as with a working server. Connection refused or HTTP 502: no delay with either | Tested: one run each, `--host-resolver-rules`; the demo shop, which inserts the script from JavaScript, was not delayed. `tests/e2e/consent.spec.ts` checks the `async` tag |
 
 ## /g/collect
 

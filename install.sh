@@ -90,7 +90,7 @@ while ((SECONDS < deadline)); do
   timeout=$((remaining < 5 ? remaining : 5))
   if curl -fsS --max-time "$timeout" "https://$tracker/health" >/dev/null; then
     echo "Ready. Add this once to your website:"
-    printf '<script defer src="https://%s/s.js"></script>\n' "$tracker"
+    printf '<script async src="https://%s/s.js"></script>\n' "$tracker"
     exit 0
   fi
   remaining=$((deadline - SECONDS))

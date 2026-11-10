@@ -109,3 +109,18 @@ for (const [name, failure] of [
     );
     expect(longest).toBeLessThan(500);
   });
+
+test("an unreachable tracker does not hold the page", async ({ page, demo }) => {
+  // A server that is switched off never answers; the page must not wait for it.
+  await page.route("**/s.js", () => new Promise(() => {}));
+  await demo.open("commit");
+  await page.waitForFunction(
+    () =>
+      (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming)
+        ?.domContentLoadedEventEnd > 0,
+    null,
+    { timeout: 3000 },
+  );
+  await page.getByRole("button", { name: "Accept" }).click({ timeout: 3000 });
+  await expect(page.locator("#state")).toHaveText("granted");
+});

@@ -34,7 +34,7 @@ cd vanilla-server-side
 Then add the one script tag the installer prints:
 
 ```html
-<script defer src="https://kx7qpa.example.com/s.js"></script>
+<script async src="https://kx7qpa.example.com/s.js"></script>
 ```
 
 Page views then work by themselves. Other events are read from `dataLayer`, not from GTM tags, so they must already carry their GA4 names and parameters there.

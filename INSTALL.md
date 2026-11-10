@@ -90,10 +90,10 @@ The installer sets COOKIE_DOMAIN to the hostname of SITE_ORIGIN with a leading w
 Copy the script tag printed by the installer into your website's head or your CMS's global header field:
 
 ```html
-<script defer src="https://kx7qpa.example.com/s.js"></script>
+<script async src="https://kx7qpa.example.com/s.js"></script>
 ```
 
-Replace the example domain. If the site has a Content Security Policy, allow your tracker origin in script-src and connect-src. Keep your existing GTM and regular analytics tag unchanged.
+Replace the example domain. Keep `async`: with `defer`, a tracker server that was switched off held `DOMContentLoaded` and the cookie banner for 75 seconds (Chromium on macOS, measured 2026-11-10), because the browser waited for the connection to time out; with `async` the page did not wait at all. If the site has a Content Security Policy, allow your tracker origin in script-src and connect-src. Keep your existing GTM and regular analytics tag unchanged.
 
 ### WordPress
 

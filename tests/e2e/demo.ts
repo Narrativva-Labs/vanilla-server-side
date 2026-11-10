@@ -13,8 +13,8 @@ const freePort = () =>
   });
 
 interface Demo {
-  /** Opens the demo page, consent undecided. */
-  open(): Promise<void>;
+  /** Opens the demo page, consent undecided; "commit" does not wait for the page to load. */
+  open(waitUntil?: "load" | "commit"): Promise<void>;
   /** How many times the demo printed this event as going to Google. */
   toGoogle(name: string): number;
   /** How many denied pings the demo printed as going to Google. */
@@ -46,7 +46,7 @@ export const test = base.extend<{ demo: Demo }>({
         sent.push({ path: pathname, name: request.postDataJSON()?.name });
     });
     await use({
-      open: async () => void (await page.goto(origin)),
+      open: async (waitUntil = "load") => void (await page.goto(origin, { waitUntil })),
       toGoogle: (name) => output.split(`TO GOOGLE  ${name}  `).length - 1,
       pings: () => output.split("gcs=G100").length - 1,
       sent: () => sent,
