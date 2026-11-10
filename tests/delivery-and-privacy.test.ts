@@ -118,12 +118,12 @@ it("oversized events are explained before fetch and independently rejected by th
   p.host.dataLayer.push({
     event: "purchase",
     transaction_id: "large",
-    items: [{ item_name: "x".repeat(40000) }],
+    items: [{ item_name: "x".repeat(70000) }],
   });
   await flushPage(p);
   await flushPage(p);
   expect(p.fetcher).toHaveBeenCalledTimes(1);
-  expect(p.warnings).toHaveBeenCalledWith(expect.stringContaining("32 KiB"));
+  expect(p.warnings).toHaveBeenCalledWith(expect.stringContaining("64 KiB"));
   const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const app = createApp(
     {
@@ -142,7 +142,7 @@ it("oversized events are explained before fetch and independently rejected by th
           headers: { origin: "https://shop.example" },
           payload: {
             ...JSON.parse(String(p.fetcher.mock.calls[0]![1]!.body)),
-            params: { items: [{ item_name: "x".repeat(40000) }] },
+            params: { items: [{ item_name: "x".repeat(70000) }] },
           },
         })
       ).statusCode,

@@ -142,12 +142,13 @@ it("network and timeout failures remain retryable", async () => {
 it("keepalive byte guard counts UTF-8, not UTF-16 characters", async () => {
   const p = page([["consent", "update", granted]]);
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  p.command("event", "generate_lead", { note: "😀".repeat(9000) });
+  // 68 KB in UTF-8, 34,000 UTF-16 code units.
+  p.command("event", "generate_lead", { note: "😀".repeat(17000) });
   for (let i = 0; i < 20; i++) await Promise.resolve();
   expect(p.fetcher).toHaveBeenCalledTimes(1);
   expect(p.warnings).toHaveBeenCalledWith(expect.stringContaining("UTF-8"));
 });
-it("wait_for_update excludes pre-permission visible time", async () => {
+it("visible time during wait_for_update counts once the grant takes effect", async () => {
   vi.useFakeTimers();
   const p = page([["consent", "default", { ...granted, wait_for_update: 1000 }]]);
   vi.advanceTimersByTime(1000);
@@ -159,7 +160,55 @@ it("wait_for_update excludes pre-permission visible time", async () => {
   p.host.dispatchEvent(new Event("pagehide"));
   const exit = JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]?.body));
   expect(exit.name).toBe("page_engagement");
-  expect(exit.params.engagement_time_msec).toBe(250);
+  expect(exit.params.engagement_time_msec).toBe(1250);
+});
+const exitTime = async (p: ReturnType<typeof page>) => {
+  p.host.dispatchEvent(new Event("pagehide"));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const sent = p.fetcher.mock.calls.map(([, init]) => JSON.parse(String(init?.body ?? "{}")));
+  return sent.filter((event) => event.name === "page_engagement").at(-1)?.params
+    .engagement_time_msec;
+};
+it("time before the decision is sent after a grant, like the Google tag", async () => {
+  vi.useFakeTimers();
+  const p = page();
+  vi.advanceTimersByTime(4000);
+  p.command("consent", "update", granted);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  vi.advanceTimersByTime(1000);
+  await exitTime(p);
+  const sent = p.fetcher.mock.calls.map(([, init]) => JSON.parse(String(init?.body ?? "{}")));
+  const time = (name: string) =>
+    sent.filter((e) => e.name === name).map((e) => e.params.engagement_time_msec);
+  // The opening page view, released by the grant, carries the time before it.
+  expect(time("page_view")).toEqual([4000]);
+  expect(time("page_engagement")).toEqual([1000]);
+});
+it("a refusal discards earlier time and time while refused never counts", async () => {
+  vi.useFakeTimers();
+  const p = page();
+  vi.advanceTimersByTime(4000);
+  p.command("consent", "update", { analytics_storage: "denied" });
+  (p.host.setInterval.mock.calls[0]![0] as () => void)();
+  vi.advanceTimersByTime(2000);
+  p.command("consent", "update", granted);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  vi.advanceTimersByTime(1000);
+  expect(await exitTime(p)).toBe(1000);
+});
+it("a withdrawal stops the clock: nothing is reported after it", async () => {
+  vi.useFakeTimers();
+  const p = page([["consent", "update", granted]]);
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  vi.advanceTimersByTime(3000);
+  p.command("consent", "update", { analytics_storage: "denied" });
+  (p.host.setInterval.mock.calls[0]![0] as () => void)();
+  const before = p.fetcher.mock.calls.length;
+  vi.advanceTimersByTime(3000);
+  p.host.dispatchEvent(new Event("pagehide"));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  const later = p.fetcher.mock.calls.slice(before).map(([url]) => new URL(String(url)).pathname);
+  expect(later.filter((path) => path === "/e")).toEqual([]);
 });
 
 it("browser family detection distinguishes shared engine signatures and provides a fallback", () => {

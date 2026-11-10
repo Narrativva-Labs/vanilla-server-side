@@ -20,12 +20,15 @@ if (script && !win.__vanillaGA) {
   let engagementEnabled = false;
   // After a SPA navigation the referrer is the previous virtual page, as Google asks for.
   let previousPage: string | undefined;
-  let visibleSince = 0;
+  // Like the Google tag, visible time counts from page load and leaves only with a later grant.
+  // A refusal or withdrawal discards it, and time while refused is never counted.
+  let counting = true;
+  let visibleSince = document.visibilityState !== "hidden" ? Date.now() : 0;
   let visibleTime = 0;
   function engagement() {
     const now = Date.now();
     if (visibleSince) visibleTime += now - visibleSince;
-    visibleSince = engagementEnabled && document.visibilityState !== "hidden" ? now : 0;
+    visibleSince = counting && document.visibilityState !== "hidden" ? now : 0;
     const elapsed = visibleTime;
     visibleTime = 0;
     return elapsed;
@@ -77,12 +80,12 @@ if (script && !win.__vanillaGA) {
     readBanner();
     const state = observer.snapshot();
     const waitMs = observer.waitMs();
-    // Count only visible time after the effective analytics grant; unknown stays at zero.
-    const enabled = state.analytics_storage === "granted" && waitMs === 0;
-    if (enabled !== engagementEnabled) {
-      engagementEnabled = enabled;
+    engagementEnabled = state.analytics_storage === "granted" && waitMs === 0;
+    const count = !(state.analytics_storage === "denied" && observer.decided());
+    if (count !== counting) {
+      counting = count;
       visibleTime = 0;
-      visibleSince = enabled && document.visibilityState !== "hidden" ? Date.now() : 0;
+      visibleSince = count && document.visibilityState !== "hidden" ? Date.now() : 0;
     }
     tracker.update(state, waitMs, observer.takeAnalyticsDenialUpdate(), observer.decided());
   }
@@ -140,7 +143,7 @@ if (script && !win.__vanillaGA) {
     if (!event.persisted) return;
     lastPage = location.href;
     previousPage = undefined;
-    visibleSince = engagementEnabled && document.visibilityState !== "hidden" ? Date.now() : 0;
+    visibleSince = counting && document.visibilityState !== "hidden" ? Date.now() : 0;
     visibleTime = 0;
     tracker.page(sync);
   });
@@ -155,7 +158,7 @@ if (script && !win.__vanillaGA) {
       const elapsed = engagement();
       tracker.exit(elapsed);
     } else {
-      visibleSince = engagementEnabled ? Date.now() : 0;
+      visibleSince = counting ? Date.now() : 0;
       visibleTime = 0;
     }
   });

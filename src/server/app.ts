@@ -22,7 +22,8 @@ export function createApp(
     // Production uses exactly one private Caddy hop; never expose the tracker port.
     trustProxy:
       process.env.NODE_ENV === "production" ? (_address: string, hop: number) => hop === 0 : false,
-    bodyLimit: 32 * 1024,
+    // The browser keepalive limit; 200 items with long names fit.
+    bodyLimit: 64 * 1024,
     requestTimeout: 10000,
   });
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));

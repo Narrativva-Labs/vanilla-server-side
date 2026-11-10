@@ -132,7 +132,6 @@ In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, a
 
 - A real Google Ads click: whether the session shows `google / cpc` and the campaign, and whether a conversion is credited through the link between GA4 and Ads.
 - Whether a denied ping appears in any report, or feeds modeling.
-- Engaged sessions, with engagement time carried by `engagement_time_msec` and `page_engagement`. The first run showed 0.
 - What the live endpoint does with over-limit text and over-limit item parameters.
 - Whether [known bot exclusion](https://support.google.com/analytics/answer/9888366) applies to Measurement Protocol events. The page does not mention them.
 
@@ -160,6 +159,8 @@ Tested 2026-11-08 to 2026-11-10: the production tracker in headless Chromium and
 | 12 at once and 4 one by one, twice | `(not set)` in 1 of 32 visits | 202 hits, 32 visitors, 32 sessions, campaign on every hit |
 
 In BigQuery every hit carried the visitor's `user_pseudo_id` and `ga_session_id`, and `session_traffic_source_last_click` named the test campaign, including all 29 purchases and 21 `generate_lead` events. Landing hits kept their source in both. In the standard reports the affected later hits appeared as a separate user without `first_visit`.
+
+Engaged sessions work: in the demo shop on 2026-11-08 both properties counted 12 engaged sessions of 12.
 
 So the hits leave this server with the right identity and session; the `(not set)` comes from how GA4 processes standard reports. Neither concurrency nor time since a server restart explained it. Whether the Google tag shows the same under these conditions was not tested, and neither was its effect on conversions imported into Google Ads.
 

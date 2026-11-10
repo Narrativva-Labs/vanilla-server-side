@@ -218,7 +218,7 @@ it("tracker rejects an oversized keepalive body before fetch with a diagnostic",
   p.command("event", "generate_lead", { note: "x".repeat(70 * 1024) });
   await settle();
   expect(p.fetcher).toHaveBeenCalledTimes(1); // Initial page only.
-  expect(p.warnings).toHaveBeenCalledWith(expect.stringContaining("32 KiB"));
+  expect(p.warnings).toHaveBeenCalledWith(expect.stringContaining("64 KiB"));
 });
 
 it("concurrent first requests reuse the transient browser identity", async () => {

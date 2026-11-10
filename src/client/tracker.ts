@@ -249,9 +249,9 @@ export function createTracker(
     const body = JSON.stringify(
       clickConsent(event.consent) ? event : { ...event, click_ids: undefined },
     );
-    if (new TextEncoder().encode(body).byteLength > 32 * 1024) {
+    if (new TextEncoder().encode(body).byteLength > 64 * 1024) {
       runtime.warn(
-        "[Vanilla Server-Side] Event skipped: UTF-8 payload exceeds the collector's 32 KiB limit. Reduce the event payload or number of items.",
+        "[Vanilla Server-Side] Event skipped: UTF-8 payload exceeds the collector's 64 KiB limit. Reduce the event payload or number of items.",
       );
       return undefined;
     }
@@ -362,7 +362,7 @@ export function createTracker(
           });
           if (response.status === 413) {
             runtime.warn(
-              "[Vanilla Server-Side] Event skipped: request exceeds the collector's 32 KiB limit (HTTP 413). Reduce the event payload or number of items.",
+              "[Vanilla Server-Side] Event skipped: request exceeds the collector's 64 KiB limit (HTTP 413). Reduce the event payload or number of items.",
             );
           }
           retry = response.status === 429 || (response.status >= 500 && response.status < 600);
