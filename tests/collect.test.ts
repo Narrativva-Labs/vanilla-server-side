@@ -101,6 +101,25 @@ it("the first page_view of a session goes only through /g/collect", async () => 
   }
 });
 
+it("session count and new-session flag follow the Google tag", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const { app, post, urls } = setup();
+  try {
+    const cookie = String((await post("/e", event())).headers["set-cookie"]);
+    await post("/e", event(), cookie);
+    vi.setSystemTime(Date.now() + 31 * 60 * 1000);
+    await post("/e", event(), cookie);
+    const fields = urls().map((url) => [url.searchParams.get("sct"), url.searchParams.get("_nsi")]);
+    expect(fields).toEqual([
+      ["1", "1"],
+      ["1", null],
+      ["2", "1"],
+    ]);
+  } finally {
+    await app.close();
+  }
+});
+
 it("a returning visitor opens a new session without counting as a first visit", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   const { app, post, urls } = setup();

@@ -6,6 +6,7 @@ import { clickIds } from "../src/client/click-ids.js";
 import { page } from "./browser-fixture.js";
 import { configFromEnv } from "../src/server/config.js";
 import { execFileSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 const config = {
   siteOrigin: "https://www.example.com",
   cookieDomain: "example.com",
@@ -33,6 +34,22 @@ it("signed identity persists, rotates sessions after inactivity and rejects modi
   expect(serverIdentity(config, first.cookie.replace("=", "=broken"), start).clientId).not.toBe(
     first.clientId,
   );
+});
+it("a cookie without a session count continues at two, and an invalid count is rejected", () => {
+  const start = Date.now();
+  const signed = (state: object) => {
+    const payload = Buffer.from(JSON.stringify(state)).toString("base64url");
+    const signature = createHmac("sha256", config.cookieSecret).update(payload).digest("base64url");
+    return `${COOKIE_NAME}=${payload}.${signature}`;
+  };
+  const old = { clientId: "7.1", sessionId: 1, started: start - 3600000, last: start - 3600000 };
+  const later = serverIdentity(config, signed(old), start);
+  expect(later.clientId).toBe("7.1");
+  expect(later.newSession).toBe(true);
+  expect(later.count).toBe(2);
+  expect(serverIdentity(config, signed({ ...old, last: start - 1000 }), start).count).toBe(1);
+  expect(serverIdentity(config, signed({ ...old, count: 0 }), start).clientId).not.toBe("7.1");
+  expect(serverIdentity(config, "", start).count).toBe(1);
 });
 it("server consent, credentials, device, campaign, geography and health", async () => {
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));

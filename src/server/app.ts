@@ -299,6 +299,7 @@ export function createApp(
           {
             sessionStart: starting,
             firstVisit: starting && identity.newClient,
+            sessionCount: identity.count,
             userAgent: req.headers["user-agent"],
             opened() {
               if (!starting) return;

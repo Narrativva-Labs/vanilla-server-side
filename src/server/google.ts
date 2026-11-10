@@ -21,6 +21,8 @@ export type Delivery = "sent" | "retry" | "dropped";
 export interface Opening {
   sessionStart: boolean;
   firstVisit: boolean;
+  /** Sessions of this visitor including the current one. */
+  sessionCount?: number;
   userAgent?: string;
   /** The session is open at Google: a retry of this event must not open it again. */
   opened?(): void;
@@ -50,6 +52,7 @@ interface CollectHit {
   engagement?: unknown;
   sessionStart: boolean;
   firstVisit: boolean;
+  sessionCount?: number;
 }
 const COLLECT_URL_BYTES = 1000;
 const COLLECT_TITLE_BYTES = 300;
@@ -81,6 +84,7 @@ export function buildCollectUrl(destination: Destination, hit: CollectHit) {
     npa: ad_personalization === "granted" ? "0" : "1",
     cid: hit.clientId,
     sid: String(hit.sessionId),
+    sct: hit.sessionCount ? String(hit.sessionCount) : undefined,
     seg:
       (hit.name === "page_view" && !hit.sessionStart) || Number(hit.engagement) >= 10000
         ? "1"
@@ -99,6 +103,7 @@ export function buildCollectUrl(destination: Destination, hit: CollectHit) {
         : undefined,
     _ss: hit.sessionStart ? "1" : undefined,
     _fv: hit.firstVisit ? "1" : undefined,
+    _nsi: hit.sessionStart ? "1" : undefined,
   };
   const url = new URL(`https://${host(destination)}/g/collect`);
   for (const [key, value] of Object.entries(fields)) if (value) url.searchParams.set(key, value);
@@ -179,6 +184,7 @@ export function buildEventCollectUrl(
     engagement: params.engagement_time_msec,
     sessionStart: opening?.sessionStart ?? false,
     firstVisit: opening?.firstVisit ?? false,
+    sessionCount: opening?.sessionCount,
   });
   for (const [key, value] of Object.entries(params)) {
     if (
@@ -266,6 +272,7 @@ export function sendDeniedPing(
     screen: ping.screen_resolution,
     sessionStart: true,
     firstVisit: true,
+    sessionCount: 1,
   });
   return post(url, { headers: browser(userAgent) }, new AbortController().signal, fetcher);
 }

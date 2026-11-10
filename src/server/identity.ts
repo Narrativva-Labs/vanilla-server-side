@@ -11,6 +11,8 @@ interface State {
   sessionId: number;
   started: number;
   last: number;
+  /** Sessions of this visitor so far, sent as the Google tag's session count. */
+  count?: number;
 }
 export function cookieHeader(
   config: Omit<CookieConfig, "cookieSecret">,
@@ -54,7 +56,8 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
           parsed.started <= now &&
           Number.isFinite(parsed.last) &&
           parsed.last <= now &&
-          now - parsed.last < 34560000000
+          now - parsed.last < 34560000000 &&
+          (parsed.count === undefined || (Number.isSafeInteger(parsed.count) && parsed.count > 0))
         )
           state = parsed;
       } catch {
@@ -71,15 +74,19 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
     sessionId: 0,
     started: now,
     last: now,
+    count: 0,
   };
   if (newSession) {
     state.sessionId = Math.floor(now / 1000);
     state.started = now;
+    // A cookie from before the count existed has had at least one session.
+    state.count = (state.count ?? 1) + 1;
   }
   state.last = now;
   const payload = Buffer.from(JSON.stringify(state)).toString("base64url");
   return {
     ...state,
+    count: state.count ?? 1,
     newClient,
     newSession,
     cookie: cookieHeader(config, `${payload}.${sign(payload)}`),
