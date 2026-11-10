@@ -41,7 +41,7 @@ it("installer validates inputs, preserves existing env and uses compose with a f
       encoding: "utf8",
     });
     expect(first.status, first.stderr).toBe(0);
-    expect(first.stdout).toContain('<script defer src="https://kx7qpa.example.com/s.js"></script>');
+    expect(first.stdout).toContain('<script async src="https://kx7qpa.example.com/s.js"></script>');
     const initial = readFileSync(join(root, ".env"), "utf8");
     expect(initial).toContain("COOKIE_DOMAIN=example.com");
     expect(initial).not.toContain("GA4_API_SECRET");

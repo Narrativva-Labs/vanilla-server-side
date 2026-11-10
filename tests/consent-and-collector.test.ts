@@ -33,7 +33,7 @@ it("regional purposes remain unknown despite general grants, until explicit upda
     expect(observer.snapshot()).toEqual(granted);
   }
 });
-it("inline purchase before the deferred script is delivered once, in order", async () => {
+it("inline purchase before the script runs is delivered once, in order", async () => {
   const p = page([
     ["consent", "update", granted],
     {
