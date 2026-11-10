@@ -148,6 +148,21 @@ Tested 2026-11-08: manual live GA4 Data API comparison by campaign for hits sent
 
 A collect purchase used `en=purchase`, `cu=CZK`, `epn.value`, `ep.transaction_id`, and `pr1=idVT1~nmVanilla test~pr1990~qt1`. The comparison motivates removing MP entirely. Raw experiment artifacts are not stored in this repository; these are recorded manual observations. Real Ads imports remain unverified.
 
+## Standard reports versus BigQuery
+
+Tested 2026-11-08 to 2026-11-10: the production tracker in headless Chromium and WebKit, groups of 4 to 14 test visitors, some of them at the same time from one address. The same hits were read in the GA4 Data API (standard reports) and in the daily BigQuery export of the same property.
+
+| Group | Standard reports, hits after the landing page | BigQuery export |
+| --- | --- | --- |
+| 14 at once, 2026-11-08 | 13 of 26 kept the session source; the rest showed `(not set)` | 97 hits, 14 visitors, 14 sessions, campaign on every hit |
+| 14 at once, then 4 and 5, 2026-11-09 morning | `(not set)` in 7 of 23 visits | 141 hits, 23 visitors, 23 sessions, campaign on every hit |
+| Mobile, back button, WebKit, 5 at once | No `(not set)` | 80 hits, 11 visitors, 11 sessions, campaign on every hit |
+| 12 at once and 4 one by one, twice | `(not set)` in 1 of 32 visits | 202 hits, 32 visitors, 32 sessions, campaign on every hit |
+
+In BigQuery every hit carried the visitor's `user_pseudo_id` and `ga_session_id`, and `session_traffic_source_last_click` named the test campaign, including all 29 purchases and 21 `generate_lead` events. Landing hits kept their source in both. In the standard reports the affected later hits appeared as a separate user without `first_visit`.
+
+So the hits leave this server with the right identity and session; the `(not set)` comes from how GA4 processes standard reports. Neither concurrency nor time since a server restart explained it. Whether the Google tag shows the same under these conditions was not tested, and neither was its effect on conversions imported into Google Ads.
+
 ## Collect wire format
 
 Reviewed 2026-11-08 against primary public implementations:
