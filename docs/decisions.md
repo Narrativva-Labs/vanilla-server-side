@@ -130,7 +130,7 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 **Why:** the main purpose of this project is control over data and consent. Fewer blocked requests are a side benefit, not the reason it exists. Neutral names lower the chance of a filter list match. They guarantee nothing, and first-party does not mean unblockable. A blocker does not overrule the visitor's decision in the cookie banner: no event is sent without consent, and a refusal stops collection. Simo Ahava disagrees with this approach; see [content blockers](technical-overview.md#content-blockers).
 
-**Source:** Tested 2026-11-05, one run with uBlock Origin Lite: [notes](measurement-protocol-notes.md#browser-checks). On 2026-11-10 none of 12 filter lists and 5 DNS lists matched the tracker, while 4 filter lists and 4 DNS lists matched the Google tag ([notes](measurement-protocol-notes.md#browser-checks)). Brave and Ghostery heuristics: Not verified.
+**Source:** Tested 2026-11-05, one run with uBlock Origin Lite: [notes](measurement-protocol-notes.md#browser-checks). On 2026-11-10 none of 12 filter lists and 5 DNS lists matched the tracker, while 4 filter lists and 4 DNS lists matched the Google tag ([notes](measurement-protocol-notes.md#browser-checks)). Brave Shields (Standard and Aggressive) and Ghostery let the tracker through and stopped the Google tag; Ghostery refuses cookie banners by itself, so its users send only the limited ping. Safari Advanced Tracking and Fingerprinting Protection: Not verified.
 
 ## Deliberately left out
 
