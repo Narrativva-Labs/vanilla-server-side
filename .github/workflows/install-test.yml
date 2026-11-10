@@ -102,7 +102,7 @@ jobs:
       - name: Check the first install
         run: |
           dpkg-query -W docker-ce docker-compose-plugin
-          grep -F "<script defer src=\"https://$TRACKER/s.js\"></script>" "$RUNNER_TEMP/install-1.log"
+          grep -F "<script async src=\"https://$TRACKER/s.js\"></script>" "$RUNNER_TEMP/install-1.log"
           bash .github/install-test/verify.sh
           sudo sha256sum .env > "$RUNNER_TEMP/env.sha256"
 
@@ -111,7 +111,7 @@ jobs:
         run: |
           ./install.sh </dev/null 2>&1 | tee "$RUNNER_TEMP/install-2.log"
           grep -F "Keeping the existing .env" "$RUNNER_TEMP/install-2.log"
-          grep -F "<script defer src=\"https://$TRACKER/s.js\"></script>" "$RUNNER_TEMP/install-2.log"
+          grep -F "<script async src=\"https://$TRACKER/s.js\"></script>" "$RUNNER_TEMP/install-2.log"
           sudo sha256sum -c "$RUNNER_TEMP/env.sha256"
           bash .github/install-test/verify.sh
 
