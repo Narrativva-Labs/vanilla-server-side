@@ -19,6 +19,7 @@
 - The cookieless mode is removed: see [One mode, with a cookie](docs/decisions.md#one-mode-with-a-cookie). Its setting in .env is ignored, so an install that used it now waits for consent, and it needs `COOKIE_SECRET` and a tracker inside `COOKIE_DOMAIN`.
 - A purchase over Google's 16 KiB hit limit (about 130 items) leaves out the last items instead of being lost; Google refuses such a hit from the Google tag too.
 - The script tag uses `async` instead of `defer`, so a tracker server that is down never holds the page or its cookie banner.
+- Caddy compresses responses, so `s.js` goes out at about 6 KB instead of 16 KB.
 - `LOG_EVENTS=on` writes one line per event: name, answer and outcome, nothing about the visitor.
 - The consent logic is one pure function with a table of rules; behavior is unchanged.
 - One `/g/collect` hit now opens each session, which gives GA4 session source, New users and `session_start`. Measurement Protocol carries everything else. `campaign_details` is gone, because no report used it.

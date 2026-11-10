@@ -1,3 +1,4 @@
 {$TRACKER_DOMAIN} {
+    encode zstd gzip
     reverse_proxy tracker:3000
 }

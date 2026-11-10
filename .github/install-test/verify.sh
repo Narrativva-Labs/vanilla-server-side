@@ -31,5 +31,7 @@ jq -e '.google.sent == 0 and .google.errors == 0' <<<"$health" >/dev/null || fai
 
 status=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$TRACKER/s.js")
 [[ $status == 200 ]] || fail "/s.js returned $status"
+encoding=$(curl -sS -o /dev/null -w '%header{content-encoding}' -H 'Accept-Encoding: gzip' --max-time 10 "https://$TRACKER/s.js")
+[[ $encoding == gzip ]] || fail "/s.js is not compressed: '$encoding'"
 
 echo "Installation checks passed."
