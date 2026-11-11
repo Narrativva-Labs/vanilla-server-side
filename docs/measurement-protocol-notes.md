@@ -184,6 +184,10 @@ So the hits leave this server with the right identity and session; the `(not set
 
 The Google tag shows the same. On 2026-11-10 the demo shop ran GTM and Vanilla in the same visits, 24 at once, three times: the GTM property put later hits under `(not set)` in each run (16 events in one of them), including a purchase. After `sct` and `_nsi` were added, Vanilla had none in those demo runs, but on the main site 2 of 16 and 3 of 16 visits still lost the source, so the two fields align the hit with the Google tag without removing the effect. Its effect on conversions imported into Google Ads was not tested.
 
+The demo shop's BigQuery export for 2026-11-10, read on 2026-11-11, settles it for both tags. In every demo run that day, in both properties, each visitor had one session and every hit named the test campaign, including the runs where the standard reports showed `(not set)`. In the run of 14 at once, Vanilla had all 6 purchases with the campaign and GTM had all 6 too, although the reports put 2 and 1 of them under `(not set)`, in different visits. The only hits without a campaign were consent-denied pings without a client ID.
+
+Missing events in that export come from the tracker's own per-address rate limit, not from GA4. With 28 test visitors at once from one address, Vanilla lost the ends of the funnels after 429 responses and retries: 0 of 12 purchases and 2 of 12 `add_payment_info` arrived, while GTM, which does not pass through that limit, had 12 of 12. An earlier run of the same size lost 2 `add_to_cart`, 3 `begin_checkout` and a few page views and engagement events, but all 12 purchases arrived. At 14 at once Vanilla's event counts per visit matched the unloaded runs exactly. Load tests from one address should stay at about 14 parallel visitors or raise the limit.
+
 ## History changes
 
 Captured 2026-11-10: `gtag.js` in Chromium with enhanced measurement and its page changes on, each change on a freshly loaded page, hits answered locally.
