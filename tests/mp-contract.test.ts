@@ -23,7 +23,7 @@ const event = () => {
   };
 };
 afterEach(() => vi.useRealTimers());
-it("final automatic parameters take precedence, page text keeps 256 bytes, other strings 100 characters", () => {
+it("final automatic parameters take precedence, page text keeps 256 bytes, other strings are cut to 100 characters", () => {
   const warn = vi.fn();
   const params = validateParams(
     {
@@ -54,13 +54,35 @@ it("final automatic parameters take precedence, page text keeps 256 bytes, other
       google_value: 1,
       ga_value: 1,
       firebase_value: 1,
-      long: "x".repeat(101),
+      long: "č".repeat(101),
+      emoji: "😀".repeat(150),
       nested: { x: 1 },
       valid: "x".repeat(100),
     },
     warn,
   );
-  expect(invalid).toEqual({ valid: "x".repeat(100) });
+  expect(invalid).toEqual({
+    long: "č".repeat(100),
+    emoji: "😀".repeat(100),
+    valid: "x".repeat(100),
+  });
+  expect(warn).toHaveBeenCalledWith("Event parameter truncated to 100 characters");
+  const itemWarn = vi.fn();
+  const [item] = validateParams(
+    {
+      items: [
+        { item_name: "n".repeat(150), item_brand: "b".repeat(100), custom_long: "v".repeat(120) },
+      ],
+    },
+    itemWarn,
+  ).items as Record<string, unknown>[];
+  expect(item).toEqual({
+    item_name: "n".repeat(100),
+    item_brand: "b".repeat(100),
+    custom_long: "v".repeat(100),
+  });
+  expect(itemWarn).toHaveBeenCalledTimes(2);
+  expect(itemWarn).toHaveBeenCalledWith("Event item parameter truncated to 100 characters");
 });
 it("page text is cut by UTF-8 bytes on whole characters and never ends in a partial percent escape", () => {
   const params = validateParams(

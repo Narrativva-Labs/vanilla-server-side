@@ -35,7 +35,7 @@ All rows: Tested, 2026-11-05, the historical MP validator run.
 | `page_title` | Help Center: 300. Reference: 100 | Largest accepted: 256 |
 | Other event parameter text, `item_name` | Reference: 100 characters | Largest accepted: 100 |
 | Unit of those limits | Docs and the error message say "characters" | The validator counts UTF-8 bytes: 256 ASCII, 128 `č`, 85 `中` or 64 `😀` pass for page fields; 100, 50, 33 or 25 for other text; 100 ASCII or 50 `č` for `item_name` |
-| Over-limit text in `RELAXED` | Reference: "ignores parameters that exceed limits" | 2000 characters returned no message. Whether the live endpoint drops the parameter, cuts it or keeps it: Not verified |
+| Over-limit text in `RELAXED` | Reference: "ignores parameters that exceed limits" | 2000 characters returned no message. The live collect endpoint cuts it, see [Stored lengths](#stored-lengths) |
 | `ip_override` format | Reference: IP address | `192.0.2.1`, `2001:db8::1` and `not-an-ip` all accepted, so the validator does not check it |
 
 Reserved names, as answered by the validator:
@@ -45,7 +45,21 @@ Reserved names, as answered by the validator:
 
 ## Current parameter limits
 
-The collect serializer retains the previous validator limits: 25 parameters including automatic fields, 200 items, standard item fields plus 27 custom fields, other strings up to 100 characters, and page text trimmed to 256 UTF-8 bytes inside event parameters. `dl` and `dr` keep 1000 bytes and `dt` 300 on every hit, so long campaign values survive. Names and engagement values are checked before serialization. These are conservative local limits, not a new measurement of collect's acceptance. Browser/model fields belonged to the retired MP body; collect forwards the browser User-Agent instead. `page_engagement` remains a custom event with `_et`.
+The collect serializer retains the previous validator limits: 25 parameters including automatic fields, 200 items, standard item fields plus 27 custom fields, other strings cut to their first 100 characters as Google stores them, and page text trimmed to 256 UTF-8 bytes inside event parameters. `dl` and `dr` keep 1000 bytes and `dt` 300 on every hit, so long campaign values survive. Names and engagement values are checked before serialization. The other limits are conservative local ones, not a new measurement of collect's acceptance. Browser/model fields belonged to the retired MP body; collect forwards the browser User-Agent instead. `page_engagement` remains a custom event with `_et`.
+
+## Stored lengths
+
+Tested 2026-11-10, read in the BigQuery export on 2026-11-11: one visit sent straight to `/g/collect`, the way a Google tag hit arrives, with a page view and a purchase of two items.
+
+| Sent | Stored |
+| --- | --- |
+| `ep.*` text of 100, 101 and 300 characters (`č`) | 100, 100, 100 |
+| Item `nm` 150, `br` 120, `ca` 150 characters, custom item parameter 150 | 100 each |
+| `dl` 499 characters | 499 |
+| `dr` 420 characters | 420 |
+| `dt` 400 characters | 400 |
+
+So Google keeps the first 100 characters of a longer parameter, counted in characters, not bytes. Vanilla used to drop such a parameter; it now cuts it the same way. `dl`, `dr` and `dt` were kept whole at these lengths; Vanilla still sends at most 1000, 1000 and 300 bytes. Whether standard reports show the same lengths: Not verified.
 
 ## Geography and device reach Realtime
 
@@ -136,7 +150,6 @@ In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, a
 
 - A real Google Ads click: whether the session shows `google / cpc` and the campaign, and whether a conversion is credited through the link between GA4 and Ads.
 - Whether a denied ping appears in any report, or feeds modeling.
-- What the live endpoint does with over-limit text and over-limit item parameters.
 - Whether [known bot exclusion](https://support.google.com/analytics/answer/9888366) applies to Measurement Protocol events. The page does not mention them.
 
 ## All-collect comparison
@@ -161,6 +174,7 @@ Tested 2026-11-08 to 2026-11-10: the production tracker in headless Chromium and
 | 14 at once, then 4 and 5, 2026-11-09 morning | `(not set)` in 7 of 23 visits | 141 hits, 23 visitors, 23 sessions, campaign on every hit |
 | Mobile, back button, WebKit, 5 at once | No `(not set)` | 80 hits, 11 visitors, 11 sessions, campaign on every hit |
 | 12 at once and 4 one by one, twice | `(not set)` in 1 of 32 visits | 202 hits, 32 visitors, 32 sessions, campaign on every hit |
+| 16 at once, three times (Chromium, Firefox, right after a restart), 2026-11-10 | `(not set)` in 5 of 48 visits | 303 hits, 48 visitors, 48 sessions, campaign on every hit |
 
 In BigQuery every hit carried the visitor's `user_pseudo_id` and `ga_session_id`, and `session_traffic_source_last_click` named the test campaign, including all 29 purchases and 21 `generate_lead` events. Landing hits kept their source in both. In the standard reports the affected later hits appeared as a separate user without `first_visit`.
 

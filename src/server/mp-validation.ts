@@ -23,6 +23,14 @@ const automatic = [
   "page_title",
 ];
 const pageText = new Set(["page_location", "page_referrer", "page_title"]);
+/** Google keeps the first 100 characters of a longer value (BigQuery, 2026-11-11), like a Google tag hit. */
+const TEXT_CHARS = 100;
+function shortenText(raw: string, diagnose: () => void) {
+  const chars = Array.from(raw);
+  if (chars.length <= TEXT_CHARS) return raw;
+  diagnose();
+  return chars.slice(0, TEXT_CHARS).join("");
+}
 const itemStandard = new Set(
   "item_id item_name affiliation coupon discount index item_brand item_category item_category2 item_category3 item_category4 item_category5 item_list_id item_list_name item_variant location_id price quantity creative_name creative_slot promotion_id promotion_name".split(
     " ",
@@ -40,13 +48,11 @@ function validateItem(input: Record<string, unknown>, diagnose: (reason: string)
       diagnose("Event item parameter dropped: maximum 27 custom parameters");
       continue;
     }
-    if (typeof raw === "string") {
-      if (Array.from(raw).length > 100) {
-        diagnose("Event item parameter dropped: string exceeds 100 characters");
-        continue;
-      }
-      output[key] = raw;
-    } else if (typeof raw === "number" && Number.isFinite(raw)) output[key] = raw;
+    if (typeof raw === "string")
+      output[key] = shortenText(raw, () =>
+        diagnose(`Event item parameter truncated to ${TEXT_CHARS} characters`),
+      );
+    else if (typeof raw === "number" && Number.isFinite(raw)) output[key] = raw;
     else {
       diagnose("Event item parameter dropped: unsupported value type");
       continue;
@@ -79,9 +85,10 @@ export function validateParams(
       if (pageText.has(key)) {
         output[key] = shortenBytes(raw, PAGE_TEXT_BYTES);
         if (output[key] !== raw) diagnose(`Event page text truncated to ${PAGE_TEXT_BYTES} bytes`);
-      } else if (Array.from(raw).length > 100)
-        diagnose("Event parameter dropped: string exceeds 100 characters");
-      else output[key] = raw;
+      } else
+        output[key] = shortenText(raw, () =>
+          diagnose(`Event parameter truncated to ${TEXT_CHARS} characters`),
+        );
     } else if (typeof raw === "number" && Number.isFinite(raw)) {
       if (key === "engagement_time_msec" && (!Number.isInteger(raw) || raw < 0)) {
         diagnose("Event parameter dropped: engagement must be a non-negative integer");

@@ -17,6 +17,7 @@
 - `update.sh` works when root owns .env and explains a checkout that is not on a branch.
 - `npm run verify:mp` follows `GA4_REGION`.
 - The cookieless mode is removed: see [One mode, with a cookie](docs/decisions.md#one-mode-with-a-cookie). Its setting in .env is ignored, so an install that used it now waits for consent, and it needs `COOKIE_SECRET` and a tracker inside `COOKIE_DOMAIN`.
+- Text parameters and item fields over 100 characters are cut to 100, as Google stores them, instead of being left out.
 - A purchase over Google's 16 KiB hit limit (about 130 items) leaves out the last items instead of being lost; Google refuses such a hit from the Google tag too.
 - The script tag uses `async` instead of `defer`, so a tracker server that is down never holds the page or its cookie banner.
 - Caddy compresses responses, so `s.js` goes out at about 6 KB instead of 16 KB.

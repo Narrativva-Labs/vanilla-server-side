@@ -98,7 +98,7 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 ## Trim page text at the measured limit
 
-**Decision:** `page_location`, `page_referrer` and `page_title` are cut to 256 UTF-8 bytes. Other strings over 100 characters are dropped with a diagnostic.
+**Decision:** `page_location`, `page_referrer` and `page_title` are cut to 256 UTF-8 bytes. Other strings over 100 characters are cut to 100 with a diagnostic, as Google stores them ([Stored lengths](measurement-protocol-notes.md#stored-lengths)).
 
 **Alternative:** the 100 characters of the [reference](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), which this project used earlier, or the [Help Center](https://support.google.com/analytics/answer/9267744) values of 1,000, 420 and 300.
 

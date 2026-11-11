@@ -164,7 +164,7 @@ it("time spent denied is excluded from engagement after grant", async () => {
   expect(JSON.parse(String(collect[1]!.body)).params.engagement_time_msec).toBe(0);
 });
 
-it("collector limits final parameters and drops invalid names and long custom values", async () => {
+it("collector limits final parameters and drops invalid names", async () => {
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const app = createApp(config, google);
   try {
