@@ -77,6 +77,7 @@ These cost time once. Each looked like a measurement bug and was not.
 - **Text lengths in standard reports**, as opposed to the export.
 - **Denied pings** in any report or in modeling.
 - **Known bot exclusion** for these hits.
+- **In-app browsers** of Instagram, Facebook and Messenger, where many ad clicks open. A visit through Messenger on 2026-11-11 is the first data point; a test with more people is planned.
 - **Real visitors.** All rows above come from scripted browsers on one machine and one address. Real devices, networks and many visitors behind one shared address (mobile carriers, offices) were not part of any test.
 - **The default proxy.** The live installs used for testing run behind nginx instead of the default Caddy; the installer and Caddy are checked in CI, not under live traffic.
 - **Safari:** whether a returning visitor keeps the identity after the server renews the cookie, and whether a same-origin proxy avoids the 7-day cap. Safari Advanced Tracking and Fingerprinting Protection.
