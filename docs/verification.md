@@ -39,7 +39,7 @@ These cost time once. Each looked like a measurement bug and was not.
 
 1. **Headless Chromium can label itself a bot.** With the User-Agent set only on the Playwright context, requests sent with `keepalive` after leaving a page went out as `HeadlessChrome`. The server filtered them as bots, and GA4 most likely does too, so checkout steps looked lost for both tags. Set the User-Agent in the launch arguments as well (`--user-agent=…`).
 2. **Request capture misses beacons sent while leaving a page.** In Chromium, Playwright did not see the Google tag's last hits before navigation, so GTM seemed to lose checkout steps. The export decides, not the capture.
-3. **Many visitors from one address hit the rate limit.** The collector allows 300 requests a minute and 30 simultaneous deliveries per IP. 28 parallel test visits got 429 answers and, after three tries, lost the ends of their funnels; 14 got none. Real visitors come from different addresses. Keep load tests at about 14 parallel visits, or raise the limit for the test.
+3. **Many visitors from one address hit the rate limit.** The collector allows 300 requests a minute and 30 simultaneous deliveries per IP. 28 parallel test visits got 429 answers and, after three tries, lost the ends of their funnels; 14 got none. Real visitors usually come from different addresses, but a mobile carrier or an office network can put many of them behind one; whether the limit then costs a busy site events is Not verified. Keep load tests at about 14 parallel visits, or raise the limit for the test.
 4. **`(not set)` in standard reports is not a sending problem.** Later hits of a visit sometimes appear under `(not set)` as a separate user without `first_visit`. The export showed the right session and campaign on every one of them, and the Google tag got the same in the demo shop. See [standard reports versus BigQuery](measurement-protocol-notes.md#standard-reports-versus-bigquery).
 5. **A BigQuery link made through the Admin API exports nothing at first.** The export started only after the service account `firebase-measurement@system.gserviceaccount.com` got the BigQuery User role in the Cloud project; linking through the API did not add it. The first tables then came one to two days later, Google filled in one or two earlier days, and one earlier day of a new property had still not arrived two days later.
 6. **A restart clears what the server keeps in memory**: recent withdrawals and event IDs for deduplication. Tests right after a restart are valid, but do not retry the same event across one.
@@ -76,6 +76,8 @@ These cost time once. Each looked like a measurement bug and was not.
 - **Text lengths in standard reports**, as opposed to the export.
 - **Denied pings** in any report or in modeling.
 - **Known bot exclusion** for these hits.
+- **Real visitors.** All rows above come from scripted browsers on one machine and one address. Real devices, networks and many visitors behind one shared address (mobile carriers, offices) were not part of any test.
+- **The default proxy.** The live installs used for testing run behind nginx instead of the default Caddy; the installer and Caddy are checked in CI, not under live traffic.
 - **Safari:** whether a returning visitor keeps the identity after the server renews the cookie, and whether a same-origin proxy avoids the 7-day cap. Safari Advanced Tracking and Fingerprinting Protection.
 
 ## Reading the export
