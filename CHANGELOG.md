@@ -3,6 +3,7 @@
 ## 0.1.0 - unreleased
 
 - Initial self-hosted tracker and collector.
+- A `gtag("event", …)` command with `send_to` is skipped: it is addressed to one destination, such as Google Ads or Merchant Center plugins, and would double page views and items.
 - Consent-gated tracking, ecommerce events and parallel GA4 property support.
 - Ubuntu/Debian installer, Caddy TLS proxy, Docker Compose deployment and guarded updater.
 - Optional `GA4_REGION=eu` for Google's EU collection endpoint.

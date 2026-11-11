@@ -15,6 +15,9 @@ export function toCommandArray(item: unknown): unknown[] | undefined {
 }
 export function normalizeEventItem(item: unknown) {
   const command = toCommandArray(item);
+  // A gtag event with send_to is addressed to one destination (Google Ads, Merchant Center
+  // and similar plugins); it is not a site-wide event, so it would double page views and items.
+  if (command?.[0] === "event" && isObject(command[2]) && "send_to" in command[2]) return;
   const raw =
     command?.[0] === "event" && typeof command[1] === "string"
       ? { ...(isObject(command[2]) ? command[2] : {}), event: command[1] }

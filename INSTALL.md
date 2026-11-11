@@ -65,7 +65,7 @@ To send through Google's [EU collection endpoint](https://developers.google.com/
 
 The tracker sends page views, final engagement time and the events named in `TRACKED_EVENTS`. Without that setting it uses the list in [.env.example](.env.example): common ecommerce events plus `generate_lead`, `sign_up`, `login` and `search`. To change it, set `TRACKED_EVENTS` in .env to a comma-separated list, which replaces the default, and rebuild as described below. Other events are ignored. `page_view` is automatic and must not be listed.
 
-Vanilla reads events straight from `dataLayer`, not from your GTM tags. An event must already carry its final GA4 name and parameters there: if the site pushes `order_complete` and a GTM tag renames it to `purchase`, the regular property gets a purchase and Vanilla gets nothing. A working example:
+Vanilla reads events straight from `dataLayer`, not from your GTM tags. It also reads `gtag("event", …)` commands, except those with `send_to`, which are meant for one destination (plugins for Google Ads or Merchant Center send their own `page_view` and `view_item` this way). An event must already carry its final GA4 name and parameters there: if the site pushes `order_complete` and a GTM tag renames it to `purchase`, the regular property gets a purchase and Vanilla gets nothing. A working example:
 
 ```js
 dataLayer.push({

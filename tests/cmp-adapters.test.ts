@@ -580,3 +580,17 @@ for (const kind of ["CookieYes", "Shoptet"] as const)
         .map((b) => b.name);
       expect(events).toEqual(choice === "granted" ? ["page_view", "view_item"] : []);
     });
+it("gtag events with send_to are left to their destination, dataLayer objects are not", () => {
+  expect(normalizeEventItem(["event", "page_view", { send_to: "GLA" }])).toBeUndefined();
+  expect(
+    normalizeEventItem(["event", "view_item", { send_to: "AW-1", items: [{ id: "gla_62" }] }]),
+  ).toBeUndefined();
+  expect(normalizeEventItem(["event", "view_item", { items: [{ item_id: "62" }] }])).toEqual({
+    name: "view_item",
+    params: { items: [{ item_id: "62" }] },
+  });
+  expect(normalizeEventItem({ event: "purchase", send_to: "G-1", value: 1 })).toEqual({
+    name: "purchase",
+    params: { value: 1 },
+  });
+});
