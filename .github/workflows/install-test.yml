@@ -11,7 +11,7 @@ permissions:
 jobs:
   install:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       # Reserved .test names and fictional GA4 values. Nothing here reaches Google:
       # the job only requests /health and /s.js and sends no events.
@@ -87,7 +87,8 @@ jobs:
       - name: First install
         run: |
           answer_when_ready() {
-            for _ in $(seq 1 150); do
+            # Up to 15 minutes: a slow Ubuntu mirror once made two apt-get updates take 3 min 20 s each.
+            for _ in $(seq 1 450); do
               if docker compose version >/dev/null 2>&1 && ! pgrep -x apt-get >/dev/null; then
                 printf '%s\n' "$TRACKER" "$SITE" "$MEASUREMENT_ID" "$API_SECRET"
                 return

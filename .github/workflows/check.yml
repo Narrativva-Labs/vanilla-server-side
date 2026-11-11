@@ -14,9 +14,26 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
-      - run: npx playwright install --with-deps chromium webkit
-      - run: npm run test:e2e
       - run: bash -n install.sh update.sh
       - run: shellcheck install.sh update.sh
       - run: cp .env.example .env && docker compose config --quiet
       - run: docker build -t vanilla-server-side .
+  # Browsers and their system libraries come with the image, so no apt mirror is needed.
+  # Keep the tag equal to @playwright/test in package-lock.json.
+  e2e:
+    runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright:v1.65.0-noble
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      - run: |
+          want=$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")
+          [ "$want" = "1.65.0" ] || { echo "Playwright $want in package-lock.json: update the container tag in check.yml"; exit 1; }
+      - run: npm run build
+      - run: npm run test:e2e
+        env:
+          HOME: /root
