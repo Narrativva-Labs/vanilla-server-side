@@ -35,5 +35,6 @@
 - The maps of visitor state have a fixed size, and the tracker sends no `Referer` with its requests.
 - A page that stays denied sends one limited ping, as in Advanced Consent Mode. Update your privacy text before you upgrade.
 - `npm run test:e2e` runs the consent flow in Chromium and WebKit, also in CI.
+- An exit `page_engagement` that arrives without a cookie is dropped instead of creating a visitor with a session and no page view.
 
 No release is tagged yet. Install and update follow the default branch.

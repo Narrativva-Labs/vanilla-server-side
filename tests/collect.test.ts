@@ -595,9 +595,10 @@ it("a browser without cookies also gets a new session after 24 hours", async () 
 it("an invalid engagement time is not forwarded in _et", async () => {
   const { app, post, urls } = setup();
   try {
+    const cookie = String((await post("/e", event())).headers["set-cookie"]).split(";")[0]!;
     const params = { ...event().params, engagement_time_msec: 123.5 };
-    await post("/e", event({ name: "page_engagement", params }));
-    expect(urls()[0]!.searchParams.get("_et")).toBeNull();
+    await post("/e", event({ name: "page_engagement", params }), cookie);
+    expect(urls()[1]!.searchParams.get("_et")).toBeNull();
   } finally {
     await app.close();
   }
@@ -633,13 +634,17 @@ it("engagement time survives a later page view", async () => {
   }
 });
 
-it("a final engagement that opens a session is one hit with its time", async () => {
+it("a final engagement that opens a session after 30 idle minutes is one hit with its time", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
   const { app, post, urls } = setup();
   try {
+    const cookie = String((await post("/e", event())).headers["set-cookie"]).split(";")[0]!;
+    vi.setSystemTime(Date.now() + 31 * 60 * 1000);
     const params = { ...event().params, engagement_time_msec: 1200 };
-    await post("/e", event({ name: "page_engagement", params }));
-    expect(urls().map((url) => url.pathname)).toEqual(["/g/collect"]);
-    expect(urls()[0]!.searchParams.get("_et")).toBe("1200");
+    await post("/e", event({ name: "page_engagement", params }), cookie);
+    expect(urls().map((url) => url.pathname)).toEqual(["/g/collect", "/g/collect"]);
+    expect(urls()[1]!.searchParams.get("_ss")).toBe("1");
+    expect(urls()[1]!.searchParams.get("_et")).toBe("1200");
   } finally {
     await app.close();
   }
@@ -865,5 +870,44 @@ it("LOG_EVENTS writes the event name, answer and outcome, nothing about the visi
     expect(info).not.toHaveBeenCalled();
   } finally {
     info.mockRestore();
+  }
+});
+
+it("a page_engagement without a cookie never opens a session or a new visitor", async () => {
+  const { app, post, google } = setup();
+  try {
+    const exit = event({
+      name: "page_engagement",
+      client_id: "999.888",
+      params: { engagement_time_msec: 5000 },
+    });
+    const res = await post("/e", exit);
+    expect(res.statusCode).toBe(204);
+    expect(res.headers["set-cookie"]).toBeUndefined();
+    expect(google).not.toHaveBeenCalled();
+  } finally {
+    await app.close();
+  }
+});
+
+it("a page_engagement inside an open session is still sent", async () => {
+  const { app, post, google } = setup();
+  try {
+    const first = await post("/e", event({ client_id: "777.666" }));
+    const cookie = String(first.headers["set-cookie"]).split(";")[0]!;
+    google.mockClear();
+    const res = await post(
+      "/e",
+      event({
+        name: "page_engagement",
+        client_id: "777.666",
+        params: { engagement_time_msec: 5000 },
+      }),
+      cookie,
+    );
+    expect(res.statusCode).toBe(204);
+    expect(google).toHaveBeenCalledTimes(1);
+  } finally {
+    await app.close();
   }
 });

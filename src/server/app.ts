@@ -290,6 +290,14 @@ export function createApp(
           const answeredMeanwhile = duplicate();
           if (answeredMeanwhile) return await answeredMeanwhile;
         }
+        // Engagement time alone never creates a visitor. Without a cookie a late exit hit, for example
+        // one sent after the browser dropped the cookie, would otherwise count as a new visitor with
+        // a session and no page view (seen live on 2026-11-10: 5 in one run). A known visitor whose
+        // session expired still opens a new one, as with the Google tag.
+        if (identity.newClient && event.name === "page_engagement") {
+          outcomes.set(req, "dropped");
+          return reply.code(204).send();
+        }
         // Nothing goes out in a session that is not open: the tracker retries this event.
         if (identity.newSession && opening.has(identity.clientId)) return reply.code(503).send();
         event.client_id = identity.clientId;
