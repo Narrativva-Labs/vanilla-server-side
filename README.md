@@ -98,6 +98,7 @@ If the regular property already imports the same conversion, set this one as sec
 - [Measurement Protocol notes](docs/measurement-protocol-notes.md): what the docs say against what the validator and Realtime showed
 - [Cookie banners](docs/cookie-banners.md): what consent banners really send
 - [Design decisions](docs/decisions.md): each decision with its alternative and source
+- [Verification](docs/verification.md): what is tested against real Google Analytics, how, and what is still open
 
 For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `tests/fuzz.test.ts` runs random sequences against rules that must always hold.
 

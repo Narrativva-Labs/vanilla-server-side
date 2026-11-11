@@ -278,3 +278,4 @@ None of this is new, and the work below came first.
 - [Measurement Protocol notes](measurement-protocol-notes.md)
 - [Cookie banners](cookie-banners.md)
 - [Design decisions](decisions.md)
+- [Verification](verification.md)
