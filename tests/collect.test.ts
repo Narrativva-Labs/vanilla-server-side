@@ -395,7 +395,7 @@ it("a withdrawal deletes the cookie even after the rate limit is used up", async
   const { app, post } = setup();
   try {
     let limited = 0;
-    for (let i = 0; i < 301; i++) if ((await post("/e", event())).statusCode === 429) limited++;
+    for (let i = 0; i < 1201; i++) if ((await post("/e", event())).statusCode === 429) limited++;
     expect(limited).toBe(1);
     const reply = await post("/p", {});
     expect(reply.statusCode).toBe(204);

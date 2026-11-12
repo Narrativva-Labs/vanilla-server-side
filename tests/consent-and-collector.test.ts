@@ -154,11 +154,11 @@ it("limits a spoofed origin sender without blocking another IP", async () => {
       payload: event(),
     });
   try {
-    for (let i = 0; i < 300; i++) expect((await post("192.0.2.1")).statusCode).toBe(204);
+    for (let i = 0; i < 1200; i++) expect((await post("192.0.2.1")).statusCode).toBe(204);
     expect((await post("192.0.2.1")).statusCode).toBe(429);
     expect((await post("192.0.2.2")).statusCode).toBe(204);
     // Each accepted event is exactly one hit.
-    expect(fetcher).toHaveBeenCalledTimes(301);
+    expect(fetcher).toHaveBeenCalledTimes(1201);
   } finally {
     await app.close();
   }
@@ -220,14 +220,14 @@ it("concurrency limits apply per IP and globally, then release slots", async () 
       payload: { ...event(), client_id: `${++visitor}.1` },
     });
   try {
-    const pending = Array.from({ length: 100 }, (_, i) =>
-      post(`192.0.2.${Math.floor(i / 10) + 1}`).then((r) => r.statusCode),
+    const pending = Array.from({ length: 300 }, (_, i) =>
+      post(`192.0.2.${Math.floor(i / 30) + 1}`).then((r) => r.statusCode),
     );
-    while (fetcher.mock.calls.length < 100) await new Promise((resolve) => setTimeout(resolve, 0));
+    while (fetcher.mock.calls.length < 300) await new Promise((resolve) => setTimeout(resolve, 0));
     expect((await post("192.0.2.1")).statusCode).toBe(429);
     expect((await post("192.0.2.20")).statusCode).toBe(429);
     finish();
-    expect(await Promise.all(pending)).toEqual(Array(100).fill(204));
+    expect(await Promise.all(pending)).toEqual(Array(300).fill(204));
     expect((await post()).statusCode).toBe(204);
   } finally {
     finish();
@@ -317,7 +317,7 @@ it("production trusts only the immediate private proxy hop for IP limits", async
       payload: event(),
     });
   try {
-    for (let i = 0; i < 300; i++)
+    for (let i = 0; i < 1200; i++)
       expect((await post(`192.0.2.${i + 1}`, "192.0.2.200")).statusCode).toBe(204);
     expect((await post("192.0.2.61", "192.0.2.200")).statusCode).toBe(429);
     expect((await post("192.0.2.61", "192.0.2.201")).statusCode).toBe(204);

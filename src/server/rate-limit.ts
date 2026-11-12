@@ -1,4 +1,10 @@
 /** Process-local protection. Addresses are never logged and are removed within two minutes. */
+// Sized for shared addresses (office, mobile carrier): 28 visitors at once from one address
+// hold about 84 deliveries, which the earlier 30 refused.
+const PER_MINUTE = 1200;
+const ACTIVE_PER_ADDRESS = 100;
+const ACTIVE_TOTAL = 300;
+
 export function createRateLimit() {
   const visitors = new Map<string, { count: number; active: number; expires: number }>();
   let active = 0;
@@ -27,7 +33,12 @@ export function createRateLimit() {
         visitor.count = 0;
         visitor.expires = now + 60000;
       }
-      if (visitor.count >= 300 || visitor.active >= 30 || active >= 100) return undefined;
+      if (
+        visitor.count >= PER_MINUTE ||
+        visitor.active >= ACTIVE_PER_ADDRESS ||
+        active >= ACTIVE_TOTAL
+      )
+        return undefined;
       visitor.count++;
       visitor.active++;
       active++;

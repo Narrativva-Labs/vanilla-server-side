@@ -28,6 +28,7 @@
 - `gclid`, `gbraid` and `wbraid` reach Google in that hit when `ad_storage` and `ad_user_data` are granted, so conversions can be imported into Google Ads through GA4.
 - A withdrawal is no longer rate limited, and it stops a request that is waiting for session opening.
 - A session also ends after 24 hours on the server, and engagement time survives a `/g/collect` hit.
+- The rate limit is 1,200 requests a minute and 100 simultaneous deliveries per IP, 300 in total, instead of 300, 30 and 100: 28 visitors at once behind one address lost purchases to 429.
 - A page restored from the back/forward cache sends a page view.
 - A SPA page reports the previous page as referrer and closes its engagement time first. Android tablets count as tablets.
 - A withdrawal is stored even when it overtakes the visitor's first event.
