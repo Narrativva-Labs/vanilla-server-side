@@ -79,6 +79,8 @@ A cookie set in an HTTP response is capped at 7 days when WebKit sees the reques
 
 **Tested 2026-11-05, one run:** Safari 26.6.2 stored the server-set `vanilla_session` for 7.0 days, with the tracker on a different IPv4 /16 from the website and 400 days requested by the server ([notes](measurement-protocol-notes.md#browser-checks)). A default install runs the tracker on a different server from the website, so expect the same.
 
+**Tested 2026-11-13, same Safari profile, return after 8 days:** `vanilla_session` had expired and a new one was stored for 7.0 days, so Vanilla counted a new user (`first_visit`). The regular Google tag kept `_ga` from 2026-11-05 and counted a returning user. A Safari visitor who stays away longer than 7 days is a new user in the Vanilla property.
+
 The server renews the cookie on each delivered event (Tested 2026-11-05, `tests/delivery-and-privacy.test.ts`). Whether Safari then keeps the identity for a visitor who returns within 7 days: Not verified.
 
 A same-origin path proxy, or a tracker in the same network as the website, may avoid this cap. Not verified.

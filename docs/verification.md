@@ -67,6 +67,7 @@ These cost time once. Each looked like a measurement bug and was not.
 | Geography | Country comes from `_uip`, not from the sending machine | 2026-11-06 | Realtime | [/g/collect](measurement-protocol-notes.md#gcollect) |
 | Content blockers | No list of 12 filter lists and 5 DNS lists matched the tracker; 4 and 4 matched the Google tag. Brave Shields and Ghostery let the tracker through; Ghostery refuses banners by itself, so only the limited ping goes | 2026-11-05, 2026-11-10 | adblock-rust, installed browsers | [Browser checks](measurement-protocol-notes.md#browser-checks) |
 | Safari | The server-set cookie was stored for 7.0 days with the tracker on a different IPv4 /16 | 2026-11-05 | Real Safari, one run | [Safari](technical-overview.md#safari) |
+| Safari, return after 8 days | The expired cookie made Vanilla count a new user; the Google tag kept `_ga` and counted a returning user | 2026-11-13 | Real Safari, one run | [Safari](technical-overview.md#safari) |
 | Live security answers | Other or missing `Origin` 403, malformed JSON 400, 70 KiB body 413, file paths 404 or 400, CORS preflight only for the site origin, cookie `HttpOnly`, `Secure`, `SameSite=Lax` | 2026-11-10 | `curl` against a live install | |
 | Compression | `s.js` goes out at 6.8 KB instead of 16.3 KB | 2026-11-10 | Live install | |
 
