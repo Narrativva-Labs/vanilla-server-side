@@ -91,7 +91,7 @@ Each purpose has three states, and the tracker works from `analytics_storage`:
 
 | | Meaning | What the tracker does |
 | --- | --- | --- |
-| `unknown` | No signal, or an undecided banner with no Google state | Events wait in memory until the visitor decides, at most 50 per page. Nothing is sent and no cookie is set |
+| `unknown` | No signal, or an undecided banner with no Google state | Events wait in memory until the visitor decides, at most 50 per page and up to 30 seconds each; older events are discarded. Nothing is sent and no cookie is set |
 | `granted` | The visitor agreed | Send |
 | `denied` | Default or refusal | Nothing is sent. Denied by a default alone, while a supported banner is still undecided, events wait in memory like `unknown`; a refusal clears them and the queues. After 2 seconds in this state, one limited ping to `/d` per page, unless consent already measured that page |
 
