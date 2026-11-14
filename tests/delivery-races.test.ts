@@ -77,7 +77,7 @@ it("concurrent duplicate requests share the failed delivery result", async () =>
   }
 });
 
-it("the tracker renews an old session instead of stopping after 24 hours", async () => {
+it("the tracker renews a session after a day without activity", async () => {
   let now = Date.now();
   const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const tracker = createTracker(
@@ -100,6 +100,32 @@ it("the tracker renews an old session instead of stopping after 24 hours", async
   await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
   const second = JSON.parse(String(fetcher.mock.calls[1]![1]!.body));
   expect(second.session_id).not.toBe(first.session_id);
+});
+
+it("the tracker keeps a session with steady activity past 24 hours", async () => {
+  let now = Date.now();
+  const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+  const tracker = createTracker(
+    "https://collector.example/e",
+    {
+      href: () => "https://shop.example/",
+      referrer: () => "",
+      now: () => now,
+      uuid: () => crypto.randomUUID(),
+      fetch: fetcher,
+      warn: vi.fn(),
+    },
+    new Set(["generate_lead"]),
+  );
+  tracker.update(consent);
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  for (let i = 1; i <= 100; i++) {
+    now += 15 * 60 * 1000;
+    tracker.track("generate_lead");
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(i + 1));
+  }
+  const sessions = fetcher.mock.calls.map(([, init]) => JSON.parse(String(init!.body)).session_id);
+  expect(new Set(sessions).size).toBe(1);
 });
 
 it("duplicate purchase does not consume measured engagement", async () => {

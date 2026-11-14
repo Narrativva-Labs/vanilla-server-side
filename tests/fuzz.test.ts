@@ -213,7 +213,7 @@ async function scenario(seed: number) {
 
   const delivered = hits.filter((hit) => hit.ok);
   const opened = new Map<string, number>();
-  const openedAt = new Map<string, number>();
+  const lastAt = new Map<string, number>();
   const firstVisits = new Map<string, number>();
   const purchases = new Map<string, number>();
   for (const hit of delivered) {
@@ -236,10 +236,10 @@ async function scenario(seed: number) {
         firstVisits.set(hit.cid, (firstVisits.get(hit.cid) ?? 0) + 1);
     }
     if (!opened.has(key)) problem(`hit before its session opened ${hit.path}`);
-    if (!openedAt.has(key)) openedAt.set(key, hit.time);
     // Two minutes over: an event already in the queue keeps its session.
-    if (hit.time - openedAt.get(key)! > 24 * 3_600_000 + 120_000)
-      problem("session longer than 24 hours");
+    if (lastAt.has(key) && hit.time - lastAt.get(key)! > 30 * 60_000 + 120_000)
+      problem("session continued after 30 idle minutes");
+    lastAt.set(key, hit.time);
     if (hit.query.get("en") === "purchase") {
       const id = hit.query.get("ep.transaction_id") ?? "";
       purchases.set(id, (purchases.get(id) ?? 0) + 1);

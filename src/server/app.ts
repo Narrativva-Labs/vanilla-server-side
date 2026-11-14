@@ -6,7 +6,7 @@ import Fastify from "fastify";
 import { readFile } from "node:fs/promises";
 import { consentSnapshot, canTrack, jsonSnapshot } from "../shared/consent.js";
 import { DEFAULT_EVENTS } from "../shared/settings.js";
-import { SESSION_LIMIT_MS, timely, type TrackingEvent } from "../shared/event.js";
+import { timely, type TrackingEvent } from "../shared/event.js";
 import { sendGoogle, sendDeniedPing, type DeniedPing, type Destination } from "./google.js";
 /** Oldest entries go first, so no map of visitor state can outgrow its limit. */
 export function remember<T>(map: Map<string, T>, key: string, value: T, limit = 10000) {
@@ -270,9 +270,7 @@ export function createApp(
         if (answered) return await answered;
         const hasCookie = req.headers.cookie?.includes(`${COOKIE_NAME}=`) ?? false;
         const remembered = hasCookie ? undefined : initialIdentities.get(browserKey)?.identity;
-        const earlier =
-          remembered && Date.now() - remembered.started < SESSION_LIMIT_MS ? remembered : undefined;
-        let identity = earlier ?? serverIdentity(config, req.headers.cookie);
+        let identity = remembered ?? serverIdentity(config, req.headers.cookie);
         if (!hasCookie)
           remember(initialIdentities, browserKey, { identity, expires: Date.now() + 60_000 });
         if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey)) {

@@ -577,16 +577,17 @@ it("an event waits for an opening only once", async () => {
   }
 });
 
-it("a browser without cookies also gets a new session after 24 hours", async () => {
+it("a browser without cookies keeps one session with steady activity past 24 hours", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   const { app, post, urls } = setup();
   try {
     await post("/e", event());
-    for (let minutes = 0; minutes < 24 * 60 + 1; minutes += 0.5) {
+    for (let minutes = 0; minutes < 25 * 60; minutes += 0.5) {
       vi.setSystemTime(Date.now() + 30_000);
       await post("/e", event());
     }
-    expect(urls().filter((url) => url.searchParams.get("_ss") === "1")).toHaveLength(2);
+    expect(urls().filter((url) => url.searchParams.get("_ss") === "1")).toHaveLength(1);
+    expect(new Set(urls().map((url) => url.searchParams.get("sid"))).size).toBe(1);
   } finally {
     await app.close();
   }
@@ -604,18 +605,23 @@ it("an invalid engagement time is not forwarded in _et", async () => {
   }
 });
 
-it("a session ends after 24 hours even with steady activity", async () => {
+// Like the Google tag, captured 2026-11-14: no maximum length, only 30 idle minutes end a session.
+it("a session has no maximum length with steady activity", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   const { app, post, urls } = setup();
   try {
-    let cookie = String((await post("/e", event())).headers["set-cookie"]);
-    for (let hours = 0; hours < 24; hours += 0.25) {
+    let cookie = String((await post("/e", event())).headers["set-cookie"]).split(";")[0]!;
+    for (let hours = 0; hours < 49; hours += 0.25) {
       vi.setSystemTime(Date.now() + 15 * 60 * 1000);
-      cookie = String((await post("/e", event(), cookie)).headers["set-cookie"]);
+      cookie = String((await post("/e", event(), cookie)).headers["set-cookie"]).split(";")[0]!;
     }
-    const opened = urls().filter((url) => url.searchParams.get("_ss") === "1");
-    expect(opened).toHaveLength(2);
-    expect(opened[1]!.searchParams.get("_fv")).toBeNull();
+    expect(urls().filter((url) => url.searchParams.get("_ss") === "1")).toHaveLength(1);
+    expect(new Set(urls().map((url) => url.searchParams.get("sid"))).size).toBe(1);
+    expect(new Set(urls().map((url) => url.searchParams.get("sct")))).toEqual(new Set(["1"]));
+    vi.setSystemTime(Date.now() + 31 * 60 * 1000);
+    await post("/e", event(), cookie);
+    const last = urls().at(-1)!.searchParams;
+    expect([last.get("_ss"), last.get("sct"), last.get("_fv")]).toEqual(["1", "2", null]);
   } finally {
     await app.close();
   }

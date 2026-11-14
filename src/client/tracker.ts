@@ -11,7 +11,6 @@ import {
 } from "../shared/consent.js";
 import {
   PAGE_TEXT_BYTES,
-  SESSION_LIMIT_MS,
   SESSION_MS,
   shortenBytes,
   timely,
@@ -172,10 +171,7 @@ export function createTracker(
   ) {
     if (!canTrack(consent)) return;
     const now = runtime.now();
-    if (
-      memory &&
-      (timestamp - memory.last >= SESSION_MS || timestamp - memory.started >= SESSION_LIMIT_MS)
-    ) {
+    if (memory && timestamp - memory.last >= SESSION_MS) {
       memory.sessionId = parseInt(runtime.uuid().replace(/-/g, "").slice(0, 12), 16);
       memory.started = timestamp;
     }
@@ -394,7 +390,7 @@ export function createTracker(
     /** Closes the time of a page left by SPA navigation. An expired session is left to the new page. */
     leave(page: string) {
       const now = runtime.now();
-      if (memory && (now - memory.last >= SESSION_MS || now - memory.started >= SESSION_LIMIT_MS)) {
+      if (memory && now - memory.last >= SESSION_MS) {
         runtime.engagement?.(); // That time belonged to the old session and is dropped with it.
         return;
       }

@@ -27,7 +27,7 @@
 - One `/g/collect` hit now opens each session, which gives GA4 session source, New users and `session_start`. Measurement Protocol carries everything else. `campaign_details` is gone, because no report used it.
 - `gclid`, `gbraid` and `wbraid` reach Google in that hit when `ad_storage` and `ad_user_data` are granted, so conversions can be imported into Google Ads through GA4.
 - A withdrawal is no longer rate limited, and it stops a request that is waiting for session opening.
-- A session also ends after 24 hours on the server, and engagement time survives a `/g/collect` hit.
+- Engagement time survives a `/g/collect` hit.
 - The rate limit is 1,200 requests a minute and 100 simultaneous deliveries per IP, 300 in total, instead of 300, 30 and 100: 28 visitors at once behind one address lost purchases to 429.
 - A page restored from the back/forward cache sends a page view.
 - A SPA page reports the previous page as referrer and closes its engagement time first. Android tablets count as tablets.
@@ -37,5 +37,6 @@
 - A page that stays denied sends one limited ping, as in Advanced Consent Mode. Update your privacy text before you upgrade.
 - `npm run test:e2e` runs the consent flow in Chromium and WebKit, also in CI.
 - An exit `page_engagement` that arrives without a cookie is dropped instead of creating a visitor with a session and no page view.
+- A session no longer ends after 24 hours of steady activity, only after 30 idle minutes, as the Google tag does (captured 2026-11-14). The 24 hours came from a Measurement Protocol rule.
 
 No release is tagged yet. Install and update follow the default branch.

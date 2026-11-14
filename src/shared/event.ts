@@ -1,7 +1,7 @@
 import type { Consent } from "./consent.js";
+// A session ends after 30 idle minutes and has no maximum length, like the Google tag's
+// (captured 2026-11-14: a session started 25 and 49 hours earlier kept its ID and count).
 export const SESSION_MS = 30 * 60 * 1000;
-// Matches Google's window for session attribution.
-export const SESSION_LIMIT_MS = 24 * 60 * 60 * 1000;
 export const MAX_EVENT_AGE_MS = 72 * 60 * 60 * 1000;
 // Historical validator measurement: the validation server allows 256 UTF-8 bytes for these fields.
 export const PAGE_TEXT_BYTES = 256;

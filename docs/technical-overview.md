@@ -64,7 +64,7 @@ Tested 2026-11-06: `tests/collect.test.ts`, `tests/consent-and-collector.test.ts
 The cookie `vanilla_session` holds `base64url(JSON).base64url(HMAC-SHA256)`. The JSON has the client ID, session ID, session start and last activity.
 
 - The server creates a random GA-format client ID only after analytics consent.
-- A session ends after 30 minutes of inactivity or after 24 hours. That timing lives in the cookie, so no store is needed.
+- A session ends after 30 minutes of inactivity and has no maximum length, like the Google tag's: captured 2026-11-14, a session started 25 or 49 hours earlier continued ([Session length](measurement-protocol-notes.md#session-length)). Until 2026-11-14 Vanilla also ended a session after 24 hours, a Measurement Protocol rule. That timing lives in the cookie, so no store is needed.
 - Attributes: `HttpOnly; Secure; SameSite=Lax; Max-Age=34560000` (400 days) and a `Domain` shared by website and tracker.
 - Signatures are compared in constant time. A tampered or malformed cookie starts a fresh identity.
 - Signing gives integrity, not confidentiality or replay protection. The content is readable by whoever holds the cookie.

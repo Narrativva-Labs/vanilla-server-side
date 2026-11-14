@@ -36,6 +36,16 @@ Superseded on 2026-11-08 by “Every event goes through /g/collect”.
 
 **Source:** design reasoning. Why the documented Measurement Protocol is not used: [Every event goes through /g/collect](#every-event-goes-through-gcollect).
 
+## No maximum session length
+
+**Decision:** a session ends only after 30 minutes without an event. A visitor active without a break keeps one session, also past 24 hours.
+
+**Alternative:** end every session after 24 hours, which Vanilla did until 2026-11-14.
+
+**Why:** that cap came from the Measurement Protocol, where an event with a session ID has to arrive within 24 hours of the session start. Vanilla no longer uses MP, and the Google tag has no such cap: captured 2026-11-14, a session started 25 or 49 hours earlier, with its last hit a minute before, went on with the same `sid` and `sct` and no `_ss`. Whether GA4 splits such a session in reports: Not verified.
+
+**Source:** [Session length](measurement-protocol-notes.md#session-length). Tested 2026-11-14: `tests/collect.test.ts`, `tests/delivery-races.test.ts`.
+
 ## Signed cookie, no database
 
 **Decision:** a signed `HttpOnly` cookie carries identity and session state.

@@ -1,5 +1,5 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
-import { SESSION_LIMIT_MS, SESSION_MS } from "../shared/event.js";
+import { SESSION_MS } from "../shared/event.js";
 export const COOKIE_NAME = "vanilla_session";
 export interface CookieConfig {
   cookieSecret: string;
@@ -67,8 +67,7 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
     if (state) break;
   }
   const newClient = !state;
-  const newSession =
-    !state || now - state.last >= SESSION_MS || now - state.started >= SESSION_LIMIT_MS;
+  const newSession = !state || now - state.last >= SESSION_MS;
   state ??= {
     clientId: `${randomInt(1, 2147483647)}.${Math.floor(now / 1000)}`,
     sessionId: 0,
