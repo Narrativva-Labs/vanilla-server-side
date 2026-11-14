@@ -61,6 +61,7 @@ These cost time once. Each looked like a measurement bug and was not.
 | Purchases | Value, currency, transaction ID and items arrive; `~` in item text escaped as `~~` like the Google tag | 2026-11-09 | Data API, capture | [Collect wire format](measurement-protocol-notes.md#collect-wire-format) |
 | Large purchases | Google refuses event data over 16 KiB (about 130 items). The Google tag lost purchases of 160 and 200 items; Vanilla's arrived with full revenue and the first 140 items | 2026-11-10, export 2026-11-11 | Direct hits, live tags, BigQuery | Same section |
 | Text lengths | Google stores text parameters and item fields cut to 100 characters; `dl` 499, `dr` 420 and `dt` 400 characters kept whole | Export 2026-11-11 | Direct hits, BigQuery | [Stored lengths](measurement-protocol-notes.md#stored-lengths) |
+| Vanilla's own 100-character cut | Coupon of 130, item name of 176 and item brand of 140 characters sent through the tracker: Vanilla cut each to 100 and the export stores exactly 100, on both purchases of the run, with the campaign kept | Sent 2026-11-11, export 2026-11-11 | Live site, BigQuery | [Stored lengths](measurement-protocol-notes.md#stored-lengths) |
 | Page changes | `pushState`, `replaceState` and fragment changes count as the Google tag with enhanced measurement counts them | 2026-11-10 | Capture | [History changes](measurement-protocol-notes.md#history-changes) |
 | Load | 14 visits at once from one address: the same ecommerce events per visit as without load and 6 of 6 purchases; one visit had one more `page_engagement`. 28 at once: losses from the rate limit only, the Google tag 12 of 12 | 2026-11-10, export 2026-11-11 | Demo shop, BigQuery | [Standard reports versus BigQuery](measurement-protocol-notes.md#standard-reports-versus-bigquery) |
 | Tracker server down | With `async` the page and its banner are not held; with `defer` an unanswered address held them for 75 s | 2026-11-10 | Chromium, live site | [Browser checks](measurement-protocol-notes.md#browser-checks) |
@@ -74,7 +75,6 @@ These cost time once. Each looked like a measurement bug and was not.
 ## Not verified yet
 
 - **A real Google Ads click.** Whether the session shows the Ads campaign (`sessionGoogleAdsCampaignName`, not only `google / cpc`) and whether a conversion imported through the GA4 link is credited. An invented `gclid` gave `google / organic`, which proves nothing.
-- **Vanilla's own 100-character cut in the export.** Sent live on 2026-11-11 (coupon 130, item name 176, item brand 140 characters); the export of that day decides.
 - **Text lengths in standard reports**, as opposed to the export.
 - **Denied pings** in any report or in modeling.
 - **Known bot exclusion** for these hits.
