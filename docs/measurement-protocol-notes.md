@@ -243,6 +243,14 @@ The rule, as captured:
 
 The script adds the time up per page load, but a later page load starts with a page view, which engages the session anyway, so a sum over the session gives the same flags. In the same copy of the script the threshold is `session_engaged_time`, 10,000 ms by default, compared with "greater than"; like the session timeout it is a property setting. These two details come from reading the script, not from a capture.
 
+Vanilla in the same runs, 2026-11-14: the tracker and collector built from this repository in Chromium, Google replaced by a local stub.
+
+| Run | Before the change | After |
+| --- | --- | --- |
+| Three `view_item` 6 s apart, then the exit | `seg` 0, 0, 0, exit 0 | 0, 1, 1, exit 1, as the Google tag |
+| `generate_lead` after 1 s, then the exit | 0, exit 0 | The same, as the Google tag |
+| 6 s on page 1, exit, page 2 with `view_item` after 3 s | Page 2 `page_view` 1, then `view_item` 0 and exit 0 | Page 2 all 1, as the Google tag |
+
 The tag numbers requests, not events, in `_s`: two events sent in one request carried the same `_s`. Vanilla sends one request per event, so its count per event is the same thing.
 
 ## Collect wire format
