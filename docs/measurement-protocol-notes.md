@@ -180,7 +180,7 @@ In BigQuery every hit sent with consent carried the visitor's `user_pseudo_id` a
 
 Engaged sessions: in the demo shop on 2026-11-08 both properties counted 12 engaged sessions of 12, all in visits of several pages. The single-page thresholds were not tested on their own.
 
-So the hits leave this server with the right identity and session; the `(not set)` comes from how GA4 processes standard reports. Neither concurrency nor time since a server restart explained it.
+So in our data the hits leave this server with the right identity and session, and the `(not set)` appears only in the standard reports: the export of the same hits was complete, and the regular GTM property showed the same effect in the same visits (below). Neither concurrency nor time since a server restart explained it. How Google produces it internally: Not verified.
 
 The Google tag shows the same. On 2026-11-10 the demo shop ran GTM and Vanilla in the same visits, 24 at once, three times: the GTM property put later hits under `(not set)` in each run (16 events in one of them), including a purchase. After `sct` and `_nsi` were added, Vanilla had none in those demo runs, but on the main site 2 of 16 and 3 of 16 visits still lost the source, so the two fields align the hit with the Google tag without removing the effect. Its effect on conversions imported into Google Ads was not tested.
 

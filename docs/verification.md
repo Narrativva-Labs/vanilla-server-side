@@ -27,7 +27,7 @@ Source labels are the same as in the [Measurement Protocol notes](measurement-pr
 | --- | --- | --- |
 | Realtime (GA4 Data API) | Minutes | Did the event arrive at all, country, device |
 | Standard reports (GA4 Data API, by campaign) | Hours, a day to settle | Sessions, source, channel, New users, key events |
-| BigQuery daily export | Next day, sometimes later | Hit level: `user_pseudo_id`, `ga_session_id`, campaign on each event, items. The final word |
+| BigQuery daily export | Next day, sometimes later | Hit level: `user_pseudo_id`, `ga_session_id`, campaign on each event, items. The most detailed layer we read; where it disagrees with the reports, we trust the hit level |
 
 On the server, `LOG_EVENTS=on` writes what left it and what Google answered, without visitor details. HTTP 204 from Google proves delivery only.
 

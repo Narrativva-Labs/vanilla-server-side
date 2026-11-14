@@ -12,7 +12,7 @@ Each decision names the alternative, the reason and the source. Source labels ar
 
 **Why:** Tested 2026-11-08, GA4 Data API comparison by campaign over November 7–8: collect kept 100% of tested hits in the attributed session, purchases 4/4. Hits sent through MP after a collect opener kept their source in anywhere from 0 of 8 to 8 of 8 per test group, depending on timing; purchases kept it in 2 of 4 and `generate_lead` in 0 of 4. The mixed tracker also split a visit across two sessions.
 
-**Source:** [comparison and wire-format sources](measurement-protocol-notes.md#all-collect-comparison). These are finite manual tests, not a guarantee of real Ads conversion attribution. Encoded URLs over 8 KiB are dropped with a diagnostic until POST body splitting is verified.
+**Source:** [comparison and wire-format sources](measurement-protocol-notes.md#all-collect-comparison). These are finite manual tests, not a guarantee of real Ads conversion attribution. Above 2000 URL bytes the event moves to a POST body as in the Google tag; Google refuses a body over 16 KiB (measured 2026-11-10, [wire format](measurement-protocol-notes.md#collect-wire-format)).
 
 ## /g/collect opens a session, Measurement Protocol carries the rest (superseded)
 
@@ -32,9 +32,9 @@ Superseded on 2026-11-08 by “Every event goes through /g/collect”.
 
 **Alternative:** send MP events into the regular property, joined to the tag's session.
 
-**Why:** nothing deduplicates against the regular pipeline, so a shared property would double-count. Joining would need the tag's identifiers and give up independence. Google says MP alone gives [only partial reporting](https://developers.google.com/analytics/devguides/collection/protocol/ga4), so that limit is kept off the property people report from. Separate properties also allow a direct comparison.
+**Why:** nothing deduplicates against the regular pipeline, so a shared property would double-count. Joining would need the tag's identifiers and give up independence. Separate properties also allow a direct comparison, and they keep an undocumented transport away from the property people report from.
 
-**Source:** Google docs.
+**Source:** design reasoning. Why the documented Measurement Protocol is not used: [Every event goes through /g/collect](#every-event-goes-through-gcollect).
 
 ## Signed cookie, no database
 
@@ -96,7 +96,9 @@ Google state does not always win. A decided banner beats every `default`, becaus
 
 **Source:** Google docs. Tested 2026-11-05: `tests/mp-contract.test.ts`, `tests/delivery-and-privacy.test.ts`.
 
-## Trim page text at the measured limit
+## Trim page text at the measured limit (superseded)
+
+Superseded on 2026-11-10 with the move to `/g/collect`: Vanilla sends at most 1000 bytes of `page_location` and `page_referrer` and 300 bytes of `page_title`. The BigQuery export kept a 499-character `dl`, a 420-character `dr` and a 400-character `dt` whole (Tested 2026-11-10, export read 2026-11-11, [Stored lengths](measurement-protocol-notes.md#stored-lengths)). The 256-byte limit below was measured on the Measurement Protocol validator, which is no longer used.
 
 **Decision:** `page_location`, `page_referrer` and `page_title` are cut to 256 UTF-8 bytes. Other strings over 100 characters are cut to 100 with a diagnostic, as Google stores them ([Stored lengths](measurement-protocol-notes.md#stored-lengths)).
 

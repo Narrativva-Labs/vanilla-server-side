@@ -210,17 +210,13 @@ Where the documentation and the validator disagree, see [Measurement Protocol no
 
 ## Why it runs next to the regular tag
 
-[Google says](https://developers.google.com/analytics/devguides/collection/protocol/ga4):
-
-> You must use tagging (gTag, Tag Manager, or Google Analytics for Firebase) to use this protocol.
-
-> While it's possible to send events to Google Analytics solely with the Measurement Protocol, only partial reporting may be available. The purpose of the Measurement Protocol is to augment existing events collected using gtag, GTM, or Firebase.
-
-Vanilla does not pretend otherwise. The second property has no tag of its own, which puts it in the case Google describes as partial reporting, and a test confirmed it: without `/g/collect` there was no session source and no new users. All events now use collect to keep their session attribution. It is why the design has two properties:
+Two properties keep the measurements independent and avoid double counting:
 
 - **The regular tag stays untouched** and keeps delivering full reporting, its own consent handling and Ads integrations.
 - **The second property keeps an independent identity and transport.** Nothing on the production measurement depends on this project, and if the server stops, the regular property does not notice.
 - **The streams stay apart.** Nothing deduplicates them, so sharing a property would double-count. Separate properties can also be compared.
+
+**History: why not the documented Measurement Protocol.** [Google says](https://developers.google.com/analytics/devguides/collection/protocol/ga4) that with the Measurement Protocol alone "only partial reporting may be available". Our test showed it: Tested 2026-11-06, MP alone gave 70 of 70 sessions with source `(not set)` and 0 new users ([notes](measurement-protocol-notes.md#gcollect)). That is why Vanilla moved to `/g/collect`, the transport of the Google tag; since 2026-11-08 every event goes through it ([decision](decisions.md#every-event-goes-through-gcollect)). With collect, the BigQuery export of the demo shop had the visitor ID, the session and the campaign on every hit with consent, including all 47 purchases (Tested 2026-11-08 to 2026-11-10, [notes](measurement-protocol-notes.md#standard-reports-versus-bigquery)). Collect has no public contract, so this rests on our measurements, not on a Google guarantee.
 
 The other reading, attaching MP events to a tagged session in the same property, is what Google's [session attribution](https://developers.google.com/analytics/devguides/collection/protocol/ga4/use-cases) covers. This project does not do that: it would need the tag's `client_id` and `session_id`, so the identity would no longer be independent.
 
