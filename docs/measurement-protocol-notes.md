@@ -119,7 +119,7 @@ Every event now uses `/g/collect`. The following captures explain the common fie
 
 In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, and the full URL in `dl`, including `gclid`. Denied hits use a new `cid`. After a later grant the tag sent no second `page_view`. `dma` and `dma_cps` are left out here, because `dma` depends on the visitor's region. Vanilla sends the consent state it knows at that moment, always with `t` and `p`.
 
-**What this project sends.** `v tid _p gcs gcd npa cid sid sct seg _s en dl dr dt ul sr _uip _et _ss _fv _nsi`, as a POST with an empty body and the visitor's `User-Agent`. `_et` carries validated engagement time on any event. `sct` is the visitor's session count, kept in the signed cookie, and `_nsi` marks the first hit of a session, as the Google tag does. The denied ping leaves out `_uip`. The fields come from the hits above.
+**What this project sends.** `v tid _p gcs gcd npa cid sid sct seg _s en dl dr dt ul sr _uip _et _ss _fv _nsi`, as a POST with an empty body and the visitor's `User-Agent`. `_et` carries validated engagement time on any event. `sct` is the visitor's session count, kept in the signed cookie, and `_nsi` marks the first hit of a session. The Google tag sent `_nsi` with a first visit only, not with a later session of the same visitor (captured 2026-11-14, [Session length](#session-length)). The denied ping leaves out `_uip`. The fields come from the hits above.
 
 **What came back.** Tested, 2026-11-06: 7 hits built by `buildCollectUrl` and sent to `/g/collect` of the test property, then read in Realtime through the GA4 Data API.
 
@@ -200,6 +200,50 @@ Captured 2026-11-10: `gtag.js` in Chromium with enhanced measurement and its pag
 | `replaceState` to the same URL | None | Same |
 
 A site whose Google tag has page changes turned off, like the demo shop's GTM setup, counts fewer page views there than Vanilla.
+
+## Session length
+
+Captured 2026-11-14: `gtag.js` (a copy downloaded that day with a placeholder Measurement ID, default settings) in headless Chromium 156, every hit answered locally, nothing sent to Google. Before the page load the `_ga` and `_ga_<ID>` cookies were set by hand. A first visit showed their format: `_ga=GA1.1.<random>.<first seconds>` and `_ga_<ID>=GS2.1.s<session start>$o<session count>$g<engaged, 0 or 1>$t<last hit>$j…$l0$h0`, times in Unix seconds.
+
+| Session cookie before the page load | `page_view` sent | Session |
+| --- | --- | --- |
+| None | `sid` = now, `sct=1`, `_ss=1`, `_nsi=1`, `_fv=1`, `seg=0` | First visit |
+| Started 2 h ago, last hit 1 min ago | `sid` = start, `sct=3`, no `_ss`, `_nsi` or `_fv`, `seg=1` | Same session |
+| Started 25 h ago, last hit 1 min ago | The same: `sid` unchanged, `sct=3`, no `_ss` | Same session |
+| Started 49 h ago, last hit 1 min ago | The same | Same session |
+| Started 2 h ago, last hit 31 min ago | `sid` = now, `sct=4`, `_ss=1`, no `_nsi` or `_fv`, `seg=0` | New session |
+
+So the Google tag sets no maximum length: only 30 minutes without a hit end a session. The 24 hours often quoted is a Measurement Protocol rule (an MP event with a session ID has to arrive within 24 hours of the session start) and does not apply to collect hits. Whether GA4 splits such a long session in its reports: Not verified.
+
+`_nsi` came with the first visit only, not with the new session after 31 minutes, in this one capture. Vanilla sends `_nsi` at every session start; whether the difference changes anything in reports: Not verified.
+
+The session timeout is a property setting (`session_duration` in the script, 30 minutes by default). Vanilla always uses 30 minutes.
+
+## Engaged sessions
+
+Same setup, captured 2026-11-14: one page loaded without cookies, events sent with `gtag("event", …)` after visible waits, then the exit (`visibilitychange` to hidden and `pagehide`, dispatched on the open page so the capture sees the last hit). Values per hit, `_et` in milliseconds. In every run the page view opened the session with `_ss=1` and `seg=0`.
+
+| Run | Hits after the page view |
+| --- | --- |
+| Three custom events 6 s apart | `test_a` `_et=6079` `seg=0`; `test_b` `_et=6002` `seg=1`; `test_c` `_et=6004` `seg=1`; exit `user_engagement` `_et=1002` `seg=1` |
+| `generate_lead`, then `purchase` 6 s later | `generate_lead` `_et=6081` `seg=0`; `purchase` `_et=6002` `seg=1`; exit `seg=1` |
+| `generate_lead` and `purchase` after 1 s each | `_et=1059` `seg=0`; `_et=1004` `seg=0`; exit `_et=1002` `seg=0` |
+| One wait of 12 s | `test_a` `_et=12077` `seg=1`; exit `seg=1` |
+| 6 s visible, 10 s hidden, 6 s visible | `test_a` `_et=12077` `seg=1`; hidden time does not count |
+| Consent `default` denied, granted after 8 s, an event 3 s later | The denied ping opened the session. After the grant `user_engagement` `_et=8069` `seg=0`, then `test_a` `_et=3004` `seg=1` |
+| 6 s on page 1, exit, page 2 of the same session | Page 1 exit `_et=6064` `seg=0`, cookie `$g0`. Page 2 `page_view` `seg=1` without `_ss`, `test_a` `seg=1`, cookie `$g1` |
+| 12 s on page 1, then page 2 | Page 1 `test_a` `seg=1`, cookie `$g1`. Page 2 `page_view` and `test_b` (`_et=2004`) `seg=1` |
+| Cookie of a running session with `$g0`, page load | `page_view` `seg=1`, `test_a` (`_et=2005`) `seg=1`, cookie afterwards `$g1` |
+
+The rule, as captured:
+
+- The hit that opens a session has `seg=0`.
+- After it, the session is engaged by a page view, or once the engagement time of its hits adds up to more than 10 seconds, time before consent included. Event names do not matter: `generate_lead` and `purchase` alone left `seg=0`. Key events are a property setting the tag cannot see; whether GA4 counts such a session as engaged in its reports: Not verified.
+- Once engaged, every later hit of the session has `seg=1`. The state is kept in the cookie (`$g1`) and a new session resets it.
+
+The script adds the time up per page load, but a later page load starts with a page view, which engages the session anyway, so a sum over the session gives the same flags. In the same copy of the script the threshold is `session_engaged_time`, 10,000 ms by default, compared with "greater than"; like the session timeout it is a property setting. These two details come from reading the script, not from a capture.
+
+The tag numbers requests, not events, in `_s`: two events sent in one request carried the same `_s`. Vanilla sends one request per event, so its count per event is the same thing.
 
 ## Collect wire format
 
