@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { serverIdentity, COOKIE_NAME } from "../src/server/identity.js";
+import { engage, serverIdentity, COOKIE_NAME } from "../src/server/identity.js";
 import { createApp } from "../src/server/app.js";
 import { normalizeConsent } from "../src/shared/consent.js";
 import { clickIds } from "../src/client/click-ids.js";
@@ -50,6 +50,27 @@ it("a cookie without a session count continues at two, and an invalid count is r
   expect(serverIdentity(config, signed({ ...old, last: start - 1000 }), start).count).toBe(1);
   expect(serverIdentity(config, signed({ ...old, count: 0 }), start).clientId).not.toBe("7.1");
   expect(serverIdentity(config, "", start).count).toBe(1);
+  const engagedOld = serverIdentity(config, signed({ ...old, last: start - 1000 }), start);
+  expect(engage(config, engagedOld, "page_view", 0, false)).toBe(true);
+  expect(serverIdentity(config, signed({ ...old, engaged: "yes" }), start).clientId).not.toBe(
+    "7.1",
+  );
+  expect(serverIdentity(config, signed({ ...old, engagedMs: -1 }), start).clientId).not.toBe("7.1");
+});
+it("the engaged state lives in the cookie, sticks for the session and resets with a new one", () => {
+  const start = Date.now();
+  const first = serverIdentity(config, "", start);
+  expect(engage(config, first, "page_view", 0, true)).toBe(false);
+  const second = serverIdentity(config, first.cookie, start + 6000);
+  expect(engage(config, second, "view_item", 6000, false)).toBe(false);
+  const third = serverIdentity(config, second.cookie, start + 12000);
+  expect(engage(config, third, "view_item", 6000, false)).toBe(true);
+  const fourth = serverIdentity(config, third.cookie, start + 13000);
+  expect(engage(config, fourth, "view_item", 0, false)).toBe(true);
+  const next = serverIdentity(config, fourth.cookie, start + 13000 + 1800000);
+  expect(next.newSession).toBe(true);
+  expect(engage(config, next, "page_view", 0, true)).toBe(false);
+  expect(engage(config, next, "view_item", 1000, false)).toBe(false);
 });
 it("server consent, credentials, device, campaign, geography and health", async () => {
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));

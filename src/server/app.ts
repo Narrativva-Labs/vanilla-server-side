@@ -1,5 +1,11 @@
 import { validEventName } from "./mp-validation.js";
-import { COOKIE_NAME, cookieHeader, serverIdentity, type CookieConfig } from "./identity.js";
+import {
+  COOKIE_NAME,
+  cookieHeader,
+  engage,
+  serverIdentity,
+  type CookieConfig,
+} from "./identity.js";
 import { isObviousBot } from "./bots.js";
 import { createRateLimit } from "./rate-limit.js";
 import Fastify from "fastify";
@@ -304,6 +310,13 @@ export function createApp(
         event.session_expires_ms = event.timestamp_ms + 30 * 60 * 1000;
         event.ip_override = req.ip;
         const starting = identity.newSession;
+        const engaged = engage(
+          config,
+          identity,
+          event.name,
+          event.params.engagement_time_msec,
+          starting,
+        );
         let opened = false;
         let finishOpening = (_identity?: typeof identity) => {};
         if (starting)
@@ -323,6 +336,7 @@ export function createApp(
             sessionStart: starting,
             firstVisit: starting && identity.newClient,
             sessionCount: identity.count,
+            engaged,
             userAgent: req.headers["user-agent"],
             opened() {
               if (!starting) return;

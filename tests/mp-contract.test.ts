@@ -357,7 +357,10 @@ it("engagement and subsequent page views set seg, with page sequence passed thro
     ["page_view", 0, true, "0"],
     ["page_view", 0, false, "1"],
     ["purchase", 9999, false, "0"],
-    ["page_engagement", 10000, false, "1"],
+    // The Google tag needs more than 10 s, and never marks the hit that opens a session.
+    ["page_engagement", 10000, false, "0"],
+    ["page_engagement", 10001, false, "1"],
+    ["page_engagement", 12000, true, "0"],
   ] as const) {
     const url = buildEventCollectUrl(
       destination,

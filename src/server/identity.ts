@@ -13,6 +13,22 @@ interface State {
   last: number;
   /** Sessions of this visitor so far, sent as the Google tag's session count. */
   count?: number;
+  /** Engagement time summed over the hits of this session, until it is engaged. */
+  engagedMs?: number;
+  /** The session is engaged, like `$g1` in the Google tag's session cookie. */
+  engaged?: boolean;
+}
+/** The Google tag's default `session_engaged_time`; a property can change it, this server cannot see that. */
+export const ENGAGED_MS = 10_000;
+function sign(config: CookieConfig, value: string) {
+  return createHmac("sha256", config.cookieSecret).update(value).digest("base64url");
+}
+function seal(config: CookieConfig, state: State) {
+  const { clientId, sessionId, started, last, count, engagedMs, engaged } = state;
+  const payload = Buffer.from(
+    JSON.stringify({ clientId, sessionId, started, last, count, engagedMs, engaged }),
+  ).toString("base64url");
+  return cookieHeader(config, `${payload}.${sign(config, payload)}`);
 }
 export function cookieHeader(
   config: Omit<CookieConfig, "cookieSecret">,
@@ -25,8 +41,6 @@ export function cookieHeader(
 export function serverIdentity(config: CookieConfig, header = "", now = Date.now()) {
   if (!config.cookieSecret || config.cookieSecret.length < 32)
     throw new Error("COOKIE_SECRET must contain at least 32 characters");
-  const sign = (value: string) =>
-    createHmac("sha256", config.cookieSecret).update(value).digest("base64url");
   // Another Vanilla server on a parent or sibling domain can send a cookie with the same name.
   // Use the first one this server signed, rather than starting a new identity on every request.
   const candidates = header
@@ -37,7 +51,7 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
   let state: State | undefined;
   for (const raw of candidates) {
     const [payload = "", signature = "", extra] = raw.split(".");
-    const expected = Buffer.from(sign(payload), "base64url");
+    const expected = Buffer.from(sign(config, payload), "base64url");
     const supplied = Buffer.from(signature, "base64url");
     if (
       extra === undefined &&
@@ -57,7 +71,11 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
           Number.isFinite(parsed.last) &&
           parsed.last <= now &&
           now - parsed.last < 34560000000 &&
-          (parsed.count === undefined || (Number.isSafeInteger(parsed.count) && parsed.count > 0))
+          (parsed.count === undefined ||
+            (Number.isSafeInteger(parsed.count) && parsed.count > 0)) &&
+          (parsed.engagedMs === undefined ||
+            (Number.isSafeInteger(parsed.engagedMs) && parsed.engagedMs >= 0)) &&
+          (parsed.engaged === undefined || typeof parsed.engaged === "boolean")
         )
           state = parsed;
       } catch {
@@ -80,14 +98,35 @@ export function serverIdentity(config: CookieConfig, header = "", now = Date.now
     state.started = now;
     // A cookie from before the count existed has had at least one session.
     state.count = (state.count ?? 1) + 1;
+    state.engagedMs = undefined;
+    state.engaged = undefined;
   }
   state.last = now;
-  const payload = Buffer.from(JSON.stringify(state)).toString("base64url");
-  return {
-    ...state,
-    count: state.count ?? 1,
-    newClient,
-    newSession,
-    cookie: cookieHeader(config, `${payload}.${sign(payload)}`),
-  };
+  return { ...state, count: state.count ?? 1, newClient, newSession, cookie: seal(config, state) };
+}
+export type Identity = ReturnType<typeof serverIdentity>;
+/**
+ * The engaged-session flag `seg` of one hit, kept for the session in the signed cookie, as the
+ * Google tag keeps it in its own (captured 2026-11-14, see the protocol notes). The hit that opens
+ * a session is never engaged. After it, a page view or more than 10 s of engagement time summed
+ * over the session engages it, whatever the event is called, and it stays engaged until it ends.
+ */
+export function engage(
+  config: CookieConfig,
+  identity: Identity,
+  name: string,
+  engagement: unknown,
+  opening: boolean,
+) {
+  if (!identity.engaged) {
+    const time =
+      Number.isSafeInteger(engagement) && Number(engagement) > 0 ? Number(engagement) : 0;
+    identity.engagedMs = Math.min((identity.engagedMs ?? 0) + time, Number.MAX_SAFE_INTEGER);
+    if (!opening && (name === "page_view" || identity.engagedMs > ENGAGED_MS)) {
+      identity.engaged = true;
+      identity.engagedMs = undefined;
+    }
+    identity.cookie = seal(config, identity);
+  }
+  return !opening && identity.engaged === true;
 }

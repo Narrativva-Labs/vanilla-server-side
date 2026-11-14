@@ -12,6 +12,7 @@ import {
   type Consent,
 } from "../shared/consent.js";
 import { shortenBytes, timely, type TrackingEvent } from "../shared/event.js";
+import { ENGAGED_MS } from "./identity.js";
 export interface Destination {
   measurementId: string;
   region?: "eu";
@@ -23,6 +24,8 @@ export interface Opening {
   firstVisit: boolean;
   /** Sessions of this visitor including the current one. */
   sessionCount?: number;
+  /** The session is engaged, from the signed cookie; see `engage`. */
+  engaged?: boolean;
   userAgent?: string;
   /** The session is open at Google: a retry of this event must not open it again. */
   opened?(): void;
@@ -53,6 +56,7 @@ interface CollectHit {
   sessionStart: boolean;
   firstVisit: boolean;
   sessionCount?: number;
+  engaged?: boolean;
 }
 const COLLECT_URL_BYTES = 1000;
 const COLLECT_TITLE_BYTES = 300;
@@ -85,8 +89,10 @@ export function buildCollectUrl(destination: Destination, hit: CollectHit) {
     cid: hit.clientId,
     sid: String(hit.sessionId),
     sct: hit.sessionCount ? String(hit.sessionCount) : undefined,
+    // Without session state, the rule of `engage` for this hit alone.
     seg:
-      (hit.name === "page_view" && !hit.sessionStart) || Number(hit.engagement) >= 10000
+      (hit.engaged ??
+      (!hit.sessionStart && (hit.name === "page_view" || Number(hit.engagement) > ENGAGED_MS)))
         ? "1"
         : "0",
     _s: String(hit.hitIndex ?? 1),
@@ -185,6 +191,7 @@ export function buildEventCollectUrl(
     sessionStart: opening?.sessionStart ?? false,
     firstVisit: opening?.firstVisit ?? false,
     sessionCount: opening?.sessionCount,
+    engaged: opening?.engaged,
   });
   for (const [key, value] of Object.entries(params)) {
     if (

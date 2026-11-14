@@ -593,6 +593,71 @@ it("a browser without cookies keeps one session with steady activity past 24 hou
   }
 }, 60000);
 
+/** Hits of one visitor through the collector, each with the cookie of the answer before. */
+async function visit(steps: [name: string, engagement: number, advanceMs: number][]) {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  const { app, post, urls } = setup();
+  try {
+    let cookie = "";
+    for (const [name, engagement, advanceMs] of steps) {
+      vi.setSystemTime(Date.now() + advanceMs);
+      const base = event();
+      const params = { ...base.params, engagement_time_msec: engagement };
+      if (name === "purchase") Object.assign(params, { transaction_id: crypto.randomUUID() });
+      const reply = await post("/e", event({ name, params }), cookie);
+      cookie = String(reply.headers["set-cookie"] ?? cookie).split(";")[0]!;
+    }
+    return urls().map((url) => url.searchParams.get("seg"));
+  } finally {
+    await app.close();
+  }
+}
+
+// Captured 2026-11-14 from the Google tag, see the protocol notes.
+it("three hits 6 s apart on one page engage the session from the second one", async () => {
+  expect(
+    await visit([
+      ["page_view", 0, 0],
+      ["view_item", 6000, 6000],
+      ["view_item", 6000, 6000],
+      ["page_engagement", 6000, 6000],
+    ]),
+  ).toEqual(["0", "0", "1", "1"]);
+});
+
+it("a key event name alone does not engage a session", async () => {
+  expect(
+    await visit([
+      ["page_view", 0, 0],
+      ["generate_lead", 1000, 1000],
+      ["purchase", 1000, 1000],
+      ["page_engagement", 1000, 1000],
+    ]),
+  ).toEqual(["0", "0", "0", "0"]);
+});
+
+it("12 s in one hit engages the session, and it stays engaged until the session ends", async () => {
+  expect(
+    await visit([
+      ["page_view", 0, 0],
+      ["view_item", 12000, 12000],
+      ["view_item", 0, 1000],
+      ["page_view", 0, 31 * 60 * 1000],
+      ["view_item", 1000, 1000],
+      ["page_view", 0, 1000],
+    ]),
+  ).toEqual(["0", "1", "1", "0", "0", "1"]);
+});
+
+it("time before consent, carried by the opening page view, counts toward the 10 s", async () => {
+  expect(
+    await visit([
+      ["page_view", 8000, 8000],
+      ["view_item", 3000, 3000],
+    ]),
+  ).toEqual(["0", "1"]);
+});
+
 it("an invalid engagement time is not forwarded in _et", async () => {
   const { app, post, urls } = setup();
   try {

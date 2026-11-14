@@ -38,5 +38,6 @@
 - `npm run test:e2e` runs the consent flow in Chromium and WebKit, also in CI.
 - An exit `page_engagement` that arrives without a cookie is dropped instead of creating a visitor with a session and no page view.
 - A session no longer ends after 24 hours of steady activity, only after 30 idle minutes, as the Google tag does (captured 2026-11-14). The 24 hours came from a Measurement Protocol rule.
+- `seg` follows the session like the Google tag's (captured 2026-11-14): the signed cookie sums engagement time, more than 10 seconds or a later page view engages the session, and it stays engaged until it ends. Before, three hits 6 s apart on one page sent `seg=0` every time.
 
 No release is tagged yet. Install and update follow the default branch.

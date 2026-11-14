@@ -88,6 +88,7 @@ If the regular property already imports the same conversion, set this one as sec
 - **Google accepts at most 16 KiB of event data in one hit, about 130 items.** Like the Google tag, a long event goes in the request body. Above 16 KiB Google refuses the hit (HTTP 413), and the Google tag loses the whole purchase. Vanilla leaves out the last items instead and logs how many, so revenue, transaction ID and the conversion arrive; the item reports miss those items.
 - **No cross-domain identity, durable queue or backfill.** If your server is down, its events are lost; the regular tag is unaffected.
 - **Each open tab keeps its own consent state** until it reloads, so a refusal in one tab does not stop a second open tab at once.
+- **Property settings for sessions are not read.** Vanilla ends a session after 30 idle minutes and counts it as engaged after more than 10 seconds of engagement, the defaults of the Google tag. A property with a changed session timeout or engaged-session timer differs from its regular tag. [Details](docs/decisions.md#engaged-sessions-follow-the-google-tag)
 - **HTTP 2xx proves delivery only.** Google [does not report errors](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference) on the live endpoint.
 - **No legal guarantee.** Choose consent behavior and disclosures that fit your site.
 

@@ -46,6 +46,16 @@ Superseded on 2026-11-08 by “Every event goes through /g/collect”.
 
 **Source:** [Session length](measurement-protocol-notes.md#session-length). Tested 2026-11-14: `tests/collect.test.ts`, `tests/delivery-races.test.ts`.
 
+## Engaged sessions follow the Google tag
+
+**Decision:** the server sets `seg` from session state in the signed cookie. The hit that opens a session sends `seg=0`. After it, a page view, or engagement time over 10 seconds summed over the hits of the session, engages the session, and every later hit sends `seg=1` until the session ends.
+
+**Alternative:** decide hit by hit, which Vanilla did until 2026-11-14: `seg=1` only on a later page view or a single hit with `_et` of 10 seconds or more. The tracker sends the time since its previous hit, so a single page with three hits 6 s apart sent `seg=0` three times.
+
+**Why:** captured 2026-11-14, the Google tag sent `seg=0`, `1`, `1` for those three hits, and kept the flag in its session cookie (`$g1`) for later pages. Event names did not change it: `generate_lead` and `purchase` alone left `seg=0`, so Vanilla does not guess key events either. Time before consent counts, as with the tag. The 10 seconds and the 30-minute timeout are the defaults; a property that changed them in its settings counts differently, and this server cannot read them. Concurrent requests of one visitor can race on the cookie, so a hit can miss some time of another; the next page view engages the session anyway. Effect on `engagedSessions` and the engagement rate in reports: Not verified.
+
+**Source:** [Engaged sessions](measurement-protocol-notes.md#engaged-sessions). Tested 2026-11-14: `tests/collect.test.ts`, `tests/parallel.test.ts`, `tests/mp-contract.test.ts`.
+
 ## Signed cookie, no database
 
 **Decision:** a signed `HttpOnly` cookie carries identity and session state.
