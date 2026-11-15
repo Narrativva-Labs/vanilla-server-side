@@ -49,6 +49,8 @@ export function createTracker(
   let bannerKnown = false;
   let pingIdentity: { client_id: string; session_id: number; page_id: string } | undefined;
   let pingIndex = 0;
+  // A stored refusal repeated at load is one deletion request; leaving the denied state allows another.
+  let deletionRequested = false;
   const pingPurchases = new Set<string>();
   const pingQueue: { name: string; params: Record<string, unknown> }[] = [];
   let deliveryReady = !deferDelivery;
@@ -116,7 +118,8 @@ export function createTracker(
       if (settled || explicitDenial || withdrawal) waiting.length = 0;
       const withdrawnClient = lastClient;
       memory = undefined;
-      if (explicitDenial || withdrawal)
+      if (withdrawal || (explicitDenial && !deletionRequested)) {
+        deletionRequested = true;
         void runtime
           .fetch(new URL("./p", endpoint).href, {
             method: "POST",
@@ -127,12 +130,14 @@ export function createTracker(
             body: JSON.stringify({ client_id: withdrawnClient }),
           })
           .catch(() => {});
+      }
       // A page already measured with consent is not counted again as a refused one.
       pagePinged ||= pageSent;
       pingSuppressed ||= pageSent;
       pageSent = false;
       pageScheduled = false;
     }
+    if (consent.analytics_storage !== "denied") deletionRequested = false;
     if (canTrack(consent) && !pageSent && !pageScheduled) {
       pageScheduled = true;
       track("page_view", {}, true);

@@ -115,6 +115,29 @@ for (const kind of ["CookieYes", "Shoptet"] as const) {
     expect(paths(p)).toEqual(["/p"]);
     expect(p.cookieReads()).toBe(0);
   });
+  it(`${kind}: a stored refusal and its repeated denied updates delete the cookie once`, async () => {
+    const p = page();
+    install(p, { choice: "denied" })();
+    p.command("consent", "update", allDenied);
+    poll(p);
+    p.command("consent", "update", allDenied);
+    await settle();
+    expect(paths(p)).toEqual(["/p"]);
+  });
+  it(`${kind}: a refusal after a grant on the same page deletes again`, async () => {
+    const p = page();
+    const state: { choice: Choice } = { choice: "denied" };
+    const notify = install(p, state);
+    notify();
+    await settle();
+    state.choice = "granted";
+    notify();
+    await settle();
+    state.choice = "denied";
+    notify();
+    await settle();
+    expect(paths(p)).toEqual(["/p", "/e", "/p"]);
+  });
   it(`${kind}: withdrawal after a grant deletes the cookie`, async () => {
     const p = page();
     const state: { choice: Choice } = { choice: "granted" };
