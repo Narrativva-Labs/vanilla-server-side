@@ -48,6 +48,9 @@ if (script && !win.__vanillaGA) {
       href: () => location.href,
       referrer: () => previousPage ?? document.referrer,
       now: Date.now,
+      defer: (task, delay) => {
+        window.setTimeout(task, delay);
+      },
       uuid: () => crypto.randomUUID(),
       fetch: window.fetch.bind(window),
       warn,
@@ -87,7 +90,13 @@ if (script && !win.__vanillaGA) {
       visibleTime = 0;
       visibleSince = count && document.visibilityState !== "hidden" ? Date.now() : 0;
     }
-    tracker.update(state, waitMs, observer.takeAnalyticsDenialUpdate(), observer.decided());
+    tracker.update(
+      state,
+      waitMs,
+      observer.takeAnalyticsDenialUpdate(),
+      observer.decided(),
+      observer.bannerKnown(),
+    );
   }
   function process(item: unknown) {
     try {

@@ -220,7 +220,7 @@ async function scenario(seed: number) {
     const key = `${hit.cid}/${hit.sid}`;
     const pinged = hit.query.get("gcs")?.[3] === "0";
     if (pinged) {
-      if (hit.ip) problem("visitor IP in a ping");
+      if (hit.ip !== ip) problem("wrong or missing IP in a ping");
       if (hit.raw.includes(SECRET)) problem("click ID in a ping");
       continue;
     }

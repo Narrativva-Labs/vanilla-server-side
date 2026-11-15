@@ -21,7 +21,11 @@ it("startup applies recorded withdrawal before beginning delivery", () => {
     { event: "purchase", transaction_id: "before-withdrawal" },
     ["consent", "update", denied],
   ]);
-  expect(p.fetcher.mock.calls.every(([url]) => String(url).endsWith("/p"))).toBe(true);
+  expect(
+    p.fetcher.mock.calls
+      .filter(([url]) => !String(url).endsWith("/d"))
+      .every(([url]) => String(url).endsWith("/p")),
+  ).toBe(true);
 });
 it("a regrant sends one new page view and external page views are ignored", async () => {
   const p = page([["consent", "update", granted], { event: "page_view" }]);
@@ -33,6 +37,7 @@ it("a regrant sends one new page view and external page views are ignored", asyn
   await flushPage(p);
   expect(
     p.fetcher.mock.calls
+      .filter(([url]) => !String(url).endsWith("/d"))
       .filter(([url]) => String(url).endsWith("/e"))
       .map(([, o]) => JSON.parse(String(o!.body)).name),
   ).toEqual(["page_view", "page_view"]);
@@ -80,7 +85,9 @@ for (const original of ["denied", "granted"] as const)
     now += 2000;
     await tracker.flush();
     expect(fetcher).toHaveBeenCalledTimes(3);
-    const retry = JSON.parse(String(fetcher.mock.calls[2]![1]!.body));
+    const retry = JSON.parse(
+      String(fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))[2]![1]!.body),
+    );
     expect(retry.consent.ad_user_data).toBe("denied");
     expect(retry.consent.ad_personalization).toBe("denied");
     tracker.update(denied);
@@ -107,7 +114,9 @@ it("URL fields are sanitized at the client", async () => {
     await settle();
     p.host.dataLayer.push({ event: "generate_lead", ...params });
     await flushPage(p);
-    const client = JSON.parse(String(p.fetcher.mock.calls[1]![1]!.body));
+    const client = JSON.parse(
+      String(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))[1]![1]!.body),
+    );
     for (const field of fields) expect(client.params[field]).not.toMatch(/private|email|secret|#/);
   }
 });
@@ -141,7 +150,11 @@ it("oversized events are explained before fetch and independently rejected by th
           url: "/e",
           headers: { origin: "https://shop.example" },
           payload: {
-            ...JSON.parse(String(p.fetcher.mock.calls[0]![1]!.body)),
+            ...JSON.parse(
+              String(
+                p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))[0]![1]!.body,
+              ),
+            ),
             params: { items: [{ item_name: "x".repeat(70000) }] },
           },
         })
@@ -160,12 +173,17 @@ it("withdrawal drops waiting purchases without replaying them", async () => {
     { event: "purchase", transaction_id: "discard" },
     ["consent", "update", denied],
   ]);
-  expect(p.fetcher.mock.calls.every(([url]) => String(url).endsWith("/p"))).toBe(true);
+  expect(
+    p.fetcher.mock.calls
+      .filter(([url]) => !String(url).endsWith("/d"))
+      .every(([url]) => String(url).endsWith("/p")),
+  ).toBe(true);
   p.command("consent", "update", granted);
   vi.advanceTimersByTime(2000);
   await flushPage(p);
   expect(
     p.fetcher.mock.calls
+      .filter(([url]) => !String(url).endsWith("/d"))
       .filter(([url]) => String(url).endsWith("/e"))
       .map(([, o]) => JSON.parse(String(o!.body)).name),
   ).toEqual(["page_view"]);
@@ -188,9 +206,9 @@ it("resolving unknown analytics never expands the waiting event advertising perm
   expect(p.fetcher).toHaveBeenCalledTimes(2);
   const consent = JSON.parse(
     String(
-      p.fetcher.mock.calls.find(
-        ([, o]) => JSON.parse(String(o?.body)).name === "generate_lead",
-      )![1]!.body,
+      p.fetcher.mock.calls
+        .filter(([url]) => !String(url).endsWith("/d"))
+        .find(([, o]) => JSON.parse(String(o?.body)).name === "generate_lead")![1]!.body,
     ),
   ).consent;
   expect(consent.analytics_storage).toBe("granted");

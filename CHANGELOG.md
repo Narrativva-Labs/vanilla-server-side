@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-11-15
+
+- Send cookieless pings for every allowed event, sharing transient page identity and rising hit order, with visitor IP and ordinary sanitized ecommerce parameters. Never include cookies, click IDs or `user_data`; never retry; exclude `page_engagement`.
+- Treat readable undecided banners as denied for pings only. Remove the fixed ping delay; honor a Google default's bounded `wait_for_update` when no banner is readable.
+- Preserve later full delivery of undecided events after a grant and drop the queue after refusal. Document intentional BigQuery duplication, privacy disclosure and `DENIED_PINGS=off`.
+- Fresh denied Google tag event sequence and denied exit behavior: Not verified (local browser capture blocked by sandbox).
+
 ## 0.1.0 - unreleased
 
 - Initial self-hosted tracker and collector.

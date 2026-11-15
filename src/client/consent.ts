@@ -13,6 +13,7 @@ export const noConsent = {
   updates: {} as Values,
   lastRead: undefined as Consent | undefined,
   refusal: false,
+  bannerReadable: false,
 };
 export type ConsentState = typeof noConsent;
 /** Priority rises from left to right, purpose by purpose. */
@@ -25,7 +26,7 @@ function layer(state: ConsentState, name: "defaults" | "regional" | "updates", s
   return { ...state, [name]: { ...state[name], ...Object.fromEntries(values) } };
 }
 function readBanner(state: ConsentState, value: unknown): ConsentState {
-  if (value === undefined) return { ...state, banner: {} };
+  if (value === undefined) return { ...state, banner: {}, bannerReadable: false };
   const read = consentSnapshot(value);
   const analytics = read.analytics_storage;
   const updates = { ...state.updates };
@@ -37,7 +38,7 @@ function readBanner(state: ConsentState, value: unknown): ConsentState {
   const refused = analytics === "denied" && state.banner.analytics_storage !== "denied";
   const refusal = refused || (state.refusal && analytics !== "unknown");
   const banner = Object.fromEntries(Object.entries(read).filter(([, v]) => v !== "unknown"));
-  return { ...state, banner, updates, lastRead: read, refusal };
+  return { ...state, banner, updates, lastRead: read, refusal, bannerReadable: true };
 }
 /** A refusal or grant by the visitor, not a starting value. */
 export function decidedAnalytics(state: ConsentState) {
@@ -75,7 +76,7 @@ export function createConsentObserver() {
       refresh?.();
       apply({ kind, settings });
       const wait = settings.wait_for_update;
-      if (kind === "update") waitUntil = 0;
+      if (kind === "update" || typeof wait !== "number" || !Number.isFinite(wait)) waitUntil = 0;
       else if (typeof wait === "number" && Number.isFinite(wait))
         waitUntil = Date.now() + Math.min(2000, Math.max(0, wait));
       return true;
@@ -86,6 +87,7 @@ export function createConsentObserver() {
       apply({ kind: "refusal-handled" });
       return refusal;
     },
+    bannerKnown: () => state.bannerReadable,
     waitMs: () => Math.max(0, waitUntil - Date.now()),
     snapshot: () => effectiveConsent(state),
     /** False while analytics rests on a default alone or a supported banner still waits for a click. */

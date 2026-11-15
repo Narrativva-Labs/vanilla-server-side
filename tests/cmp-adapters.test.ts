@@ -22,9 +22,15 @@ const settle = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
 const poll = (p: Page) => (p.host.setInterval.mock.calls[0]![0] as () => void)();
-const paths = (p: Page) => p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname);
+// These helpers inspect full events and cookie deletion; pings are asserted separately.
+const paths = (p: Page) =>
+  p.fetcher.mock.calls
+    .filter(([url]) => !String(url).endsWith("/d"))
+    .map(([url]) => new URL(String(url)).pathname);
 const bodies = (p: Page) =>
-  p.fetcher.mock.calls.map(([, options]) => JSON.parse(String(options?.body)));
+  p.fetcher.mock.calls
+    .filter(([url]) => !String(url).endsWith("/d"))
+    .map(([, options]) => JSON.parse(String(options?.body)));
 
 // Each banner as captured live; `state.choice` changes when the visitor decides.
 const banners = {
@@ -82,7 +88,7 @@ for (const kind of ["CookieYes", "Shoptet"] as const) {
     p.command("consent", "default", allDenied);
     p.command("consent", "update", allDenied);
     await settle();
-    expect(p.fetcher).not.toHaveBeenCalled();
+    expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
     state.choice = "granted";
     notify();
     await settle();
@@ -125,7 +131,8 @@ for (const kind of ["CookieYes", "Shoptet"] as const) {
     install(p, { choice: "undecided" })();
     poll(p);
     await settle();
-    expect(p.fetcher).not.toHaveBeenCalled();
+    expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
+    expect(p.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/d"))).toHaveLength(1);
     const adapter =
       kind === "CookieYes" ? cookieyes(p.host as never, p.doc) : shoptet(p.host as never);
     expect(adapter.read()?.analytics_storage).toBe("unknown");
@@ -190,7 +197,9 @@ for (const kind of ["CookieYes", "Shoptet"] as const) {
     install(denied, { choice: "undecided" })();
     poll(denied);
     await settle();
-    expect(denied.fetcher).not.toHaveBeenCalled();
+    expect(denied.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(
+      0,
+    );
     for (const google of ["default", "update"]) {
       const granted = page([["consent", google, allGranted]]);
       install(granted, { choice: "undecided" })();
@@ -207,7 +216,7 @@ for (const kind of ["CookieYes", "Shoptet"] as const) {
     notify();
     poll(p);
     await settle();
-    expect(p.fetcher).not.toHaveBeenCalled();
+    expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
     state.choice = "denied";
     notify();
     await settle();
@@ -243,7 +252,7 @@ it("CookieYes: the on-load update event listing rejected categories is not a ref
     }),
   );
   await settle();
-  expect(p.fetcher).not.toHaveBeenCalled();
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
 });
 it("CookieYes: an accepting update after the on-load denial sends", async () => {
   const p = page();
@@ -326,7 +335,7 @@ it("Shoptet: a changed or failing interface gives no answer and deletes nothing"
     Object.assign(p.host, { shoptet: api });
     poll(p);
     await settle();
-    expect(p.fetcher).not.toHaveBeenCalled();
+    expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
   }
   const change = vi.fn();
   const throwing = {
@@ -375,7 +384,7 @@ it("Shoptet: pre-choice dataLayer state alone neither sends nor deletes", async 
   banners.Shoptet(p, { choice: "undecided" });
   poll(p);
   await settle();
-  expect(p.fetcher).not.toHaveBeenCalled();
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
 });
 
 it("creates dataLayer when absent and keeps it for later scripts", async () => {
@@ -422,7 +431,7 @@ it("traffic shape: a regional default stays unresolved until an update", async (
   banners.CookieYes(p, { choice: "undecided" })();
   poll(p);
   await settle();
-  expect(p.fetcher).not.toHaveBeenCalled();
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
   p.command("consent", "update", allGranted);
   await settle();
   expect(paths(p)).toEqual(["/e"]);
@@ -441,7 +450,7 @@ for (const [shape, region] of [
       vi.advanceTimersByTime(600);
       poll(p);
       await settle();
-      expect(p.fetcher).not.toHaveBeenCalled();
+      expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
       state.choice = "granted";
       notify();
       await settle();
@@ -569,7 +578,7 @@ for (const kind of ["CookieYes", "Shoptet"] as const)
       p.host.dataLayer.push({ event: "view_item", ecommerce: { items: [{ item_id: "pear" }] } });
       poll(p);
       await settle();
-      expect(p.fetcher).not.toHaveBeenCalled();
+      expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
       state.choice = choice;
       notify();
       await settle();

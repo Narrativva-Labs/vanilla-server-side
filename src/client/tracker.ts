@@ -1,5 +1,6 @@
 import {
   consentSnapshot,
+  normalizeConsent,
   canTrack,
   clickConsent,
   cleanUrls,
@@ -18,7 +19,6 @@ import {
 } from "../shared/event.js";
 import { clickIds } from "./click-ids.js";
 const PING_URL_BYTES = 1000;
-const PING_DELAY_MS = 2000;
 export interface Runtime {
   title?(): string;
   device?(): TrackingEvent["device"];
@@ -27,6 +27,7 @@ export interface Runtime {
   referrer(): string;
   warn(message: string): void;
   now(): number;
+  defer?(task: () => void, delay: number): void;
   uuid(): string;
   fetch: typeof fetch;
 }
@@ -44,7 +45,12 @@ export function createTracker(
   let pageSent = false;
   let pageScheduled = false;
   let pagePinged = false;
-  let pingAt = 0;
+  let pingSuppressed = false;
+  let bannerKnown = false;
+  let pingIdentity: { client_id: string; session_id: number; page_id: string } | undefined;
+  let pingIndex = 0;
+  const pingPurchases = new Set<string>();
+  const pingQueue: { name: string; params: Record<string, unknown> }[] = [];
   let deliveryReady = !deferDelivery;
   let waitUntil = 0;
   // False while analytics is denied only by a default: events then wait for the visitor's choice.
@@ -66,18 +72,33 @@ export function createTracker(
   let generation = 0;
   const queue: { event: TrackingEvent; attempts: number; next: number }[] = [];
   const active = new Set<AbortController>();
-  function update(value: unknown, waitMs = 0, explicitDenial = false, decided = true) {
+  function update(
+    value: unknown,
+    waitMs = 0,
+    explicitDenial = false,
+    decided = true,
+    readableBanner = false,
+  ) {
     const next = consentSnapshot(value);
+    const decisionChanged = settled !== decided;
     settled = decided;
+    bannerKnown = readableBanner;
     // Also through an unknown state in between: requests of this visitor may be on their way.
     const withdrawal =
       (consent.analytics_storage === "granted" || memory !== undefined) &&
       next.analytics_storage === "denied";
+    const previousWait = waitUntil;
     waitUntil = runtime.now() + Math.min(2000, Math.max(0, waitMs));
+    // Wake at the command's deadline instead of waiting for the next periodic flush.
+    if (!readableBanner && waitUntil > runtime.now() && waitUntil !== previousWait)
+      runtime.defer?.(() => void flush(), waitUntil - runtime.now());
     if (waitMs > 0) {
       for (const item of waiting) item.deadline = Math.min(item.deadline, waitUntil);
     }
-    if (!explicitDenial && JSON.stringify(next) === JSON.stringify(consent)) return;
+    if (!explicitDenial && !decisionChanged && JSON.stringify(next) === JSON.stringify(consent)) {
+      void flush();
+      return;
+    }
     for (const item of waiting) {
       item.consent = intersect(item.consent, next);
     }
@@ -108,6 +129,7 @@ export function createTracker(
           .catch(() => {});
       // A page already measured with consent is not counted again as a refused one.
       pagePinged ||= pageSent;
+      pingSuppressed ||= pageSent;
       pageSent = false;
       pageScheduled = false;
     }
@@ -122,7 +144,6 @@ export function createTracker(
     const blockedPage = name === "page_view" && !automaticPage;
     const allowedName = allowed.has(name) || automaticPage || name === "page_engagement";
     if (!allowedName || blockedPage || !/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(name)) return;
-    if (consent.analytics_storage === "denied" && settled) return;
     const transaction =
       name === "purchase" && typeof params.transaction_id === "string"
         ? params.transaction_id
@@ -137,12 +158,18 @@ export function createTracker(
       ...params,
       engagement_time_msec: Math.max(0, Math.round(runtime.engagement?.() ?? 0)),
     });
+    if (!canTrack(consent) && name !== "page_engagement") {
+      if (pingQueue.length >= 50) pingQueue.shift();
+      pingQueue.push({ name, params });
+      ping();
+    }
+    if (consent.analytics_storage === "denied" && settled) return;
     const clicks = name === "page_view" ? clickIds(runtime.href()) : undefined;
     const timestamp = runtime.now();
     const unresolved = !canTrack(consent);
     if (unresolved || timestamp < waitUntil) {
       if (waiting.length >= 50) waiting.shift();
-      // Kept in memory until the visitor decides; nothing leaves the page before that.
+      // Full events stay in memory until the visitor decides, independently of pings.
       const deadline = unresolved ? Infinity : waitUntil;
       waiting.push({
         name,
@@ -253,34 +280,78 @@ export function createTracker(
     }
     return body;
   }
-  /** One limited page ping without analytics consent, as Google tag does in Advanced Consent Mode. */
+  /** Best-effort cookieless events; identity lasts only for this page. */
   function ping() {
-    if (!pings || consent.analytics_storage !== "denied") {
-      pingAt = 0;
+    if (!deliveryReady || !pings) return;
+    if (canTrack(consent) || pageSent || pingSuppressed) {
+      pingQueue.length = 0;
       return;
     }
-    // A banner restoring a stored grant must not leave a refusal behind on every page load.
-    pingAt ||= runtime.now() + PING_DELAY_MS;
-    if (pagePinged || runtime.now() < pingAt) return;
-    pagePinged = true;
+    if (consent.analytics_storage !== "denied" && !bannerKnown) return;
+    if (!bannerKnown && runtime.now() < waitUntil) return;
     const device = runtime.device?.();
-    void runtime
-      .fetch(new URL("./d", endpoint).href, {
-        method: "POST",
-        credentials: "omit",
-        keepalive: true,
-        referrerPolicy: "no-referrer",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          consent,
-          page_location: shortenBytes(sanitizeUrl(runtime.href()), PING_URL_BYTES),
-          page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PING_URL_BYTES),
-          page_title: shortenBytes(redactAds(runtime.title?.() ?? "") as string, PAGE_TEXT_BYTES),
-          language: device?.language,
-          screen_resolution: device?.screen_resolution,
-        }),
-      })
-      .catch(() => {});
+    const pingConsent = normalizeConsent(consent);
+    pingConsent.analytics_storage = "denied";
+    const events = pingQueue.splice(0);
+    if (!pagePinged) events.unshift({ name: "page_view", params: {} });
+    for (const item of events) {
+      const transaction =
+        item.name === "purchase" && typeof item.params.transaction_id === "string"
+          ? item.params.transaction_id
+          : undefined;
+      if (transaction && pingPurchases.has(transaction)) continue;
+      if (transaction) {
+        if (pingPurchases.size >= 1000) pingPurchases.delete(pingPurchases.values().next().value!);
+        pingPurchases.add(transaction);
+      }
+      pagePinged = true;
+      pingIdentity ??= {
+        client_id: `${parseInt(runtime.uuid().replace(/-/g, "").slice(0, 8), 16)}.${Math.floor(runtime.now() / 1000)}`,
+        session_id: Math.max(1, Math.floor(runtime.now() / 1000)),
+        page_id: String(parseInt(runtime.uuid().replace(/-/g, "").slice(0, 12), 16)),
+      };
+      const params = cleanUrls(
+        redactAds(
+          jsonSnapshot({
+            page_location: shortenBytes(sanitizeUrl(runtime.href()), PING_URL_BYTES),
+            page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PING_URL_BYTES),
+            page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
+            ...item.params,
+          }),
+        ),
+      ) as Record<string, unknown>;
+      // Never send enhanced-conversion data, including scalar values or nested item fields.
+      function stripUserData(value: unknown): unknown {
+        if (Array.isArray(value)) return value.map(stripUserData);
+        if (value && typeof value === "object")
+          return Object.fromEntries(
+            Object.entries(value)
+              .filter(([key]) => key.toLowerCase() !== "user_data")
+              .map(([key, entry]) => [key, stripUserData(entry)]),
+          );
+        return value;
+      }
+      const body = JSON.stringify({
+        ...pingIdentity,
+        hit_index: ++pingIndex,
+        name: item.name,
+        consent: pingConsent,
+        params: stripUserData(params),
+        language: device?.language,
+        screen_resolution: device?.screen_resolution,
+      });
+      if (new TextEncoder().encode(body).byteLength > 64 * 1024) continue;
+      void runtime
+        .fetch(new URL("./d", endpoint).href, {
+          method: "POST",
+          credentials: "omit",
+          keepalive: true,
+          referrerPolicy: "no-referrer",
+          headers: { "Content-Type": "application/json" },
+          body,
+        })
+        .catch(() => {});
+    }
   }
   async function flush() {
     if (!deliveryReady) return;
@@ -417,7 +488,10 @@ export function createTracker(
     page(refresh?: () => void) {
       pageSent = false;
       pagePinged = false;
-      pingAt = 0;
+      pingSuppressed = false;
+      pingIdentity = undefined;
+      pingIndex = 0;
+      pingQueue.length = 0;
       // Set during the refresh, so a grant found there does not send its own page view.
       pageScheduled = true;
       refresh?.();

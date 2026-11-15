@@ -5,10 +5,11 @@ it("accepts gtag Arguments and preserves the original dataLayer", async () => {
   const p = page([["consent", "update", { analytics_storage: "granted" }]]);
   p.command("event", "generate_lead", { value: 10 });
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  expect(p.fetcher.mock.calls.map(([, o]) => JSON.parse(String(o?.body)).name)).toEqual([
-    "page_view",
-    "generate_lead",
-  ]);
+  expect(
+    p.fetcher.mock.calls
+      .filter(([url]) => !String(url).endsWith("/d"))
+      .map(([, o]) => JSON.parse(String(o?.body)).name),
+  ).toEqual(["page_view", "generate_lead"]);
   expect(p.host.dataLayer).toHaveLength(2);
   expect(p.cookieReads()).toBe(0);
 });
@@ -16,14 +17,18 @@ it("the browser entry reads and writes no storage and stops after a real denial"
   const p = page();
   p.command("consent", "update", { analytics_storage: "granted" });
   await Promise.resolve();
-  expect(p.fetcher).toHaveBeenCalledTimes(1);
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(1);
   expect(p.cookieReads()).toBe(0);
   p.command("consent", "update", { analytics_storage: "denied" });
   p.host.dataLayer.push({
     event: "purchase",
     ecommerce: { transaction_id: "one" },
   });
-  expect(p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(["/e", "/p"]);
+  expect(
+    p.fetcher.mock.calls
+      .filter(([url]) => !String(url).endsWith("/d"))
+      .map(([url]) => new URL(String(url)).pathname),
+  ).toEqual(["/e", "/p"]);
   expect(p.cookieReads()).toBe(0);
 });
 const flushAsync = async () => {
@@ -32,27 +37,36 @@ const flushAsync = async () => {
 it("a page restored from the back/forward cache sends a page view", async () => {
   const p = page([["consent", "update", { analytics_storage: "granted" }]]);
   await flushAsync();
-  const before = p.fetcher.mock.calls.length;
+  const before = p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).length;
   p.host.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   await flushAsync();
-  expect(p.fetcher.mock.calls.length).toBe(before + 1);
-  expect(JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]!.body)).name).toBe("page_view");
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).length).toBe(
+    before + 1,
+  );
+  expect(
+    JSON.parse(
+      String(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).at(-1)![1]!.body),
+    ).name,
+  ).toBe("page_view");
 });
 it("a fragment change is the same page, a new path is a page view", async () => {
   const p = page([["consent", "update", { analytics_storage: "granted" }]]);
   await flushAsync();
-  const before = p.fetcher.mock.calls.length;
+  const before = p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).length;
   p.host.history.pushState({}, "", p.host.location.href + "#contact");
   p.host.location.href = p.host.location.href.replace("#contact", "#prices");
   p.host.dispatchEvent(new Event("popstate"));
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   await flushAsync();
-  expect(p.fetcher.mock.calls.length).toBe(before);
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).length).toBe(before);
   p.host.history.pushState({}, "", "https://shop.example/b#top");
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   await flushAsync();
-  const names = p.fetcher.mock.calls.slice(before).map(([, o]) => JSON.parse(String(o?.body)).name);
+  const names = p.fetcher.mock.calls
+    .filter(([url]) => !String(url).endsWith("/d"))
+    .slice(before)
+    .map(([, o]) => JSON.parse(String(o?.body)).name);
   expect(names.filter((name) => name === "page_view")).toHaveLength(1);
 });
 it("a restored page and its popstate send one page view", async () => {
@@ -60,13 +74,15 @@ it("a restored page and its popstate send one page view", async () => {
   await flushAsync();
   p.host.history.pushState({}, "", "https://shop.example/b");
   await flushAsync();
-  const before = p.fetcher.mock.calls.length;
+  const before = p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).length;
   p.host.location.href = "https://shop.example/a";
   p.host.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
   p.host.dispatchEvent(new Event("popstate"));
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   await flushAsync();
-  expect(p.fetcher.mock.calls.length).toBe(before + 1);
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).length).toBe(
+    before + 1,
+  );
 });
 it("a SPA page reports the previous page as referrer and closes its time first", async () => {
   vi.useFakeTimers();
@@ -78,7 +94,9 @@ it("a SPA page reports the previous page as referrer and closes its time first",
     p.host.history.pushState({}, "", "https://shop.example/b");
     (p.host.setInterval.mock.calls[0]![0] as () => void)();
     await flushAsync();
-    const sent = p.fetcher.mock.calls.map(([, init]) => JSON.parse(String(init!.body)));
+    const sent = p.fetcher.mock.calls
+      .filter(([url]) => !String(url).endsWith("/d"))
+      .map(([, init]) => JSON.parse(String(init!.body)));
     const closing = sent.find((event) => event.name === "page_engagement");
     const next = sent.filter((event) => event.name === "page_view").at(-1);
     expect(closing.params.page_location).toBe(sanitizeUrl(start));
@@ -98,6 +116,7 @@ it("a page visited without consent is not reported as a referrer", async () => {
   p.command("consent", "update", { analytics_storage: "granted" });
   await flushAsync();
   const sent = p.fetcher.mock.calls
+    .filter(([url]) => !String(url).endsWith("/d"))
     .filter(([url]) => String(url).endsWith("/e"))
     .map(([, init]) => JSON.parse(String(init!.body)));
   expect(sent.at(-1).params.page_location).toContain("/public");
@@ -108,33 +127,39 @@ it("a historical consent sequence stops collection on denial", () => {
     ["consent", "default", { analytics_storage: "granted" }],
     ["consent", "update", { analytics_storage: "denied" }],
   ]);
-  expect(p.fetcher.mock.calls.every(([url]) => String(url).endsWith("/p"))).toBe(true);
+  expect(
+    p.fetcher.mock.calls
+      .filter(([url]) => !String(url).endsWith("/d"))
+      .every(([url]) => String(url).endsWith("/p")),
+  ).toBe(true);
   expect(p.cookieReads()).toBe(0);
 });
 
-it("default denied without a visitor decision sends zero requests, including after polling", async () => {
+it("default denied without a visitor decision sends no full events, including after polling", async () => {
   const p = page([["consent", "default", { analytics_storage: "denied" }]]);
   p.command("event", "generate_lead");
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   p.host.dispatchEvent(new Event("pagehide"));
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  expect(p.fetcher).toHaveBeenCalledTimes(0);
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
   expect(p.cookieReads()).toBe(0);
 });
 it("an explicit denied update after default denied deletes once without collecting", async () => {
   const p = page([["consent", "default", { analytics_storage: "denied" }]]);
-  expect(p.fetcher).toHaveBeenCalledTimes(0);
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
   p.command("consent", "update", { analytics_storage: "denied" });
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  expect(p.fetcher).toHaveBeenCalledTimes(1);
-  expect(String(p.fetcher.mock.calls[0]![0])).toMatch(/\/p$/);
+  expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(1);
+  expect(
+    String(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))[0]![0]),
+  ).toMatch(/\/p$/);
 });
 it("unknown consent sends no deletion request", async () => {
   const p = page();
   (p.host.setInterval.mock.calls[0]![0] as () => void)();
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  expect(p.fetcher).toHaveBeenCalledTimes(0);
+  expect(p.fetcher).not.toHaveBeenCalled();
 });
 it("banner withdrawal still deletes the cookie after a fallback grant", async () => {
   const p = page();
@@ -145,7 +170,11 @@ it("banner withdrawal still deletes the cookie after a fallback grant", async ()
   banner.consent.statistics = false;
   p.host.dispatchEvent(new Event("CookiebotOnDecline"));
   for (let i = 0; i < 20; i++) await Promise.resolve();
-  expect(p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(["/e", "/p"]);
+  expect(
+    p.fetcher.mock.calls
+      .filter(([url]) => !String(url).endsWith("/d"))
+      .map(([url]) => new URL(String(url)).pathname),
+  ).toEqual(["/e", "/p"]);
 });
 
 for (const kind of ["Cookiebot", "CookieConsent"] as const) {
@@ -173,13 +202,18 @@ for (const kind of ["Cookiebot", "CookieConsent"] as const) {
       const notification = kind === "Cookiebot" ? "CookiebotOnDecline" : "cc:onConsent";
       p.host.dispatchEvent(new Event(notification));
       (p.host.setInterval.mock.calls[0]![0] as () => void)();
-      expect(p.fetcher).toHaveBeenCalledTimes(0);
+      expect(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d"))).toHaveLength(0);
+      expect(p.fetcher.mock.calls.filter(([url]) => String(url).endsWith("/d"))).toHaveLength(1);
       decided = true;
       p.host.dispatchEvent(new Event(notification));
       (p.host.setInterval.mock.calls[0]![0] as () => void)();
       p.host.dispatchEvent(new Event(notification));
       for (let i = 0; i < 20; i++) await Promise.resolve();
-      expect(p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(["/p"]);
+      expect(
+        p.fetcher.mock.calls
+          .filter(([url]) => !String(url).endsWith("/d"))
+          .map(([url]) => new URL(String(url)).pathname),
+      ).toEqual(["/p"]);
       expect(p.cookieReads()).toBe(0);
     });
   }
@@ -198,6 +232,10 @@ for (const kind of ["Cookiebot", "CookieConsent"] as const) {
     );
     p.host.dispatchEvent(new Event(kind === "Cookiebot" ? "CookiebotOnDecline" : "cc:onConsent"));
     for (let i = 0; i < 20; i++) await Promise.resolve();
-    expect(p.fetcher.mock.calls.map(([url]) => new URL(String(url)).pathname)).toEqual(["/e"]);
+    expect(
+      p.fetcher.mock.calls
+        .filter(([url]) => !String(url).endsWith("/d"))
+        .map(([url]) => new URL(String(url)).pathname),
+    ).toEqual(["/e"]);
   });
 }

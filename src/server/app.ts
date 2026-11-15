@@ -143,12 +143,23 @@ export function createApp(
         body: {
           type: "object",
           additionalProperties: false,
-          required: ["consent", "page_location"],
+          required: [
+            "consent",
+            "name",
+            "params",
+            "client_id",
+            "session_id",
+            "page_id",
+            "hit_index",
+          ],
           properties: {
             consent: { type: "object" },
-            page_location: { type: "string", maxLength: 2048 },
-            page_referrer: { type: "string", maxLength: 2048 },
-            page_title: { type: "string", maxLength: 1024 },
+            name: { type: "string", pattern: "^[a-zA-Z][a-zA-Z0-9_]{0,39}$" },
+            params: { type: "object", maxProperties: 100 },
+            client_id: { type: "string", pattern: "^[0-9]{1,20}\\.[0-9]{1,20}$" },
+            session_id: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
+            page_id: { type: "string", pattern: "^[0-9]{1,20}$" },
+            hit_index: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
             language: { type: "string", maxLength: 32 },
             screen_resolution: { type: "string", pattern: "^[0-9]{1,6}x[0-9]{1,6}$" },
           },
@@ -164,11 +175,23 @@ export function createApp(
       const ping = { ...req.body, consent: consentSnapshot(req.body.consent) };
       if (ping.consent.analytics_storage !== "denied")
         return reply.code(400).send({ error: "ping_requires_denied_consent" });
+      if (
+        !validEventName(ping.name) ||
+        ping.name === "page_engagement" ||
+        (ping.name !== "page_view" && !allowed.has(ping.name))
+      )
+        return reply.code(400).send({ error: "event_not_allowed" });
       const release = limiter.claim(req.ip);
       if (!release) return reply.code(429).send({ error: "rate_limit" });
       try {
-        // No cookie, no IP and no retry: this request leaves nothing that links two pings.
-        const result = await sendDeniedPing(config, ping, req.headers["user-agent"], fetcher);
+        // No cookie or retry. Page identity is transient; IP supplies visitor geography.
+        const result = await sendDeniedPing(
+          config,
+          ping,
+          req.headers["user-agent"],
+          fetcher,
+          req.ip,
+        );
         if (result === "sent") status.sent++;
         else status.errors++;
         return reply.code(204).send();

@@ -8,7 +8,7 @@ import { isObviousBot } from "../dist/server/bots.js";
 
 const port = Number(process.env.PORT ?? 3210);
 const origin = `http://localhost:${port}`;
-const HOLD_MS = 3000; // Longer than the tracker's 2-second wait plus its 500 ms polling.
+const HOLD_MS = 3000; // Allow a full event time to reach the local stub.
 
 const clock = () => new Date().toTimeString().slice(0, 8);
 const line = (label, text, details = []) => {
@@ -30,8 +30,9 @@ async function fakeGoogle(url) {
   const { host, pathname, searchParams } = new URL(url);
   if (pathname === "/g/collect") {
     const name = searchParams.get("en");
-    received(name);
-    line("TO GOOGLE", `${name}  ->  ${host}${pathname}`, [
+    const ping = searchParams.get("gcs")?.endsWith("0");
+    if (!ping) received(name);
+    line(ping ? "PING" : "TO GOOGLE", `${name}  ->  ${host}${pathname}`, [
       [...searchParams].map(([key, value]) => `${key}=${value}`).join(" "),
     ]);
     return new Response(null, { status: 204 });
@@ -40,8 +41,8 @@ async function fakeGoogle(url) {
 }
 
 const reasons = {
-  denied: "the visitor refused, so the event stayed in the browser",
-  unknown: "no decision within 2 seconds, so the event was dropped from memory",
+  denied: "the visitor refused, so no full event was sent",
+  unknown: "no decision yet, so the full event waits in memory",
   granted: "it never reached the collector",
 };
 

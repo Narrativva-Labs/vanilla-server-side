@@ -100,7 +100,9 @@ it("independent: URL variants retain only UTM, ordinary text stays unchanged", a
       items: [{ item_name: "Boots / XL" }],
     });
     await settle();
-    const params = JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]!.body)).params;
+    const params = JSON.parse(
+      String(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).at(-1)![1]!.body),
+    ).params;
     for (const key of ["page_location", "page_referrer", "link_url", "checkout_url"]) {
       expect(params[key]).not.toMatch(/email|secret|#/);
       expect(params[key]).toContain("utm_source=a");
@@ -117,7 +119,9 @@ it("automatic URL fields never contain credentials, private query values or frag
   p.host.history.pushState({}, "", p.host.location.href);
   p.host.dispatchEvent(new Event("popstate"));
   await settle();
-  const event = JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]!.body));
+  const event = JSON.parse(
+    String(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).at(-1)![1]!.body),
+  );
   expect(event.params.page_location).toBe("https://shop.example/reset?utm_source=test");
 });
 
@@ -130,7 +134,9 @@ it("slash-prefixed search and product names stay unchanged on client and server"
   await settle();
   p.host.dataLayer.push({ event: "search", ...params });
   await settle();
-  const event = JSON.parse(String(p.fetcher.mock.calls.at(-1)![1]!.body));
+  const event = JSON.parse(
+    String(p.fetcher.mock.calls.filter(([url]) => !String(url).endsWith("/d")).at(-1)![1]!.body),
+  );
   expect(event.params.search_term).toBe(params.search_term);
   expect(event.params.items[0].item_name).toBe(params.items[0]!.item_name);
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
@@ -164,6 +170,7 @@ it("independent: regrant, external page views and changed SPA location emits a s
   await settle();
   // The closing page_engagement depends on elapsed time, so only the rest is compared.
   const sent = p.fetcher.mock.calls
+    .filter(([url]) => !String(url).endsWith("/d"))
     .map(([url, init]) => [new URL(String(url)).pathname, JSON.parse(String(init!.body)).name])
     .filter(([, name]) => name !== "page_engagement")
     .map(([path]) => path);
@@ -181,7 +188,11 @@ it("independent: cookie collector rejects missing, unknown and denied analytics 
         { event: "purchase", transaction_id: "blocked" },
       ]);
       await settle();
-      expect(p.fetcher.mock.calls.every(([url]) => String(url).endsWith("/p"))).toBe(true);
+      expect(
+        p.fetcher.mock.calls
+          .filter(([url]) => !String(url).endsWith("/d"))
+          .every(([url]) => String(url).endsWith("/p")),
+      ).toBe(true);
       const result = await app.inject({
         method: "POST",
         url: "/e",
@@ -271,6 +282,7 @@ it("URLs set by the site are cleaned like automatic ones", async () => {
   });
   for (let i = 0; i < 30; i++) await Promise.resolve();
   const lead = p.fetcher.mock.calls
+    .filter(([url]) => !String(url).endsWith("/d"))
     .map(([, options]) => JSON.parse(String(options?.body)))
     .find((body) => body.name === "generate_lead");
   expect(lead.params).toMatchObject({

@@ -85,15 +85,19 @@ The server renews the cookie on each delivered event (Tested 2026-11-05, `tests/
 
 A same-origin path proxy, or a tracker in the same network as the website, may avoid this cap. Not verified.
 
+Denied pings use page-local random client/session IDs and a rising hit index, the same parameter sanitization and ecommerce encoding as full events, and full visitor IP for geography. No cookie, click ID, `user_data` or retry is used. Purchase transaction IDs are deduplicated. `page_engagement` pings are excluded; the Google tag sends a denied `user_engagement` on exit (captured 2026-11-15). Tests: `tests/denied-events.test.ts` and `tests/collect.test.ts`.
+
+A later grant releases the undecided full-event queue even after pings have left; refusal drops it. In BigQuery use `WHERE privacy_info.analytics_storage = 'Yes'` for full events and `= 'No'` for pings; counting both intentionally counts an event twice. `DENIED_PINGS=off` disables all pings.
+
 ## Consent state machine
 
 Each purpose has three states, and the tracker works from `analytics_storage`:
 
 | | Meaning | What the tracker does |
 | --- | --- | --- |
-| `unknown` | No signal, or an undecided banner with no Google state | Events wait in memory until the visitor decides, at most 50 per page and up to 30 seconds each; older events are discarded. Nothing is sent and no cookie is set |
+| `unknown` | No signal, or an undecided banner with no Google state | Full events wait in memory, at most 50; full delivery requires the existing timeliness checks. A readable undecided banner immediately sends cookieless event pings with analytics denied. No signal sends nothing. No cookie is set |
 | `granted` | The visitor agreed | Send |
-| `denied` | Default or refusal | Nothing is sent. Denied by a default alone, while a supported banner is still undecided, events wait in memory like `unknown`; a refusal clears them and the queues. After 2 seconds in this state, one limited ping to `/d` per page, unless consent already measured that page |
+| `denied` | Default or refusal | Automatic page view and each allowed event ping `/d`, unless consent already measured the page. A readable banner sends immediately; a default alone waits only `wait_for_update` (0 when absent, capped at 2 seconds). Full events wait while undecided; refusal clears them and the queues |
 
 | From | Signal | To | Side effect |
 | --- | --- | --- | --- |
@@ -171,7 +175,7 @@ Whether the tracker asks the server to delete the cookie:
 
 - Without a decision no request reaches `/e` or `/p`, nothing goes to the stub and no cookie exists.
 - Accepting sends the page view and creates a cookie marked `HttpOnly` that page scripts cannot read.
-- Rejecting sends one deletion request, one limited ping, no event and no cookie.
+- Rejecting sends a deletion request and keeps cookieless event pings enabled, with no full event or cookie.
 - Withdrawing deletes the cookie and stops later events.
 - A same-document navigation sends one `page_view`, and repeating the same address sends none.
 

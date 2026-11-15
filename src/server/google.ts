@@ -32,9 +32,12 @@ export interface Opening {
 }
 export interface DeniedPing {
   consent: Consent;
-  page_location: string;
-  page_referrer?: string;
-  page_title?: string;
+  name: string;
+  params: Record<string, unknown>;
+  client_id: string;
+  session_id: number;
+  page_id: string;
+  hit_index: number;
   language?: string;
   screen_resolution?: string;
 }
@@ -193,6 +196,10 @@ export function buildEventCollectUrl(
     sessionCount: opening?.sessionCount,
     engaged: opening?.engaged,
   });
+  appendParams(url, params);
+  return url;
+}
+function appendParams(url: URL, params: Record<string, unknown>) {
   for (const [key, value] of Object.entries(params)) {
     if (
       [
@@ -217,7 +224,6 @@ export function buildEventCollectUrl(
       );
     }
   }
-  return url;
 }
 /** Fields the Google tag moves into the POST body once the URL grows long. */
 const bodyField = (key: string) =>
@@ -293,27 +299,52 @@ export async function sendGoogle(
   if (delivery === "sent") opening?.opened?.();
   return delivery;
 }
-/** Advanced Consent Mode ping: a one-off ID, no visitor IP, no click IDs, no cookie. */
+/** Cookieless page identity, visitor IP and event parameters; no click IDs or retries. */
 export function sendDeniedPing(
   destination: Destination,
   ping: DeniedPing,
   userAgent?: string,
   fetcher: typeof fetch = fetch,
+  ip?: string,
 ) {
-  const seconds = Math.floor(Date.now() / 1000);
+  function strip(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(strip);
+    if (value && typeof value === "object")
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([key]) => key.toLowerCase() !== "user_data")
+          .map(([key, entry]) => [key, strip(entry)]),
+      );
+    return value;
+  }
+  const cleaned = cleanUrls(redactAds(strip(ping.params))) as Record<string, unknown>;
+  const params = validateParams({ ...cleaned, session_id: ping.session_id });
+  const first = ping.hit_index === 1;
   const url = buildCollectUrl(destination, {
-    name: "page_view",
-    clientId: `${randomInt(1, 2147483647)}.${seconds}`,
-    sessionId: seconds,
+    name: ping.name,
+    clientId: ping.client_id,
+    sessionId: ping.session_id,
+    pageId: ping.page_id,
+    hitIndex: ping.hit_index,
     consent: normalizeConsent(ping.consent),
-    location: ping.page_location,
-    referrer: ping.page_referrer,
-    title: ping.page_title,
+    location: cleaned.page_location,
+    referrer: cleaned.page_referrer,
+    title: cleaned.page_title,
     language: ping.language,
     screen: ping.screen_resolution,
-    sessionStart: true,
-    firstVisit: true,
+    ip,
+    engagement: params.engagement_time_msec,
+    sessionStart: first,
+    firstVisit: first,
     sessionCount: 1,
   });
-  return post(url, { headers: browser(userAgent) }, new AbortController().signal, fetcher);
+  appendParams(url, params);
+  const request = collectRequest(url);
+  if (!request) return Promise.resolve<Delivery>("dropped");
+  return post(
+    request.url,
+    { headers: browser(userAgent), body: request.body },
+    new AbortController().signal,
+    fetcher,
+  );
 }

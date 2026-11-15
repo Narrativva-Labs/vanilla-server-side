@@ -227,29 +227,37 @@ it("a browser that keeps no cookie does not open a session with every event", as
 
 const ping = (over: object = {}) => ({
   consent: { analytics_storage: "denied", ad_storage: "denied" },
-  page_location: "https://shop.example/landing?utm_source=news&gclid=abc&email=a@b.c",
-  page_referrer: "https://www.google.com/",
-  page_title: "Landing",
+  name: "page_view",
+  client_id: "123.456",
+  session_id: 123,
+  page_id: "123",
+  hit_index: 1,
+  params: {
+    page_location: "https://shop.example/landing?utm_source=news&gclid=abc&email=a@b.c",
+    page_referrer: "https://www.google.com/",
+    page_title: "Landing",
+  },
   language: "cs",
   screen_resolution: "360x800",
   ...over,
 });
-
-it("a denied ping is anonymous and leaves no cookie", async () => {
+it("a denied ping forwards IP without setting a cookie and retains page identity", async () => {
   const { app, post, urls } = setup();
   try {
     const reply = await post("/d", ping());
     expect(reply.statusCode).toBe(204);
     expect(reply.headers["set-cookie"]).toBeUndefined();
-    await post("/d", ping());
+    await post("/d", ping({ name: "view_item", hit_index: 2 }));
     const [first, second] = urls().map((url) => url.searchParams);
     expect(urls()[0]!.pathname).toBe("/g/collect");
     expect(first!.get("gcs")).toBe("G100");
     expect(first!.get("gcd")).toBe("13p3p3p2p5l1");
-    expect(first!.get("npa")).toBe("1");
-    expect(first!.get("_uip")).toBeNull();
+    expect(first!.get("_uip")).toBe("127.0.0.1");
     expect(first!.get("dl")).toBe("https://shop.example/landing?utm_source=news");
-    expect(first!.get("cid")).not.toBe(second!.get("cid"));
+    expect(first!.get("cid")).toBe(second!.get("cid"));
+    expect(first!.get("sid")).toBe(second!.get("sid"));
+    expect(second!.get("_s")).toBe("2");
+    expect(second!.get("_ss")).toBeNull();
   } finally {
     await app.close();
   }
@@ -316,26 +324,28 @@ it("the tracker sends click IDs in their own field only with ad consent", async 
   expect(JSON.stringify(refused.sent().map((item) => item.body))).not.toContain("abc");
 });
 
-it("the tracker pings once per page, two seconds after the refusal, without credentials", async () => {
+it("the tracker pings immediately per event without credentials", async () => {
   const { tracker, sent, wait } = client();
   tracker.update({ analytics_storage: "denied" });
-  await wait(1999);
-  expect(sent()).toEqual([]);
-  await wait(1);
-  await wait(5000);
-  expect(sent().map((item) => item.path)).toEqual(["/d"]);
-  const [item] = sent();
-  expect(item!.init.credentials).toBe("omit");
-  expect(item!.body.page_location).toBe("https://shop.example/landing?utm_source=news");
-  tracker.page();
-  await wait(2000);
+  tracker.track("generate_lead");
+  await wait(0);
   expect(sent().map((item) => item.path)).toEqual(["/d", "/d"]);
+  expect(sent().map((item) => item.body.name)).toEqual(["page_view", "generate_lead"]);
+  expect(sent().map((item) => item.body.hit_index)).toEqual([1, 2]);
+  expect(new Set(sent().map((item) => item.body.client_id)).size).toBe(1);
+  expect(new Set(sent().map((item) => item.body.session_id)).size).toBe(1);
+  expect(sent()[0]!.init.credentials).toBe("omit");
+  expect(sent()[0]!.body.params.page_location).toBe("https://shop.example/landing?utm_source=news");
+  const old = sent()[0]!.body.client_id;
+  tracker.page();
+  await wait(0);
+  expect(sent()[2]!.body.client_id).not.toBe(old);
 });
-
-it("a grant restored within two seconds leaves no ping behind", async () => {
+it("a grant restored during wait_for_update leaves no ping", async () => {
   const { tracker, sent, wait } = client();
-  tracker.update({ analytics_storage: "denied" });
+  tracker.update({ analytics_storage: "denied" }, 1500, false, false);
   await wait(1000);
+  expect(sent()).toEqual([]);
   tracker.update(all);
   await wait(5000);
   expect(sent().map((item) => item.path)).toEqual(["/e"]);
@@ -408,7 +418,7 @@ it("a withdrawal deletes the cookie even after the rate limit is used up", async
 it("a click ID in the page title reaches Google in no ping", async () => {
   const { app, post, urls } = setup();
   try {
-    await post("/d", ping({ page_title: "Not found: /a?gclid=secret&x=1" }));
+    await post("/d", ping({ params: { page_title: "Not found: /a?gclid=secret&x=1" } }));
     expect(urls()[0]!.searchParams.get("dt")).not.toContain("secret");
   } finally {
     await app.close();

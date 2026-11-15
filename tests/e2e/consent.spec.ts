@@ -1,15 +1,16 @@
 import { expect } from "@playwright/test";
 import { test } from "./demo.js";
 
-const noDecision = "no decision within 2 seconds";
+const noDecision = "no decision yet";
 const refused = "the visitor refused";
 
-test("without a decision nothing leaves the browser", async ({ demo, page }) => {
+test("without a decision event pings leave while full events wait", async ({ demo, page }) => {
   await demo.open();
   await page.getByRole("button", { name: "generate_lead" }).click();
   await page.getByRole("button", { name: "page_view" }).click();
   await demo.blocked("generate_lead", noDecision);
   await demo.blocked("page_view", noDecision);
+  await expect.poll(() => demo.pings()).toBe(3);
   expect(demo.sent()).toEqual([]);
   expect(demo.toGoogle("generate_lead")).toBe(0);
   expect(demo.toGoogle("page_view")).toBe(0);
@@ -28,7 +29,10 @@ test("accepting sends the page view and sets an HttpOnly cookie", async ({ demo,
   expect(demo.sent().map(({ path }) => path)).toEqual(["/e", "/e"]);
 });
 
-test("rejecting sends one limited ping, no event and no cookie", async ({ demo, page }) => {
+test("rejecting keeps event pings enabled without full events or cookies", async ({
+  demo,
+  page,
+}) => {
   await demo.open();
   await page.getByRole("button", { name: "Reject" }).click();
   await expect.poll(() => demo.sent()).toEqual([{ path: "/p" }]);
@@ -36,7 +40,7 @@ test("rejecting sends one limited ping, no event and no cookie", async ({ demo, 
   await page.getByRole("button", { name: "generate_lead" }).click();
   await demo.blocked("generate_lead", refused);
   expect(demo.sent()).toEqual([{ path: "/p" }]);
-  await expect.poll(() => demo.pings()).toBe(1);
+  await expect.poll(() => demo.pings()).toBe(2);
   expect(demo.toGoogle("generate_lead")).toBe(0);
   expect(await demo.session()).toBeUndefined();
 });

@@ -119,7 +119,7 @@ Every event now uses `/g/collect`. The following captures explain the common fie
 
 In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, and the full URL in `dl`, including `gclid`. Denied hits use a new `cid`. After a later grant the tag sent no second `page_view`. `dma` and `dma_cps` are left out here, because `dma` depends on the visitor's region. Vanilla sends the consent state it knows at that moment, always with `t` and `p`.
 
-**What this project sends.** `v tid _p gcs gcd npa cid sid sct seg _s en dl dr dt ul sr _uip _et _ss _fv _nsi`, as a POST with an empty body and the visitor's `User-Agent`. `_et` carries validated engagement time on any event. `sct` is the visitor's session count, kept in the signed cookie, and `_nsi` marks the first hit of a session. The Google tag sent `_nsi` with a first visit only, not with a later session of the same visitor (captured 2026-11-14, [Session length](#session-length)). The denied ping leaves out `_uip`. The fields come from the hits above.
+**What this project sends.** `v tid _p gcs gcd npa cid sid sct seg _s en dl dr dt ul sr _uip _et _ss _fv _nsi`, as a POST with an empty body and the visitor's `User-Agent`. `_et` carries validated engagement time on any event. `sct` is the visitor's session count, kept in the signed cookie, and `_nsi` marks the first hit of a session. The Google tag sent `_nsi` with a first visit only, not with a later session of the same visitor (captured 2026-11-14, [Session length](#session-length)). Since 2026-11-15 denied event pings also include `_uip` (covered by `tests/denied-events.test.ts`). The fields come from the hits above.
 
 **What came back.** Tested, 2026-11-06: 7 hits built by `buildCollectUrl` and sent to `/g/collect` of the test property, then read in Realtime through the GA4 Data API.
 
@@ -143,6 +143,10 @@ In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, a
 | `dr` from Google with an invented `gclid`, no Ads link | `google / organic`, channel `Organic Search`. An invented click ID says nothing about real ad attribution |
 | `_fv=1` | New users 10 of 10 users |
 | `gcs=G100` ping | Not shown |
+
+### Denied event sequence
+
+The planned 2026-11-15 local capture of denied `page_view`, `view_item` and `purchase` could not launch Chromium: macOS sandbox denied `MachPortRendezvousServer` registration. Exact denied-event comparison, including session flags: **Not verified**. The implementation shares the existing captured parameter serializer and body limits above. This failure is not a new Google tag observation. Denied `page_engagement` on exit is **Not verified** and is excluded.
 
 ## Pending
 

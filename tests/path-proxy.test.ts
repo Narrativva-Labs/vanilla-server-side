@@ -44,6 +44,8 @@ it("same-origin path proxy strips the prefix and serves working tracker, collect
       cookieDomain: "127.0.0.1",
       cookieSecret: "s".repeat(64),
       measurementId: "G-TEST",
+      // This test counts full events through the proxy; denied pings have their own tests.
+      deniedPings: false,
     },
     google,
   );
