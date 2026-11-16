@@ -1,13 +1,19 @@
 # Changelog
 
-## 2026-11-15
+## 0.1.0 - 2026-11-17
+
+First release. Tested on the demo shop, the author's website and two small live sites with real visitors; what is verified and what is not is in [docs/verification.md](docs/verification.md).
+
+- The install test runs on x86 and ARM.
+
+### 2026-11-15
 
 - Send cookieless pings for every allowed event, sharing transient page identity and rising hit order, with visitor IP and ordinary sanitized ecommerce parameters. Never include cookies, click IDs or `user_data`; never retry; exclude `page_engagement`.
 - Treat readable undecided banners as denied for pings only. Remove the fixed ping delay; honor a Google default's bounded `wait_for_update` when no banner is readable.
 - Preserve later full delivery of undecided events after a grant and drop the queue after refusal. Document intentional BigQuery duplication, privacy disclosure and `DENIED_PINGS=off`.
-- Fresh denied Google tag event sequence and denied exit behavior: Not verified (local browser capture blocked by sandbox).
+- Denied pings checked against a capture of the Google tag's denied sequence and in BigQuery: stored without a visitor ID, with the visitor's country.
 
-## 0.1.0 - unreleased
+### Before 2026-11-15
 
 - Initial self-hosted tracker and collector.
 - A `gtag("event", …)` command with `send_to` is skipped: it is addressed to one destination, such as Google Ads or Merchant Center plugins, and would double page views and items.

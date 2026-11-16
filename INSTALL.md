@@ -81,7 +81,7 @@ dataLayer.push({
 
 The installer generates a signing secret, writes .env with owner-only permissions, checks DNS, starts the services and waits up to three minutes for HTTPS, including health request timeouts. Caddy obtains and renews certificates. Rerunning preserves .env. For manual changes, run sudo nano .env then sudo docker compose up -d --build. Never share or commit .env.
 
-The installation is tested on a clean Ubuntu in CI; the certificate and public DNS are not verified there.
+The installation is tested on a clean Ubuntu in CI, on x86 and ARM servers: first install, a second run that keeps .env, and an update. The certificate and public DNS are not verified there. On 2026-11-17 a minimal Ubuntu 24.04 on ARM, without git or Docker, went through the steps above in a local container up to `docker compose up`; the build then failed on the container's nested file system, so that run is not a completed installation.
 
 The installer sets COOKIE_DOMAIN to the hostname of SITE_ORIGIN with a leading www removed. The tracker must be that domain or any subdomain of it. For https://www.example.co.uk, both example.co.uk and kx7qpa.eu.example.co.uk work; the cookie domain stays example.co.uk. For https://eu.example.com, use kx7qpa.eu.example.com (a tracker at kx7qpa.example.com is outside the derived cookie domain). An incompatible domain stops installation with advice. The installer preserves this configuration when rerun.
 

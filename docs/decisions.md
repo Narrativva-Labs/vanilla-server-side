@@ -108,7 +108,7 @@ Keep undecided visitors' full events in memory. A later grant releases them with
 
 **Why:** align denied event coverage with Advanced Consent Mode while retaining Vanilla's later full-event release. Include visitor IP so geography does not describe the forwarding server. IP and event parameters must be disclosed in the site's privacy notice.
 
-**Evidence:** `tests/denied-events.test.ts`, `tests/collect.test.ts`, `tests/consent-rules.test.ts` and `tests/fuzz.test.ts`. The serializer reuses the captured [collect wire format](measurement-protocol-notes.md#collect-wire-format). A fresh capture of denied `page_view`, `view_item` and `purchase` was blocked by local browser sandbox permissions on 2026-11-15, so exact comparison with that sequence is **Not verified**. Report and modeling effects are **Not verified**.
+**Evidence:** `tests/denied-events.test.ts`, `tests/collect.test.ts`, `tests/consent-rules.test.ts` and `tests/fuzz.test.ts`. The serializer reuses the captured [collect wire format](measurement-protocol-notes.md#collect-wire-format). The denied sequence of the Google tag was captured on 2026-11-15 ([notes](measurement-protocol-notes.md#denied-event-sequence)). In the BigQuery export of 2026-11-15, read on 2026-11-16 and 17, the tested pings were stored with `privacy_info.analytics_storage = 'No'`, without a visitor ID, purchases with value, transaction ID and items, and the visitor's country ([verification](verification.md#what-is-verified)). Effects on standard reports and modeling are **Not verified**.
 
 ## Retries, against Google's advice
 

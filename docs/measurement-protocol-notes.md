@@ -73,7 +73,7 @@ Tested, 2026-11-05: events sent to `/mp/collect` of a test property, then read i
 | `device.category` `mobile`, `tablet`, `desktop` | Shown correctly |
 | City, in all of the above | Empty |
 
-Only country and device category were checked, and only in Realtime. Standard reports and BigQuery: Not verified.
+Only country and device category were checked, and only in Realtime. Later, in the BigQuery export of 2026-11-15, the tested hits sent with `_uip`, pings included, showed Czechia for visitors in Czechia; three pings sent before `_uip` was added to them were placed in Germany, not where the visitor was. Standard reports: Not verified.
 
 ## Older advice
 
@@ -146,14 +146,24 @@ In all of them: one POST with an empty body, `en=page_view`, `_ss=1`, `_fv=1`, a
 
 ### Denied event sequence
 
-The planned 2026-11-15 local capture of denied `page_view`, `view_item` and `purchase` could not launch Chromium: macOS sandbox denied `MachPortRendezvousServer` registration. Exact denied-event comparison, including session flags: **Not verified**. The implementation shares the existing captured parameter serializer and body limits above. This failure is not a new Google tag observation. Denied `page_engagement` on exit is **Not verified** and is excluded.
+Captured 2026-11-15 with the saved `gtag.js` copy and a denied default, hits answered locally: `page_view`, `view_item`, `purchase`, `generate_lead`, then the exit. A first attempt the same day could not launch Chromium in a sandbox; the capture ran afterwards.
+
+| Field | Google tag | Vanilla |
+| --- | --- | --- |
+| `gcs`, `gcd` | `G100` and the denied `gcd` | Same |
+| `cid`, `sid` | Shared within the page, new on the next page | Same |
+| `_ss`, `_fv`, `_nsi` | First hit only | Same |
+| Items, `cu`, `epn.value`, `ep.transaction_id` | Sent | Same |
+| `_uip` | Not sent; Google sees the browser's address | Sent, so the country is the visitor's |
+| Several events | Batched into one request | One request per event |
+| Exit | Denied `user_engagement` | Nothing; `page_engagement` stays consent-only |
 
 ## Pending
 
 **Not verified yet.** These need time in standard reports, not a validator.
 
 - A real Google Ads click: whether the session shows `google / cpc` and the campaign, and whether a conversion is credited through the link between GA4 and Ads.
-- Whether a denied ping appears in any report, or feeds modeling.
+- Whether a denied ping appears in standard reports, or feeds modeling. BigQuery stores pings (export of 2026-11-15); in one Realtime check that day, 4 purchase pings did not appear, while 5 full purchases did.
 - Whether [known bot exclusion](https://support.google.com/analytics/answer/9888366) applies to Measurement Protocol events. The page does not mention them.
 
 ## All-collect comparison

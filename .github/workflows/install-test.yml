@@ -10,7 +10,12 @@ permissions:
 
 jobs:
   install:
-    runs-on: ubuntu-latest
+    # x86 and ARM: both are common for small VPS plans.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     env:
       # Reserved .test names and fictional GA4 values. Nothing here reaches Google:
@@ -18,7 +23,6 @@ jobs:
       TRACKER: kx7qpa.vanilla-ci.test
       SITE: https://www.vanilla-ci.test
       MEASUREMENT_ID: G-CITEST0000
-      API_SECRET: ci-fictional-secret
     steps:
       # A normal clone, as on a server: full history, no stored token.
       - uses: actions/checkout@v7
@@ -90,7 +94,7 @@ jobs:
             # Up to 15 minutes: a slow Ubuntu mirror once made two apt-get updates take 3 min 20 s each.
             for _ in $(seq 1 450); do
               if docker compose version >/dev/null 2>&1 && ! pgrep -x apt-get >/dev/null; then
-                printf '%s\n' "$TRACKER" "$SITE" "$MEASUREMENT_ID" "$API_SECRET"
+                printf '%s\n' "$TRACKER" "$SITE" "$MEASUREMENT_ID"
                 return
               fi
               sleep 2
