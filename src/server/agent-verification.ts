@@ -10,6 +10,9 @@ export type AgentFields = ReturnType<typeof toAnalyticsFields>;
 // Test dependencies are supplied in code, never from the environment or a request.
 export type AgentVerifierOptions = Pick<VerifierOptions, "fetcher" | "now">;
 const DEADLINE_MS = 300;
+// Key directories and IP lists load in the background; a slow operator endpoint (about 0.9 s
+// from a European VPS for chatgpt.com) must not be aborted by the per-hit deadline.
+const FETCH_TIMEOUT_MS = 3000;
 const names = ["agent_claim", "agent_verification", "agent_operator"];
 
 export function createAgentLabeller(host: string | undefined, options: AgentVerifierOptions) {
@@ -20,7 +23,7 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
     authorities: [host],
     reverseDns: { enabled: false },
     deadlineMs: DEADLINE_MS,
-    fetchTimeoutMs: DEADLINE_MS,
+    fetchTimeoutMs: FETCH_TIMEOUT_MS,
   });
   return async (req: FastifyRequest): Promise<Partial<AgentFields>> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
