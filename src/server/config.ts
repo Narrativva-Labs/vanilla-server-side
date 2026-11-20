@@ -15,6 +15,15 @@ export function configFromEnv(env = process.env) {
     throw new Error("DENIED_PINGS must be on or off");
   const logEvents = env.LOG_EVENTS || "off";
   if (logEvents !== "on" && logEvents !== "off") throw new Error("LOG_EVENTS must be on or off");
+  const agentVerification = env.AGENT_VERIFICATION || "off";
+  if (agentVerification !== "on" && agentVerification !== "off")
+    throw new Error("AGENT_VERIFICATION must be on or off");
+  const trackerHost = env.TRACKER_DOMAIN;
+  if (
+    agentVerification === "on" &&
+    (!trackerHost || !/^[a-z0-9.-]+(?::[0-9]{1,5})?$/i.test(trackerHost))
+  )
+    throw new Error("Set TRACKER_DOMAIN to the external tracker host");
   const cookieSecret = env.COOKIE_SECRET ?? "";
   if (cookieSecret.length < 32 || cookieSecret.startsWith("replace-"))
     throw new Error("COOKIE_SECRET must contain at least 32 characters");
@@ -32,6 +41,8 @@ export function configFromEnv(env = process.env) {
   return {
     region: region as "eu" | undefined,
     deniedPings: deniedPings === "on",
+    agentVerification: agentVerification === "on",
+    trackerHost,
     logEvents: logEvents === "on",
     allowedEvents,
     cookieSecret,

@@ -111,3 +111,30 @@ If the regular property already imports the same conversion, set this one as sec
 For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `tests/fuzz.test.ts` runs random sequences against rules that must always hold.
 
 Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a security issue? See [SECURITY.md](SECURITY.md).
+
+## AI agent verification (optional)
+
+Set `AGENT_VERIFICATION=on` to add `agent_verification`, `agent_operator`, and
+`agent_claim` to full events and denied-consent pings. The default is `off`;
+verification then creates no verifier and makes no verification network requests.
+`TRACKER_DOMAIN` must contain the external tracker host (for example,
+`kx7qpa.example.com`), without a scheme or path.
+
+Visitor Verdict checks signatures and supported operator IP evidence. This only
+labels events: verdicts never withhold hits, change consent, or replace the existing
+obvious-bot filter. Unsigned traffic is not proof of a human. Verification has a
+300 ms deadline; failures or timeouts send the hit without verification fields.
+The three server labels take priority over client custom parameters within the
+existing 25-parameter limit. When enabled, client values for these names are ignored.
+
+Privacy: the verifier uses the client IP in memory only and exports only three
+low-cardinality strings. It fetches public operator key directories and IP lists
+from an allowlist and caches public verification material. Reverse DNS is disabled;
+request IPs, raw headers, and signature data are never added to analytics by this
+feature. Existing Google delivery and geography behavior is unchanged.
+
+In GA4, register these **event-scoped custom dimensions**, using the same names
+for the event parameters: `agent_verification`, `agent_operator`, `agent_claim`.
+For example, a verified OpenAI signature produces `signature_valid`, `openai`,
+and `signature_agent`, respectively; unsigned traffic without operator evidence
+produces `no_signature`, `none`, and `none`.

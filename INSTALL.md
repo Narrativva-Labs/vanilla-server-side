@@ -196,3 +196,30 @@ Install Ubuntu security updates regularly and reboot when required. Docker and C
 If the VPS goes down, the original GTM measurement continues. Vanilla events during downtime can be lost: there is no durable queue or backfill. Restart the VPS or run sudo docker compose up -d; if replacing the server, clone again, restore .env, update DNS and rerun ./install.sh. Do not delete Caddy volumes during routine updates; they hold certificates.
 
 The project does not provide a hosted service or legal compliance guarantee. Document what you collect, including IP forwarding for geography after consent, and select consent rules appropriate to your site.
+
+## AI agent verification (optional)
+
+Set `AGENT_VERIFICATION=on` to add `agent_verification`, `agent_operator`, and
+`agent_claim` to full events and denied-consent pings. The default is `off`;
+verification then creates no verifier and makes no verification network requests.
+`TRACKER_DOMAIN` must contain the external tracker host (for example,
+`kx7qpa.example.com`), without a scheme or path.
+
+Visitor Verdict checks signatures and supported operator IP evidence. This only
+labels events: verdicts never withhold hits, change consent, or replace the existing
+obvious-bot filter. Unsigned traffic is not proof of a human. Verification has a
+300 ms deadline; failures or timeouts send the hit without verification fields.
+The three server labels take priority over client custom parameters within the
+existing 25-parameter limit. When enabled, client values for these names are ignored.
+
+Privacy: the verifier uses the client IP in memory only and exports only three
+low-cardinality strings. It fetches public operator key directories and IP lists
+from an allowlist and caches public verification material. Reverse DNS is disabled;
+request IPs, raw headers, and signature data are never added to analytics by this
+feature. Existing Google delivery and geography behavior is unchanged.
+
+In GA4, register these **event-scoped custom dimensions**, using the same names
+for the event parameters: `agent_verification`, `agent_operator`, `agent_claim`.
+For example, a verified OpenAI signature produces `signature_valid`, `openai`,
+and `signature_agent`, respectively; unsigned traffic without operator evidence
+produces `no_signature`, `none`, and `none`.

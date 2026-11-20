@@ -1,3 +1,4 @@
+import { createAgentLabeller, type AgentVerifierOptions } from "./agent-verification.js";
 import { validEventName } from "./mp-validation.js";
 import {
   COOKIE_NAME,
@@ -21,8 +22,15 @@ export function remember<T>(map: Map<string, T>, key: string, value: T, limit = 
 }
 export function createApp(
   config: Destination &
-    CookieConfig & { allowedEvents?: string[]; deniedPings?: boolean; logEvents?: boolean },
+    CookieConfig & {
+      allowedEvents?: string[];
+      deniedPings?: boolean;
+      logEvents?: boolean;
+      agentVerification?: boolean;
+      trackerHost?: string;
+    },
   fetcher: typeof fetch = fetch,
+  verifierOptions: AgentVerifierOptions = {},
 ) {
   const app = Fastify({
     logger: false,
@@ -33,6 +41,9 @@ export function createApp(
     bodyLimit: 64 * 1024,
     requestTimeout: 10000,
   });
+  const label = config.agentVerification
+    ? createAgentLabeller(config.trackerHost, verifierOptions)
+    : undefined;
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));
   const pings = config.deniedPings !== false;
   // LOG_EVENTS=on: one line per event with its name, the answer and Google's outcome only.
@@ -191,6 +202,7 @@ export function createApp(
           req.headers["user-agent"],
           fetcher,
           req.ip,
+          label?.(req),
         );
         if (result === "sent") status.sent++;
         else status.errors++;
@@ -287,6 +299,7 @@ export function createApp(
           outcomes.set(req, "duplicate");
           return reply.code(204).send();
         }
+        const verification = label?.(req);
         const browserKey = "browser:" + event.client_id;
         // Not async: a twin must not slip in between this check and the inFlight entry below.
         const duplicate = () => {
@@ -369,6 +382,7 @@ export function createApp(
               remember(recent, identity.clientId, { identity, expires: Date.now() + 60_000 });
             },
           },
+          verification,
         );
         inFlight.set(event.event_id, delivery);
         let result: "sent" | "retry" | "dropped";

@@ -1,3 +1,4 @@
+import { withAgentFields, type AgentFields } from "./agent-verification.js";
 /** All events use the Google tag wire format; see the protocol notes. */
 import { randomInt } from "node:crypto";
 import { validateParams, validEventName } from "./mp-validation.js";
@@ -165,6 +166,7 @@ export function buildEventCollectUrl(
   event: TrackingEvent,
   current: Consent,
   opening?: Opening,
+  agentFields?: Partial<AgentFields>,
 ) {
   const consent = intersect(normalizeConsent(event.consent), normalizeConsent(current));
   if (!canTrack(consent) || !timely(event)) return undefined;
@@ -174,7 +176,9 @@ export function buildEventCollectUrl(
   }
   // URLs are cleaned here too: a request does not have to come from the tracker.
   const cleaned = cleanUrls(redactAds(event.params)) as Record<string, unknown>;
-  const params = validateParams({ ...cleaned, session_id: event.session_id });
+  const params = validateParams(
+    withAgentFields({ ...cleaned, session_id: event.session_id }, agentFields),
+  );
   const url = buildCollectUrl(destination, {
     name: event.name,
     clientId: event.client_id,
@@ -236,7 +240,10 @@ const COLLECT_BODY_BYTES = 16 * 1024;
  * (about 130 items), where the Google tag loses the whole purchase; here the last items are
  * left out instead, so revenue, transaction ID and the conversion still arrive.
  */
-export function collectRequest(url: URL): { url: URL; body?: string } | undefined {
+export function collectRequest(
+  url: URL,
+  agentFields = false,
+): { url: URL; body?: string } | undefined {
   if (Buffer.byteLength(url.href) <= 2000) return { url };
   const head = new URL(url.origin + url.pathname);
   const parts: { key: string; text: string }[] = [];
@@ -244,6 +251,17 @@ export function collectRequest(url: URL): { url: URL; body?: string } | undefine
     if (bodyField(key)) parts.push({ key, text: new URLSearchParams([[key, value]]).toString() });
     else head.searchParams.append(key, value);
   let size = parts.reduce((n, part) => n + Buffer.byteLength(part.text) + 1, -1);
+  // Optional labels must never turn an otherwise deliverable event into an oversized hit.
+  const withoutItems = parts
+    .filter((part) => !/^pr\d+$/.test(part.key))
+    .reduce((n, part) => n + Buffer.byteLength(part.text) + 1, -1);
+  if (agentFields && withoutItems > COLLECT_BODY_BYTES) {
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (!/^ep\.agent_(claim|verification|operator)$/.test(parts[i]!.key)) continue;
+      size -= Buffer.byteLength(parts[i]!.text) + 1;
+      parts.splice(i, 1);
+    }
+  }
   let left = 0;
   for (let i = parts.length - 1; i >= 0 && size > COLLECT_BODY_BYTES; i--) {
     if (!/^pr\d+$/.test(parts[i]!.key)) continue;
@@ -286,9 +304,11 @@ export async function sendGoogle(
   signal: AbortSignal,
   fetcher: typeof fetch = fetch,
   opening?: Opening,
+  verification?: Promise<Partial<AgentFields>>,
 ): Promise<Delivery> {
-  const url = buildEventCollectUrl(destination, event, getCurrent(), opening);
-  const request = url && collectRequest(url);
+  const agentFields = verification ? await verification : undefined;
+  const url = buildEventCollectUrl(destination, event, getCurrent(), opening, agentFields);
+  const request = url && collectRequest(url, agentFields !== undefined);
   if (!request || signal.aborted) return "dropped";
   const delivery = await post(
     request.url,
@@ -300,13 +320,15 @@ export async function sendGoogle(
   return delivery;
 }
 /** Cookieless page identity, visitor IP and event parameters; no click IDs or retries. */
-export function sendDeniedPing(
+export async function sendDeniedPing(
   destination: Destination,
   ping: DeniedPing,
   userAgent?: string,
   fetcher: typeof fetch = fetch,
   ip?: string,
+  verification?: Promise<Partial<AgentFields>>,
 ) {
+  const agentFields = verification ? await verification : undefined;
   function strip(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(strip);
     if (value && typeof value === "object")
@@ -318,7 +340,9 @@ export function sendDeniedPing(
     return value;
   }
   const cleaned = cleanUrls(redactAds(strip(ping.params))) as Record<string, unknown>;
-  const params = validateParams({ ...cleaned, session_id: ping.session_id });
+  const params = validateParams(
+    withAgentFields({ ...cleaned, session_id: ping.session_id }, agentFields),
+  );
   const first = ping.hit_index === 1;
   const url = buildCollectUrl(destination, {
     name: ping.name,
@@ -339,7 +363,7 @@ export function sendDeniedPing(
     sessionCount: 1,
   });
   appendParams(url, params);
-  const request = collectRequest(url);
+  const request = collectRequest(url, agentFields !== undefined);
   if (!request) return Promise.resolve<Delivery>("dropped");
   return post(
     request.url,

@@ -1,0 +1,15 @@
+{
+  "keys": [
+    {
+      "crv": "Ed25519",
+      "kty": "OKP",
+      "x": "P_1c4SX6fCavDcq6FRegWcVvaOKsp_aXHPEN1FcKDIA",
+      "kid": "ArwjqcCqtA5oxEWkzXGC-To_0A9whHmajCHtfe8I9aY",
+      "use": "sig",
+      "nbf": 1735689600,
+      "exp": 1795765682
+    }
+  ],
+  "signature_agent": "https://chatgpt.com",
+  "purpose": "ai"
+}
