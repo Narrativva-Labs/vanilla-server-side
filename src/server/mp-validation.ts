@@ -60,6 +60,7 @@ const standard = [
 const labels = [
   "agent_verification",
   "agent_operator",
+  "agent_purpose",
   "agent_claim",
   "traffic_class",
   "traffic_phase",

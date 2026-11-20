@@ -6,6 +6,7 @@ import { validateParams } from "../src/server/mp-validation.js";
 const serverLabels = {
   agent_verification: "signature_valid",
   agent_operator: "openai",
+  agent_purpose: "user_directed",
   agent_claim: "signature_agent",
 };
 const custom = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`custom_${i}`, i]));
@@ -37,7 +38,7 @@ it("preserves automatic and standard conversion fields before optional labels an
   );
   expect(Object.keys(result)).toHaveLength(25);
   expect(result).toMatchObject(purchase);
-  expect(Object.keys(result).slice(0, 15)).toEqual([
+  expect(Object.keys(result).slice(0, 16)).toEqual([
     "session_id",
     "engagement_time_msec",
     "page_location",
@@ -50,6 +51,7 @@ it("preserves automatic and standard conversion fields before optional labels an
     "tax",
     "agent_verification",
     "agent_operator",
+    "agent_purpose",
     "agent_claim",
     "traffic_class",
     "traffic_phase",
@@ -95,6 +97,7 @@ it("labels fill only space left after standard fields, with reserved client name
         {
           ...standard,
           agent_operator: "spoofed",
+          agent_purpose: "crawler",
           agent_verification: "signature_valid",
           agent_claim: "spoofed",
           session_id: 1,
@@ -149,6 +152,7 @@ for (const enabled of [false, true])
             ...(browserLabels ? { traffic_class: "declared_agent", traffic_phase: "final" } : {}),
             agent_verification: "signature_valid",
             agent_operator: "spoofed",
+            agent_purpose: "crawler",
             agent_claim: "spoofed",
           },
           consent: { analytics_storage: route === "/d" ? "denied" : "granted" },
@@ -185,5 +189,6 @@ for (const enabled of [false, true])
         expect(hit.get("ep.agent_verification")).toBe(enabled ? "no_signature" : null);
         expect(hit.get("ep.agent_operator")).toBe(enabled ? "none" : null);
         expect(hit.get("ep.agent_claim")).toBe(enabled ? "none" : null);
+        expect(hit.get("ep.agent_purpose")).toBe(enabled ? "unknown" : null);
       }
     });

@@ -62,7 +62,7 @@ After consent the identity is a random ID in a signed server cookie, the one fir
 
 Without analytics consent, the automatic `page_view` and every allowed event (including ecommerce and purchases) send cookieless `/g/collect` hits with the effective denied state in `gcs` and `gcd`. A readable supported banner, including an undecided one, sends immediately. A Google `default` denied alone waits its `wait_for_update`, capped at 2 seconds; without that field it sends immediately. No consent signal sends nothing: Vanilla cannot infer a site's consent policy. A page already measured with consent sends no later denied pings.
 
-Pings share random client and session IDs only within the page, with a rising hit index. They carry sanitized event parameters, items, currency, value, cleaned URL, referrer, title, language, screen size, browser `User-Agent` and visitor IP. They never carry cookies, `user_data` or click IDs, and never retry. Purchase transaction IDs are deduplicated in page memory. `DENIED_PINGS=off` disables all pings. `page_engagement` is excluded, although the Google tag sends a denied `user_engagement` on exit (captured 2026-11-15); Vanilla's exit hit stays consent-only.
+Pings share a random client/page identity within the page, with a rising hit index. Their session_id is the page-load second, not random and not unique across visitors. Group denied pings by batch_page_id, never ga_session_id; check that batch_page_id is present in the export first. They carry sanitized event parameters, items, currency, value, cleaned URL, referrer, title, language, screen size, browser `User-Agent` and visitor IP. They never carry cookies, `user_data` or click IDs, and never retry. Purchase transaction IDs are deduplicated in page memory. `DENIED_PINGS=off` disables all pings. `page_engagement` is excluded, although the Google tag sends a denied `user_engagement` on exit (captured 2026-11-15); Vanilla's exit hit stays consent-only.
 
 For an undecided visitor, full events still wait in memory even after their pings leave. A grant on the same page releases them with identity and the campaign; refusal drops them. Consent given only on a later page does not bring back the landing page's campaign, for the Google tag either. This intentional duplication in raw BigQuery data can be separated with `WHERE privacy_info.analytics_storage = 'Yes'` for full events or `= 'No'` for pings. Tests: `tests/denied-events.test.ts`, `tests/collect.test.ts`. On the live demo on 2026-11-15, Realtime showed only the 5 purchases sent with consent, not the 4 denied purchase pings, so pings did not add to that report. In BigQuery the pings were stored without a visitor ID, with `privacy_info.analytics_storage = 'No'` and the visitor's country (2026-11-15). Standard reports and modeling: **Not verified**.
 
@@ -83,6 +83,16 @@ The tracker reads these banners by itself, without integration code, and a decid
 The server talks only to Google Analytics. Google Ads reaches the data the usual way: link the second property to Ads and import its key events as conversions. For that, the landing page's `gclid`, `gbraid` or `wbraid` goes to Google in the first hit, and only when `ad_storage` and `ad_user_data` are both granted. Without them the click ID stays in the browser.
 
 If the regular property already imports the same conversion, set this one as secondary, or it counts twice. A conversion credited to a real ad click: Not verified yet. Steps are in [INSTALL.md](INSTALL.md#optional-import-conversions-into-google-ads).
+
+
+Importing key events also imports leads made by agents and automation. For leads,
+use a derived event in **GA4 Admin → Events → Create event**, for example
+`generate_lead_verified`, matching event_name=generate_lead, agent_verification=no_signature
+and traffic_class ≠ automated; **check the available operators in the UI** and test
+missing-value handling. This is a screening rule, not backend lead qualification.
+Alternatively, do not import leads from the second property. Settled purchases remain
+eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/docs/conversion-guidance.md);
+backend payment/fraud checks and consent still apply. [GA4 event creation](https://support.google.com/analytics/answer/10085872).
 
 ## Limits
 
@@ -114,84 +124,78 @@ Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a securi
 
 ## AI agent verification (optional)
 
-Set `AGENT_VERIFICATION=on` to add `agent_verification`, `agent_operator`, and
-`agent_claim` to full events and denied-consent pings. The default is `off`;
-verification then creates no verifier and makes no verification network requests.
-`TRACKER_DOMAIN` must contain the external tracker host (for example,
-`kx7qpa.example.com`), without a scheme or path.
+With `AGENT_VERIFICATION=on`, /e and /d label verified operator evidence from
+Visitor Verdict. The default is off. This labels traffic; it does not itself
+withhold anything or change consent. **unverified ≠ human**.
 
-Visitor Verdict checks signatures and supported operator IP evidence. This only
-labels events: verdicts never withhold hits, change consent, or replace the existing
-obvious-bot filter. Unsigned traffic is not proof of a human. Both /e and /d use cache-only
-verification: they never wait for an operator fetch. A cold, expired or unavailable
-cache returns cache_miss, triggers a background refresh and sends the hit without
-agent labels; a later hit can use the refreshed evidence. There is no 300 ms wait.
-The three agent label names are **reserved parameter names**: client-supplied
-agent_verification, agent_operator and agent_claim are always stripped, also when
-AGENT_VERIFICATION=off or no server labels fit the parameter budget.
+`TRACKER_DOMAIN` is the trusted external host, without a scheme/path; a port is
+allowed, for example `tracker.example:8443`. Both routes use cache-only verification:
+a missing, expired or unavailable cache sends the hit without agent labels and starts
+one background refresh. There is no wait for operator I/O or later backfill.
+Key directories warm once at startup and refresh in the background (about every
+270 seconds for no-store). Failed refreshes retain valid cached data up to the hard
+24-hour age limit, always honouring JWK validity/removal. Reverse DNS is disabled.
 
-Privacy: the verifier uses the client IP in memory only and exports only three
-low-cardinality strings. It fetches public operator key directories and IP lists
-from an allowlist and caches public verification material. When enabled, the key
-directories are fetched once at startup and refreshed in the background shortly
-before they expire (one request per directory about every 4.5 minutes for
-directories sent with `no-store`), so a slow directory does not delay hits; while a
-refresh runs or fails, the last valid keys stay in use for up to 24 hours. Reverse
-DNS is disabled; request IPs, raw headers, and signature data are never added to analytics by this
-feature. Existing Google delivery and geography behavior is unchanged.
+Startup prints `Agent verification on for <host>`. `/health` exposes
+`agentVerification: { enabled, directoriesLoaded: "n/N", lastRefreshOk }`.
+A loaded document is not proof of an active key. Last outcome is null before any
+refresh completes and otherwise describes the most recent directory/feed refresh.
+Directory failures warn at most once per configured host per ten minutes, with only
+host and a short reason code; no visitor data or request URL is logged.
 
-In GA4, register these **event-scoped custom dimensions**, using the same names
-for the event parameters: `agent_verification`, `agent_operator`, `agent_claim`.
-For example, a verified OpenAI signature produces `signature_valid`, `openai`,
-and `signature_agent`, respectively; unsigned traffic without operator evidence
-produces `no_signature`, `none`, and `none`.
+The four agent names are **reserved parameter names**: client-supplied
+agent_verification, agent_operator, agent_purpose and agent_claim are stripped even
+with verification off or no room for server labels. Priority within 25 parameters:
+GA4 automatic fields; standard event/ecommerce fields (transaction_id, value,
+currency, items, coupon, shipping, tax and other recommended fields); agent_verification,
+agent_operator, agent_purpose, agent_claim, traffic_class, traffic_phase; other site
+parameters. Optional labels only fill the remainder and are removed first for a
+16 KiB body, so they never displace standard conversion fields.
 
 ## Visitor Verdict browser class (optional)
 
-When the [Visitor Verdict](https://github.com/Narrativva-Labs/visitor-verdict)
-browser detector runs on the page, Vanilla adds its class to full events and
-denied-consent pings as `traffic_class` (`human`, `suspicious`, `automated` or
-`declared_agent`), together with `traffic_phase` (`initial` or `final`). Without the
-detector nothing changes. Vanilla never loads the detector and reads nothing else:
-when a request leaves, it reads `window.__visitorVerdict`, so later events carry the
-final phase. It adds no storage, cookies or requests. A global that is not the
-detector's frozen snapshot, or an unknown value, is ignored and the event is sent
-without it. The collector accepts only these values and drops any other value of
-the parameter, never the event. This works whether `AGENT_VERIFICATION` is on or
-off, and consent behavior is unchanged: full events only with consent, denied
-pings as before.
+Load the [Visitor Verdict detector](https://github.com/Narrativva-Labs/visitor-verdict#pinned-direct-script-build)
+with a plain script tag before s.js (or self-host its pinned build). Vanilla never
+loads it. It reads the frozen window.__visitorVerdict snapshot when sending a hit:
+only class and phase are forwarded, on both full events and denied pings. Unknown
+values are dropped. The browser class works with verification off and is spoofable.
+The detector uses minimal sessionStorage; disclose it before installing. Leave its
+own traffic_class event out of TRACKED_EVENTS. Early hits may lack a browser class.
 
-Without GTM, load the detector with a plain `<script>` tag before `s.js`, using the
-URL and integrity value from
-[Pinned direct-script build](https://github.com/Narrativva-Labs/visitor-verdict#pinned-direct-script-build)
-in its README, or self-host `dist/visitor-verdict.min.js` from that repository.
-Events sent before the detector publishes its first class carry none. The detector
-also pushes its own `traffic_class` event to the dataLayer; leave that name out of
-`TRACKED_EVENTS`. The detector keeps a short history in `sessionStorage`; see its
-privacy notes before adding it to your disclosure.
+## Analyst value dictionary
 
-`traffic_class` is what the browser claims about itself; anything running on the
-page can spoof it. `agent_verification` is what the server verified from the
-request signature or operator IP. They stay separate on purpose, and together they
-say more than either:
+Register agent_verification, agent_operator, agent_purpose, agent_claim,
+traffic_class and traffic_phase as six event-scoped custom dimensions. **unverified ≠ human**.
 
-| `traffic_class` | `agent_verification` | Reading |
-| --- | --- | --- |
-| `human` | `no_signature` | A human, or a well-masked bot |
-| `human` | `signature_valid` | A verified AI agent that looks human in the browser |
-| `automated` | `no_signature` | A bot or scraper |
-| `declared_agent` | `signature_valid` or `ip_match` | A verified declared bot or agent |
-| `declared_agent` | `no_signature` | A false claim, such as a fake Googlebot |
+| Parameter | Values and interpretation |
+|---|---|
+| agent_verification | signature_valid: trusted signature; ip_match: published IP (or optional library rDNS); signature_invalid: failed WBA signature; no_signature: no verified operator evidence; none: indeterminate/untrusted/context failure |
+| agent_verification = (not set) | Verification off; cache miss/operator unavailable; label dropped for the 25-parameter/16 KiB budget; hits before enabling. This is missing coverage, not human evidence |
+| agent_operator | Registry operator ID below, or none without a verified operator |
+| agent_claim | signature_agent, ua_token, none; claims alone are untrusted |
+| agent_purpose | user_directed, crawler, unknown. Known only for verified evidence; describes a documented product role, never the customer's intent |
+| traffic_class | human, suspicious, automated, declared_agent; browser evidence only; missing if detector absent/early or label dropped |
+| traffic_phase | initial, final; missing if detector absent/early or label dropped |
 
-Within the 25-parameter limit, which counts the automatic fields first, the order
-is fixed: GA4 automatic fields, then standard event fields (`transaction_id`,
-`value`, `currency`, `items`, plus applicable `coupon`, `shipping`, `tax` and other
-recommended-event fields), then `agent_verification`, `agent_operator`, `agent_claim`,
-`traffic_class`, `traffic_phase`, then other site parameters in their original order.
-Optional labels only fill the remaining budget; they never displace standard
-ecommerce or conversion fields. The three agent names are reserved parameter names
-even when their server values are omitted. If an event would exceed Google's
-16 KiB even without its items, these labels are left out first.
+Registry IDs: `kimi`, `commoncrawl`, `seznam`, `naver`, `kagi`, `baidu`, `petal`, `yandex`, `amazon`, `amazonads`, `you`, `sogou`, `bytedance`, `deepseek`, `zhipu`, `shenma`, `qihoo`, `diffbot`, `timpi`, `apple`, `microsoft`, `mistral`, `duckduckgo`, `openai`, `google`, `browserbase`, `manus`, `anthropic`, `perplexity`.
+Purpose mappings and sources: [server library](https://github.com/Narrativva-Labs/visitor-verdict/tree/main/server#purpose-and-health).
 
-In GA4, register the **event-scoped custom dimension** `traffic_class` and,
-optionally, `traffic_phase`, using the same names for the event parameters.
+| traffic_class | agent_verification | Reading |
+|---|---|---|
+| human | no_signature | Human-looking, unverified; a masked bot can look the same |
+| human | signature_valid / ip_match | Verified operator, looks human in browser |
+| declared_agent | signature_valid / ip_match | Verified declared agent/bot; split by agent_purpose |
+| declared_agent | no_signature | Declared, not verified: a false claim or an operator that cannot be verified; e.g. a browser claiming ChatGPT-User from an IP outside OpenAI's list |
+| automated | signature_valid | Signed automation, e.g. a cloud browser |
+| automated | no_signature | Clear browser automation, unverified |
+| any / absent | signature_invalid | Broken, expired or forged signature; never proof of humanity |
+| suspicious | any | Soft browser evidence; keep a separate diagnostic cohort |
+| absent | any / (not set) | No browser class: absent detector, early hit or budget; server evidence is independent |
+
+User agents matching bot/crawl/spider in the existing obvious-bot filter are dropped
+**before labelling and never reach GA4**. This includes many official crawler UAs and
+a full ChatGPT-User UA containing the openai.com/bot URL. The bare browser claim in
+the example above can pass. Missing data from that filter cannot be reconstructed
+from these labels.
+
+For setup, health and egress, see [INSTALL](INSTALL.md#enable-in-five-steps).

@@ -101,7 +101,15 @@ export function createApp(
     limiter.clear();
   });
   const status = { sent: 0, errors: 0, botsFiltered: 0, lastSuccess: null as string | null };
-  app.get("/health", async () => ({ ok: true, google: status }));
+  app.get("/health", async () => ({
+    ok: true,
+    google: status,
+    agentVerification: labeller?.status() ?? {
+      enabled: false,
+      directoriesLoaded: "0/0",
+      lastRefreshOk: null,
+    },
+  }));
   // The tracker never changes while the process runs, so public requests do not touch the disk.
   const tracker = readFile(new URL("../public/s.js", import.meta.url), "utf8");
   tracker.catch(() => {});

@@ -257,7 +257,7 @@ export function collectRequest(
     .filter((part) => !/^pr\d+$/.test(part.key))
     .reduce((n, part) => n + Buffer.byteLength(part.text) + 1, -1);
   const optional = (key: string) =>
-    (agentFields && /^ep\.agent_(claim|verification|operator)$/.test(key)) ||
+    (agentFields && /^ep\.agent_(claim|verification|operator|purpose)$/.test(key)) ||
     /^ep\.traffic_(class|phase)$/.test(key);
   if (withoutItems > COLLECT_BODY_BYTES) {
     for (let i = parts.length - 1; i >= 0; i--) {

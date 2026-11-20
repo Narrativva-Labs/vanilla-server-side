@@ -217,11 +217,17 @@ it("keeps server labels, then the browser class, ahead of site parameters under 
     traffic_class: "declared_agent",
     session_id: 1,
   };
-  const fields = { agent_claim: "none", agent_verification: "ip_match", agent_operator: "google" };
+  const fields = {
+    agent_claim: "none",
+    agent_verification: "ip_match",
+    agent_operator: "google",
+    agent_purpose: "crawler",
+  };
   const labelled = withLabels(params, fields);
-  expect(Object.keys(labelled).slice(0, 5)).toEqual([
+  expect(Object.keys(labelled).slice(0, 6)).toEqual([
     "agent_verification",
     "agent_operator",
+    "agent_purpose",
     "agent_claim",
     "traffic_class",
     "traffic_phase",
@@ -233,16 +239,17 @@ it("keeps server labels, then the browser class, ahead of site parameters under 
     traffic_class: "declared_agent",
     traffic_phase: "final",
   });
-  // Automatic fields count first, then the five labels, then site parameters in their order.
+  // Automatic fields count first, then the six labels, then site parameters in their order.
   expect(Object.keys(kept)).toEqual([
     "session_id",
     "page_location",
     "agent_verification",
     "agent_operator",
+    "agent_purpose",
     "agent_claim",
     "traffic_class",
     "traffic_phase",
-    ...Object.keys(custom).slice(0, 18),
+    ...Object.keys(custom).slice(0, 17),
   ]);
 
   // Over HTTP too, with verification on and 30 site parameters.
@@ -259,6 +266,7 @@ it("agent names are reserved even without verification or returned server labels
   const params = {
     agent_verification: "signature_valid",
     agent_operator: "spoofed",
+    agent_purpose: "crawler",
     agent_claim: "site",
     traffic_class: "x",
     ordinary: 1,

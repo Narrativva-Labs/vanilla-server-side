@@ -1,6 +1,11 @@
 import type { AgentFields } from "./agent-verification.js";
 import { trafficFields } from "../shared/traffic.js";
-const agentNames = ["agent_verification", "agent_operator", "agent_claim"] as const;
+const agentNames = [
+  "agent_verification",
+  "agent_operator",
+  "agent_purpose",
+  "agent_claim",
+] as const;
 const trafficNames = ["traffic_class", "traffic_phase"];
 /**
  * Agent label names are reserved, including when verification is off or yields no labels.

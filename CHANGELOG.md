@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Optional agent verification labels and cache health, including agent_purpose.
+- Optional Visitor Verdict browser class/phase on events and pings.
+- Reserve agent_verification, agent_operator, agent_purpose and agent_claim; client values never pass through.
+
 ## 0.1.0 - 2026-11-17
 
 First release. Tested on the demo shop, the author's website and two small live sites with real visitors; what is verified and what is not is in [docs/verification.md](docs/verification.md).

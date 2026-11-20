@@ -18,7 +18,7 @@ function spyOnWarm() {
   vi.mocked(verdict.createVerifier).mockImplementation((options) => {
     const verifier = actual.createVerifier(options);
     warm.mockImplementation((value) => verifier.warm(value));
-    return { verify: verifier.verify, warm, close: verifier.close };
+    return { verify: verifier.verify, warm, close: verifier.close, status: verifier.status };
   });
   return warm;
 }
@@ -26,6 +26,12 @@ const fakeVerifier = (verify: verdict.AgentVerifier["verify"]): verdict.AgentVer
   verify,
   warm: vi.fn(async () => ({ ok: [], failed: [] })),
   close: vi.fn(),
+  status: vi.fn(() => ({
+    directories: { loaded: 0, total: 5 },
+    ipLists: { loaded: 0, total: 0 },
+    lastRefreshOk: null,
+    lastRefreshAt: null,
+  })),
 });
 
 const capture = JSON.parse(
@@ -117,7 +123,7 @@ it("off constructs no verifier, makes no verification fetch and adds no labels o
   const { post, google, hit } = setup(false, { fetcher });
   for (const path of ["/e", "/d"]) {
     expect((await post(path, signed[0]!.headers)).statusCode).toBe(204);
-    for (const name of ["agent_claim", "agent_operator", "agent_verification"])
+    for (const name of ["agent_claim", "agent_operator", "agent_verification", "agent_purpose"])
       expect(hit().has(`ep.${name}`)).toBe(false);
   }
   expect(construct).not.toHaveBeenCalled();
@@ -144,6 +150,7 @@ it("verifies every captured POST signature on both delivery paths and reuses one
       expect((await post(path, request.headers)).statusCode).toBe(204);
       expect(hit().get("ep.agent_verification")).toBe("signature_valid");
       expect(hit().get("ep.agent_operator")).toBe("openai");
+      expect(hit().get("ep.agent_purpose")).toBe("user_directed");
       expect(hit().get("ep.agent_claim")).toBe("signature_agent");
       expect(String(google.mock.calls.at(-1))).not.toContain(request.headers.signature);
     }
@@ -172,6 +179,7 @@ it("labels unsigned visitors without network access and preserves the parameter 
             ...params,
             agent_verification: "signature_valid",
             agent_operator: "spoofed",
+            agent_purpose: "crawler",
             agent_claim: "spoofed",
             google_reserved: "bad",
           },
@@ -220,6 +228,7 @@ it("starts one background warm-up with refresh-ahead when on, without blocking s
 for (const failure of ["throw", "reject"] as const)
   it(`a warm-up ${failure} never breaks startup or hits`, async () => {
     const verifier = fakeVerifier(async () => ({
+      agent_purpose: "unknown",
       claimed: { uaTokens: [], signatureAgents: [] },
       verification: "no_signature",
       reason: "signature_headers_absent",
@@ -290,11 +299,12 @@ it("an offline operator adds no network wait before Google on /e or /d", async (
             await post(route, signed[0]!.headers, {
               agent_verification: "signature_valid",
               agent_operator: "spoofed",
+              agent_purpose: "crawler",
               agent_claim: "spoofed",
             })
           ).statusCode,
         ).toBe(204);
-        for (const name of ["agent_verification", "agent_operator", "agent_claim"])
+        for (const name of ["agent_verification", "agent_operator", "agent_purpose", "agent_claim"])
           expect(hit().has(`ep.${name}`)).toBe(false);
       }
       timings[`${enabled}:${route}`] = samples.sort((a, b) => a - b);
@@ -343,6 +353,7 @@ for (const enabled of [false, true])
             {
               agent_verification: "signature_valid",
               agent_operator: "spoofed",
+              agent_purpose: "crawler",
               agent_claim: "spoofed",
             },
           )
@@ -351,6 +362,7 @@ for (const enabled of [false, true])
       expect(hit().get("ep.agent_verification")).toBe(enabled ? "no_signature" : null);
       expect(hit().get("ep.agent_operator")).toBe(enabled ? "none" : null);
       expect(hit().get("ep.agent_claim")).toBe(enabled ? "none" : null);
+      expect(hit().get("ep.agent_purpose")).toBe(enabled ? "unknown" : null);
     }
   });
 
@@ -371,6 +383,7 @@ it("omits fields after a failed directory fetch without failing either hit", asy
 
 it("passes raw headers, trusted client IP and the unchanged target to verification", async () => {
   const verify = vi.fn(async (): Promise<verdict.AgentVerdict> => ({
+    agent_purpose: "unknown",
     claimed: { uaTokens: [], signatureAgents: [] },
     verification: "no_signature",
     reason: "signature_headers_absent",
@@ -407,6 +420,7 @@ it("omits optional labels when they would push a deliverable body over 16 KiB", 
   url.searchParams.set("ep.payload", "x".repeat(16320));
   url.searchParams.set("ep.agent_verification", "signature_valid");
   url.searchParams.set("ep.agent_operator", "openai");
+  url.searchParams.set("ep.agent_purpose", "user_directed");
   url.searchParams.set("ep.agent_claim", "signature_agent");
   const request = collectRequest(url, true);
   expect(request).toBeDefined();
@@ -414,5 +428,6 @@ it("omits optional labels when they would push a deliverable body over 16 KiB", 
   expect(body.get("ep.payload")).toHaveLength(16320);
   expect(body.has("ep.agent_verification")).toBe(false);
   expect(body.has("ep.agent_operator")).toBe(false);
+  expect(body.has("ep.agent_purpose")).toBe(false);
   expect(body.has("ep.agent_claim")).toBe(false);
 });
