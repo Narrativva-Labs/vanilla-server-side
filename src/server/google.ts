@@ -1,5 +1,5 @@
 import type { AgentFields } from "./agent-verification.js";
-import { withLabels } from "./labels.js";
+import { withLabels, type LabelMemory } from "./labels.js";
 /** All events use the Google tag wire format; see the protocol notes. */
 import { randomInt } from "node:crypto";
 import { validateParams, validEventName } from "./mp-validation.js";
@@ -167,7 +167,8 @@ export function buildEventCollectUrl(
   event: TrackingEvent,
   current: Consent,
   opening?: Opening,
-  agentFields?: Partial<AgentFields>,
+  agentFields?: AgentFields,
+  labelMemory?: LabelMemory,
 ) {
   const consent = intersect(normalizeConsent(event.consent), normalizeConsent(current));
   if (!canTrack(consent) || !timely(event)) return undefined;
@@ -178,7 +179,16 @@ export function buildEventCollectUrl(
   // URLs are cleaned here too: a request does not have to come from the tracker.
   const cleaned = cleanUrls(redactAds(event.params)) as Record<string, unknown>;
   const params = validateParams(
-    withLabels({ ...cleaned, session_id: event.session_id }, agentFields),
+    withLabels(
+      { ...cleaned, session_id: event.session_id },
+      agentFields,
+      labelMemory
+        ? {
+            memory: labelMemory,
+            key: JSON.stringify(["session", event.client_id, event.session_id]),
+          }
+        : undefined,
+    ),
   );
   const url = buildCollectUrl(destination, {
     name: event.name,
@@ -243,7 +253,7 @@ const COLLECT_BODY_BYTES = 16 * 1024;
  */
 export function collectRequest(
   url: URL,
-  agentFields = false,
+  _agentFields = false,
 ): { url: URL; body?: string } | undefined {
   if (Buffer.byteLength(url.href) <= 2000) return { url };
   const head = new URL(url.origin + url.pathname);
@@ -253,15 +263,12 @@ export function collectRequest(
     else head.searchParams.append(key, value);
   let size = parts.reduce((n, part) => n + Buffer.byteLength(part.text) + 1, -1);
   // Optional labels must never turn an otherwise deliverable event into an oversized hit.
-  const optional = (key: string) =>
-    (agentFields && /^ep\.agent_(claim|verification|operator|purpose)$/.test(key)) ||
-    /^ep\.traffic_(class|phase)$/.test(key);
-  if (size > COLLECT_BODY_BYTES) {
-    for (let i = parts.length - 1; i >= 0 && size > COLLECT_BODY_BYTES; i--) {
-      if (!optional(parts[i]!.key)) continue;
-      size -= Buffer.byteLength(parts[i]!.text) + 1;
-      parts.splice(i, 1);
-    }
+  for (const name of ["ep.vv_detail", "ep.vv_type"]) {
+    if (size <= COLLECT_BODY_BYTES) break;
+    const index = parts.findIndex((part) => part.key === name);
+    if (index < 0) continue;
+    size -= Buffer.byteLength(parts[index]!.text) + 1;
+    parts.splice(index, 1);
   }
   let left = 0;
   for (let i = parts.length - 1; i >= 0 && size > COLLECT_BODY_BYTES; i--) {
@@ -305,10 +312,18 @@ export async function sendGoogle(
   signal: AbortSignal,
   fetcher: typeof fetch = fetch,
   opening?: Opening,
-  verification?: Promise<Partial<AgentFields>>,
+  verification?: Promise<AgentFields | undefined>,
+  labelMemory?: LabelMemory,
 ): Promise<Delivery> {
   const agentFields = verification ? await verification : undefined;
-  const url = buildEventCollectUrl(destination, event, getCurrent(), opening, agentFields);
+  const url = buildEventCollectUrl(
+    destination,
+    event,
+    getCurrent(),
+    opening,
+    agentFields,
+    labelMemory,
+  );
   const request = url && collectRequest(url, agentFields !== undefined);
   if (!request || signal.aborted) return "dropped";
   const delivery = await post(
@@ -327,7 +342,8 @@ export async function sendDeniedPing(
   userAgent?: string,
   fetcher: typeof fetch = fetch,
   ip?: string,
-  verification?: Promise<Partial<AgentFields>>,
+  verification?: Promise<AgentFields | undefined>,
+  labelMemory?: LabelMemory,
 ) {
   const agentFields = verification ? await verification : undefined;
   function strip(value: unknown): unknown {
@@ -342,7 +358,13 @@ export async function sendDeniedPing(
   }
   const cleaned = cleanUrls(redactAds(strip(ping.params))) as Record<string, unknown>;
   const params = validateParams(
-    withLabels({ ...cleaned, session_id: ping.session_id }, agentFields),
+    withLabels(
+      { ...cleaned, session_id: ping.session_id },
+      agentFields,
+      labelMemory
+        ? { memory: labelMemory, key: JSON.stringify(["page", ping.page_id]) }
+        : undefined,
+    ),
   );
   const first = ping.hit_index === 1;
   const url = buildCollectUrl(destination, {

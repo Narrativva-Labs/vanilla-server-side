@@ -229,7 +229,7 @@ other signing configurations have no captured live request here. See the
 
 ### Operator capabilities
 
-Capabilities below describe the bundled 0.2.0 registry at commit `19a9208`, before
+Capabilities below describe the bundled 0.3.0 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
@@ -249,7 +249,7 @@ tracks the detailed sources and limits.
 
 `TRACKER_DOMAIN` is the trusted external host, without a scheme/path; a port is
 allowed, for example `tracker.example:8443`. Both routes use cache-only verification:
-a missing, expired or unavailable cache sends the hit without agent labels and starts
+a missing, expired or unavailable cache uses the available claim/browser evidence and starts
 one background refresh. There is no wait for operator I/O or later backfill.
 Key directories warm once at startup and refresh in the background (about every
 270 seconds for no-store). Failed refreshes retain valid cached data up to the hard
@@ -264,55 +264,87 @@ host and a short reason code; no visitor data or request URL is logged.
 The host is TRACKER_DOMAIN, not the remote operator endpoint. lastRefreshOk describes
 the latest completed refresh of any document, not whether all feeds are healthy.
 
-The four agent names are **reserved parameter names**: client-supplied
-agent_verification, agent_operator, agent_purpose and agent_claim are stripped even
-with verification off or no room for server labels. Priority within 25 parameters:
-GA4 automatic fields; standard event/ecommerce fields (transaction_id, value,
-currency, items, coupon, shipping, tax and other recommended fields); agent_verification,
-agent_operator, agent_purpose, agent_claim, traffic_class, traffic_phase; other site
-parameters. Optional labels only fill the remainder and are removed first for a
-16 KiB body, so they never displace standard conversion fields.
+Client-supplied vv_type, vv_detail and the old agent_verification, agent_operator,
+agent_purpose, agent_claim, traffic_class and traffic_phase names are reserved and
+stripped from outgoing GA4 parameters. Browser class/phase remain tracker inputs to
+Vanilla. Priority within 25 parameters: GA4 automatic fields; ecommerce
+fields (transaction_id, value, currency, items, tax, shipping, coupon and the other
+ecommerce fields); vv_type; vv_detail; other site parameters. At the 16 KiB body
+limit, remove vv_detail first, then vv_type, then the last items, preserving revenue.
 
 ## Visitor Verdict browser class (optional)
 
 Load the [Visitor Verdict detector](https://github.com/Narrativva-Labs/visitor-verdict#pinned-direct-script-build)
 with a plain script tag before s.js (or self-host its pinned build). Vanilla never
 loads it. It reads the frozen window.__visitorVerdict snapshot when sending a hit:
-only class and phase are forwarded, on both full events and denied pings. Unknown
+only class and phase are sent to Vanilla, on both full events and denied pings; the server
+uses them in vv_type/vv_detail and does not forward the old fields to GA4. Unknown
 values are dropped. The browser class works with verification off and is spoofable.
 The detector uses minimal sessionStorage; disclose it before installing. Leave its
 own traffic_class event out of TRACKED_EVENTS. Early hits may lack a browser class.
 
 ## Analyst value dictionary
 
-Register agent_verification, agent_operator, agent_purpose, agent_claim,
-traffic_class and traffic_phase as six event-scoped custom dimensions. **unverified ≠ human**.
+Register exactly **vv_type** and **vv_detail** as **event-scoped custom dimensions**.
+Data API names: `customEvent:vv_type` and `customEvent:vv_detail`.
 
-| Parameter | Values and interpretation |
+| vv_type | Meaning |
 |---|---|
-| agent_verification | signature_valid: trusted signature; ip_match: published IP (rDNS is disabled in Vanilla); signature_invalid: failed WBA signature; no_signature: no verified operator evidence; none: indeterminate/untrusted/context failure |
-| agent_verification = (not set) | Verification off; cache miss/operator unavailable; label dropped for the 25-parameter/16 KiB budget; hits before enabling. This is missing coverage, not human evidence |
-| agent_operator | Registry operator ID below, or none without a verified operator |
-| agent_claim | signature_agent, ua_token, none; claims alone are untrusted |
-| agent_purpose | user_directed, crawler, unknown. Known only for verified evidence; describes a documented product role, never the customer's intent |
-| traffic_class | human, suspicious, automated, declared_agent; browser evidence only; missing if detector absent/early or label dropped |
-| traffic_phase | initial, final; missing if detector absent/early or label dropped |
+| human | Human-looking browser, without stronger evidence; masked automation can look the same |
+| pending | No browser/evidence yet, or verified operator whose product purpose is unknown |
+| agent_verified | Verified signature/IP evidence with documented user_directed purpose |
+| crawler_verified | Verified signature/IP evidence with documented crawler purpose |
+| bot_automation | Hard browser automation evidence |
+| agent_unverified | Browser declared_agent or an unverified UA/signature-agent claim |
+| bot_suspicious | Soft browser evidence |
+| bot_spoofed | Invalid server signature; strongest classification |
 
-Operator IDs identify registry entries, not guaranteed verified coverage; see
-[operator capabilities](#operator-capabilities). Purpose mappings describe documented
-product roles, not the customer's intent; a verified operator may still submit spam.
+Derivation uses the first matching rule: invalid signature; verified user_directed /
+crawler / unknown purpose; automated browser; declared browser or server claim;
+suspicious browser; human browser; pending. Verified unknown purpose stays pending:
+identity is established, but neither agent nor crawler purpose is inferred, and it is
+never called unverified. A verified operator may still submit spam.
 
-| traffic_class | agent_verification | Reading |
-|---|---|---|
-| human | no_signature | Human-looking, unverified; a masked bot can look the same |
-| human | signature_valid / ip_match | Verified operator, looks human in browser |
-| declared_agent | signature_valid / ip_match | Verified declared agent/bot; split by agent_purpose |
-| declared_agent | no_signature | Declared, not verified: a false claim or an operator that cannot be verified; e.g. a browser claiming ChatGPT-User from an IP outside OpenAI's list |
-| automated | signature_valid / ip_match | Verified automation, e.g. a cloud browser |
-| automated | no_signature | Clear browser automation, unverified |
-| any / absent | signature_invalid | Broken, expired or forged signature; never proof of humanity |
-| suspicious | any | Soft browser evidence; keep a separate diagnostic cohort |
-| absent | any / (not set) | No browser class: absent detector, early hit or budget; server evidence is independent |
+`vv_detail` is an operator-first string, at most 100 characters:
+`operator|verification|purpose|claim|browser_class|browser_phase`.
+Example: `openai|signature_valid|user_directed|signature_agent|human|final`.
+There is no version segment. Missing segments are `-`; unknown operator is `none`.
+
+| Segment | Values |
+|---|---|
+| operator | Registry operator ID (see capabilities), or none; known operator retained within session |
+| verification | signature_valid, ip_match, signature_invalid, no_signature, none, or - without server evidence |
+| purpose | user_directed, crawler, unknown, or - without server evidence |
+| claim | signature_agent, ua_token, none, or - without server evidence; claims are untrusted |
+| browser_class | human, suspicious, automated, declared_agent, or - |
+| browser_phase | initial, final, or - |
+
+Without stronger server evidence, browser classes map as follows:
+
+| Browser input | vv_type |
+|---|---|
+| human | human |
+| suspicious | bot_suspicious |
+| automated | bot_automation |
+| declared_agent | agent_unverified |
+| none / missing | pending |
+
+GTM-only sites keep traffic_class for now.
+
+Filter GA4 by vv_type **begins with** `agent_` for agents, or `bot_` for automation,
+suspicion and spoofed signatures. Include `crawler_verified` separately when needed.
+Filter vv_detail **begins with** `openai|` for OpenAI evidence. In Looker Studio create
+an operator dimension with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`.
+
+Every later hit retains the strongest vv_type observed in that session. Ranks are
+pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4,
+crawler_verified=agent_verified=5, bot_spoofed=6; the earliest classification wins ties.
+The detail describes the current hit, with the last known operator carried forward.
+This is immediate memory-only state, bounded to 10,000 LRU entries with 30 minutes
+of inactivity; full events use client_id + session_id, denied pings use page_id only.
+No IP is retained in this state. State is cleared on server close/restart, and eviction
+or expiry starts fresh. Nothing waits for later evidence and no hit is backfilled.
+Missing labels after budget trimming or on historical hits are missing coverage.
 
 User agents matching bot/crawl/spider in the existing obvious-bot filter are dropped
 **before labelling and never reach GA4**. This includes many official crawler UAs and
@@ -328,10 +360,10 @@ from these labels.
 3. Check startup output for `Agent verification on for <host>`.
 4. Check `https://<host>/health`: enabled must be true; directoriesLoaded moves from
    0/N as warm-up finishes. lastRefreshOk=false or n<N calls for checking egress and
-   the rate-limited host/reason warning. Hits are still forwarded without available agent labels; missing labels
-   are not reclassified as human.
-5. In GA4 **Admin → Data display → Custom definitions**, create the six event-scoped
-   dimensions above. These use six of the [50 slots in a standard property](https://support.google.com/analytics/answer/14240153).
+   the rate-limited host/reason warning. Hits are still forwarded immediately with available evidence; absent server
+   evidence is not proof of humanity.
+5. In GA4 **Admin → Data display → Custom definitions**, create the two event-scoped
+   dimensions above. These use two of the [50 slots in a standard property](https://support.google.com/analytics/answer/14240153).
 
 Allow outbound HTTPS for the bundled registry as needed:
 

@@ -11,11 +11,8 @@ vi.mock("visitor-verdict-server", async (importOriginal) => {
 afterEach(() => vi.restoreAllMocks());
 
 const labels = {
-  "ep.agent_verification": "signature_valid",
-  "ep.agent_operator": "openai",
-  "ep.agent_purpose": "user_directed",
-  "ep.agent_claim": "signature_agent",
-  "ep.traffic_class": "declared_agent",
+  "ep.vv_type": "agent_verified",
+  "ep.vv_detail": "openai|signature_valid|user_directed|signature_agent|declared_agent|final",
 };
 
 it("keeps labels on a long URL whose body is far below 16 KiB", () => {
@@ -51,11 +48,11 @@ it("removes optional labels before trimming an oversized item list", () => {
 it("validateParams keeps agent labels ahead of many custom params on its own", () => {
   const input: Record<string, unknown> = {};
   for (let i = 0; i < 30; i++) input[`custom_${i}`] = i;
-  input.agent_verification = "signature_valid";
-  input.traffic_class = "human";
+  input.vv_type = "agent_verified";
+  input.vv_detail = "none|-|-|-|human|final";
   const out = validateParams(input, () => {});
-  expect(out.agent_verification).toBe("signature_valid");
-  expect(out.traffic_class).toBe("human");
+  expect(out.vv_type).toBe("agent_verified");
+  expect(out.vv_detail).toBe("none|-|-|-|human|final");
 });
 
 const fake = (reason: string) =>
@@ -78,7 +75,7 @@ for (const reason of ["ip_evidence_unavailable", "deadline_exceeded", "directory
     vi.mocked(verdict.createVerifier).mockReturnValue(fake(reason));
     vi.spyOn(console, "info").mockImplementation(() => {});
     const { label } = createAgentLabeller("t.example", {});
-    expect(await label(req)).toEqual({});
+    expect(await label(req)).toMatchObject({ verification: "none", reason });
   });
 
 it("the verifier trusts only the configured tracker host", () => {

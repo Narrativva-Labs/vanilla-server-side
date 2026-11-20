@@ -22,7 +22,7 @@ const automatic = [
   "page_referrer",
   "page_title",
 ];
-// Preserve recommended event semantics before spending the remaining budget on optional labels.
+// Preserve ecommerce semantics before spending the remaining budget on labels and site params.
 const standard = [
   "transaction_id",
   "value",
@@ -40,31 +40,9 @@ const standard = [
   "promotion_name",
   "creative_name",
   "creative_slot",
-  "search_term",
-  "method",
-  "content_type",
   "item_id",
-  "group_id",
-  "level",
-  "level_name",
-  "character",
-  "virtual_currency_name",
-  "achievement_id",
-  "score",
-  "success",
-  "ad_platform",
-  "ad_source",
-  "ad_format",
-  "ad_unit_name",
 ];
-const labels = [
-  "agent_verification",
-  "agent_operator",
-  "agent_purpose",
-  "agent_claim",
-  "traffic_class",
-  "traffic_phase",
-];
+const labels = ["vv_type", "vv_detail"];
 const priority = [...automatic, ...standard, ...labels];
 const pageText = new Set(["page_location", "page_referrer", "page_title"]);
 /** Google keeps the first 100 characters of a longer value (BigQuery, 2026-11-11), like a Google tag hit. */

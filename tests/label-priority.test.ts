@@ -4,10 +4,12 @@ import { withLabels } from "../src/server/labels.js";
 import { validateParams } from "../src/server/mp-validation.js";
 
 const serverLabels = {
-  agent_verification: "signature_valid",
-  agent_operator: "openai",
-  agent_purpose: "user_directed",
-  agent_claim: "signature_agent",
+  verification: "signature_valid" as const,
+  agent_purpose: "user_directed" as const,
+  verified: { operator: "openai", method: "signature" as const },
+  claimed: { uaTokens: [], signatureAgents: ["https://chatgpt.com"] },
+  signatures: [],
+  reason: "valid",
 };
 const custom = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`custom_${i}`, i]));
 const purchase = {
@@ -38,7 +40,7 @@ it("preserves automatic and standard conversion fields before optional labels an
   );
   expect(Object.keys(result)).toHaveLength(25);
   expect(result).toMatchObject(purchase);
-  expect(Object.keys(result).slice(0, 16)).toEqual([
+  expect(Object.keys(result).slice(0, 12)).toEqual([
     "session_id",
     "engagement_time_msec",
     "page_location",
@@ -49,16 +51,12 @@ it("preserves automatic and standard conversion fields before optional labels an
     "coupon",
     "shipping",
     "tax",
-    "agent_verification",
-    "agent_operator",
-    "agent_purpose",
-    "agent_claim",
-    "traffic_class",
-    "traffic_phase",
+    "vv_type",
+    "vv_detail",
   ]);
 });
 
-it("labels fill only space left after standard fields, with reserved client names removed", () => {
+it("labels precede other recommended site params after ecommerce fields, with reserved client names removed", () => {
   const standard = Object.fromEntries(
     [
       "transaction_id",
@@ -91,7 +89,7 @@ it("labels fill only space left after standard fields, with reserved client name
       "success",
     ].map((name) => [name, name === "items" ? [] : 1]),
   );
-  for (const labels of [undefined, {}, serverLabels]) {
+  for (const labels of [undefined, serverLabels]) {
     const result = validateParams(
       withLabels(
         {
@@ -107,7 +105,9 @@ it("labels fill only space left after standard fields, with reserved client name
       () => {},
     );
     expect(Object.keys(result)).toHaveLength(25);
-    for (const name of Object.keys(serverLabels)) expect(result).not.toHaveProperty(name);
+    expect(result.vv_type).toBe(labels ? "agent_verified" : "pending");
+    expect(result).toHaveProperty("vv_detail");
+    expect(result).not.toHaveProperty("agent_operator");
     expect(result).toMatchObject({ transaction_id: 1, value: 1, currency: 1, items: [] });
   }
 });
@@ -186,9 +186,9 @@ for (const enabled of [false, true])
         expect(hit.get("ep.coupon")).toBe(purchase.coupon);
         expect(hit.get("epn.shipping")).toBe(String(purchase.shipping));
         expect(hit.get("epn.tax")).toBe(String(purchase.tax));
-        expect(hit.get("ep.agent_verification")).toBe(enabled ? "no_signature" : null);
-        expect(hit.get("ep.agent_operator")).toBe(enabled ? "none" : null);
-        expect(hit.get("ep.agent_claim")).toBe(enabled ? "none" : null);
-        expect(hit.get("ep.agent_purpose")).toBe(enabled ? "unknown" : null);
+        expect(hit.has("ep.agent_verification")).toBe(false);
+        expect(hit.has("ep.agent_operator")).toBe(false);
+        expect(hit.has("ep.agent_claim")).toBe(false);
+        expect(hit.has("ep.agent_purpose")).toBe(false);
       }
     });

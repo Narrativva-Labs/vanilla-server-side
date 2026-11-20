@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Replace six GA4 classification fields with event-scoped vv_type/vv_detail labels from Visitor Verdict server 0.3.0.
+- Carry the strongest type and known operator across later session hits (denied pings: page only), with a bounded 30-minute LRU memory and no waits or backfill.
+- Reserve old and new client label names; preserve automatic/ecommerce fields before labels, dropping detail then type at the 16 KiB limit.
+- Verified operators with unknown purpose remain pending; neither a crawler nor user-directed role is inferred.
+
 - Vendor Visitor Verdict server 0.2.1: reject Google customer cloud DNS, scope purpose to verified rules and record registry evidence.
 - Assert the actual 16 KiB posted body limit, preserved purchase value/currency and exact retained item prefix; cover the refresh warning host cap.
 

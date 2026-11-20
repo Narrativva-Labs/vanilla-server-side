@@ -11,6 +11,10 @@ vi.mock("visitor-verdict-server", async (importOriginal) => {
 });
 
 const actual = await vi.importActual<typeof verdict>("visitor-verdict-server");
+function detail(hit: URLSearchParams, index: number) {
+  const part = hit.get("ep.vv_detail")?.split("|")[index];
+  return part === "-" ? null : (part ?? null);
+}
 const chatgpt = "https://chatgpt.com/.well-known/http-message-signatures-directory";
 /** Wrap the real verifier so a test can see and await the startup warm-up. */
 function spyOnWarm() {
@@ -148,10 +152,10 @@ it("verifies every captured POST signature on both delivery paths and reuses one
     clock = Date.parse(request.ts) / 1000;
     for (const path of ["/e", "/d"]) {
       expect((await post(path, request.headers)).statusCode).toBe(204);
-      expect(hit().get("ep.agent_verification")).toBe("signature_valid");
-      expect(hit().get("ep.agent_operator")).toBe("openai");
-      expect(hit().get("ep.agent_purpose")).toBe("user_directed");
-      expect(hit().get("ep.agent_claim")).toBe("signature_agent");
+      expect(detail(hit(), 1)).toBe("signature_valid");
+      expect(detail(hit(), 0)).toBe("openai");
+      expect(detail(hit(), 2)).toBe("user_directed");
+      expect(detail(hit(), 3)).toBe("signature_agent");
       expect(String(google.mock.calls.at(-1))).not.toContain(request.headers.signature);
     }
   }
@@ -186,9 +190,9 @@ it("labels unsigned visitors without network access and preserves the parameter 
         )
       ).statusCode,
     ).toBe(204);
-    expect(hit().get("ep.agent_verification")).toBe("no_signature");
-    expect(hit().get("ep.agent_operator")).toBe("none");
-    expect(hit().get("ep.agent_claim")).toBe("none");
+    expect(detail(hit(), 1)).toBe("no_signature");
+    expect(detail(hit(), 0)).toBe("none");
+    expect(detail(hit(), 3)).toBe("none");
     expect(hit().has("ep.google_reserved")).toBe(false);
     expect([...hit().keys()].filter((key) => /^ep[n]?\./.test(key)).length).toBeLessThanOrEqual(25);
   }
@@ -241,7 +245,7 @@ for (const failure of ["throw", "reject"] as const)
     vi.spyOn(verdict, "createVerifier").mockReturnValue(verifier);
     const { app, post, hit } = setup();
     expect((await post("/e")).statusCode).toBe(204);
-    expect(hit().get("ep.agent_verification")).toBe("no_signature");
+    expect(detail(hit(), 1)).toBe("no_signature");
     await app.close();
     expect(verifier.close).toHaveBeenCalledTimes(1);
   });
@@ -297,6 +301,8 @@ it("an offline operator adds no network wait before Google on /e or /d", async (
         expect(
           (
             await post(route, signed[0]!.headers, {
+              vv_type: "bot_spoofed",
+              vv_detail: "spoofed",
               agent_verification: "signature_valid",
               agent_operator: "spoofed",
               agent_purpose: "crawler",
@@ -334,7 +340,7 @@ it("a cold hit omits labels and a later hit uses the completed startup warm-up",
   release(new Response(directory, { headers: { "cache-control": "no-store" } }));
   await warm.mock.results[0]!.value;
   expect((await post("/e", signed[0]!.headers)).statusCode).toBe(204);
-  expect(hit().get("ep.agent_verification")).toBe("signature_valid");
+  expect(detail(hit(), 1)).toBe("signature_valid");
 });
 
 for (const enabled of [false, true])
@@ -351,6 +357,8 @@ for (const enabled of [false, true])
             route,
             {},
             {
+              vv_type: "bot_spoofed",
+              vv_detail: "spoofed",
               agent_verification: "signature_valid",
               agent_operator: "spoofed",
               agent_purpose: "crawler",
@@ -359,10 +367,12 @@ for (const enabled of [false, true])
           )
         ).statusCode,
       ).toBe(204);
-      expect(hit().get("ep.agent_verification")).toBe(enabled ? "no_signature" : null);
-      expect(hit().get("ep.agent_operator")).toBe(enabled ? "none" : null);
-      expect(hit().get("ep.agent_claim")).toBe(enabled ? "none" : null);
-      expect(hit().get("ep.agent_purpose")).toBe(enabled ? "unknown" : null);
+      expect(detail(hit(), 1)).toBe(enabled ? "no_signature" : null);
+      expect(hit().get("ep.vv_type")).toBe("pending");
+      expect(hit().get("ep.vv_detail")).not.toContain("spoofed");
+      expect(detail(hit(), 0)).toBe("none");
+      expect(detail(hit(), 3)).toBe(enabled ? "none" : null);
+      expect(detail(hit(), 2)).toBe(enabled ? "unknown" : null);
     }
   });
 
@@ -409,26 +419,25 @@ it("labels an invalid signature and still sends the hit; obvious bots stay filte
   const headers = { ...signed[0]!.headers, signature: "sig1=:AAAA:" };
   for (const path of ["/e", "/d"]) {
     expect((await post(path, headers)).statusCode).toBe(204);
-    expect(hit().get("ep.agent_verification")).toBe("signature_invalid");
+    expect(detail(hit(), 1)).toBe("signature_invalid");
     expect((await post(path, { "user-agent": "Googlebot/2.1" })).statusCode).toBe(204);
   }
   expect(google).toHaveBeenCalledTimes(2);
 });
 
-it("removes only the optional labels needed to keep a deliverable body within 16 KiB", () => {
+it("removes vv_detail before vv_type to fit the 16 KiB body", () => {
   const url = new URL("https://www.google-analytics.com/g/collect?v=2&en=page_view");
   url.searchParams.set("ep.payload", "x".repeat(16320));
-  url.searchParams.set("ep.agent_verification", "signature_valid");
-  url.searchParams.set("ep.agent_operator", "openai");
-  url.searchParams.set("ep.agent_purpose", "user_directed");
-  url.searchParams.set("ep.agent_claim", "signature_agent");
-  const request = collectRequest(url, true);
+  url.searchParams.set("ep.vv_type", "agent_verified");
+  url.searchParams.set(
+    "ep.vv_detail",
+    "openai|signature_valid|user_directed|signature_agent|human|final",
+  );
+  const request = collectRequest(url);
   expect(request).toBeDefined();
   const body = new URLSearchParams(request!.body);
   expect(body.get("ep.payload")).toHaveLength(16320);
   expect(Buffer.byteLength(request!.body!)).toBeLessThanOrEqual(16384);
-  expect(body.get("ep.agent_verification")).toBe("signature_valid");
-  expect(body.has("ep.agent_operator")).toBe(false);
-  expect(body.has("ep.agent_purpose")).toBe(false);
-  expect(body.has("ep.agent_claim")).toBe(false);
+  expect(body.get("ep.vv_type")).toBe("agent_verified");
+  expect(body.has("ep.vv_detail")).toBe(false);
 });

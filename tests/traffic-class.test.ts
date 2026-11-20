@@ -1,8 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createApp } from "../src/server/app.js";
-import { collectRequest } from "../src/server/google.js";
 import { withLabels } from "../src/server/labels.js";
-import { validateParams } from "../src/server/mp-validation.js";
 import { readTraffic } from "../src/client/traffic.js";
 import { page } from "./browser-fixture.js";
 
@@ -173,97 +171,36 @@ function server(agentVerification: boolean) {
 }
 
 for (const verification of [false, true])
-  it(`accepts only known browser classes and phases with verification ${verification ? "on" : "off"}`, async () => {
-    const { post, hit, google } = server(verification);
+  it(`uses browser evidence only inside the two labels with verification ${verification}`, async () => {
+    const { post, hit } = server(verification);
     for (const path of ["/e", "/d"] as const) {
       for (const value of classes) {
         expect(
           (await post(path, { traffic_class: value, traffic_phase: "initial" })).statusCode,
         ).toBe(204);
-        expect(hit().get("ep.traffic_class")).toBe(value);
-        expect(hit().get("ep.traffic_phase")).toBe("initial");
-      }
-      const dropped: object[] = [
-        { traffic_class: "robot", traffic_phase: "final" },
-        { traffic_class: "Human" },
-        { traffic_class: 1 },
-        { traffic_class: ["human"] },
-        { traffic_phase: "final" },
-      ];
-      for (const params of dropped) {
-        expect((await post(path, params)).statusCode).toBe(204);
+        expect(hit().get("ep.vv_detail")?.split("|").slice(4)).toEqual([value, "initial"]);
         expect(hit().has("ep.traffic_class")).toBe(false);
         expect(hit().has("ep.traffic_phase")).toBe(false);
+      }
+      for (const params of [
+        { traffic_class: "robot", traffic_phase: "final" },
+        { traffic_class: 1 },
+        { traffic_phase: "final" },
+      ]) {
+        expect((await post(path, params)).statusCode).toBe(204);
+        expect(hit().get("ep.vv_detail")?.split("|").slice(4)).toEqual(["-", "-"]);
       }
       expect(
         (await post(path, { traffic_class: "human", traffic_phase: "later" })).statusCode,
       ).toBe(204);
-      expect(hit().get("ep.traffic_class")).toBe("human");
-      expect(hit().has("ep.traffic_phase")).toBe(false);
-      expect(hit().get("ep.agent_verification") ?? undefined).toBe(
-        verification ? "no_signature" : undefined,
-      );
+      expect(hit().get("ep.vv_detail")?.split("|").slice(4)).toEqual(["human", "-"]);
     }
-    expect(google).toHaveBeenCalledTimes(2 * (classes.length + 6));
   });
 
-it("keeps server labels, then the browser class, ahead of site parameters under the limit", async () => {
-  const custom = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`custom_${i}`, i]));
+it("reserves both new and old names even without verification", () => {
   const params = {
-    page_location: "https://shop.example/",
-    ...custom,
-    traffic_phase: "final",
-    agent_claim: "spoofed",
-    traffic_class: "declared_agent",
-    session_id: 1,
-  };
-  const fields = {
-    agent_claim: "none",
-    agent_verification: "ip_match",
-    agent_operator: "google",
-    agent_purpose: "crawler",
-  };
-  const labelled = withLabels(params, fields);
-  expect(Object.keys(labelled).slice(0, 6)).toEqual([
-    "agent_verification",
-    "agent_operator",
-    "agent_purpose",
-    "agent_claim",
-    "traffic_class",
-    "traffic_phase",
-  ]);
-  const kept = validateParams(labelled, () => {});
-  expect(Object.keys(kept)).toHaveLength(25);
-  expect(kept).toMatchObject({
-    ...fields,
-    traffic_class: "declared_agent",
-    traffic_phase: "final",
-  });
-  // Automatic fields count first, then the six labels, then site parameters in their order.
-  expect(Object.keys(kept)).toEqual([
-    "session_id",
-    "page_location",
-    "agent_verification",
-    "agent_operator",
-    "agent_purpose",
-    "agent_claim",
-    "traffic_class",
-    "traffic_phase",
-    ...Object.keys(custom).slice(0, 17),
-  ]);
-
-  // Over HTTP too, with verification on and 30 site parameters.
-  const { post, hit } = server(true);
-  for (const path of ["/e", "/d"] as const) {
-    expect((await post(path, { ...custom, traffic_class: "automated" })).statusCode).toBe(204);
-    expect(hit().get("ep.agent_verification")).toBe("no_signature");
-    expect(hit().get("ep.traffic_class")).toBe("automated");
-    expect([...hit().keys()].filter((key) => /^epn?\./.test(key)).length).toBeLessThanOrEqual(25);
-  }
-});
-
-it("agent names are reserved even without verification or returned server labels", () => {
-  const params = {
+    vv_type: "bot_spoofed",
+    vv_detail: "spoofed",
     agent_verification: "signature_valid",
     agent_operator: "spoofed",
     agent_purpose: "crawler",
@@ -271,19 +208,9 @@ it("agent names are reserved even without verification or returned server labels
     traffic_class: "x",
     ordinary: 1,
   };
-  expect(withLabels(params)).toEqual({ ordinary: 1 });
-  expect(withLabels(params, {})).toEqual({ ordinary: 1 });
-});
-
-it("omits the browser class when it would push a deliverable body over 16 KiB", () => {
-  const url = new URL("https://www.google-analytics.com/g/collect?v=2&en=page_view");
-  url.searchParams.set("ep.payload", "x".repeat(16350));
-  url.searchParams.set("ep.traffic_class", "declared_agent");
-  url.searchParams.set("ep.traffic_phase", "initial");
-  const request = collectRequest(url, false);
-  expect(request).toBeDefined();
-  const body = new URLSearchParams(request!.body);
-  expect(body.get("ep.payload")).toHaveLength(16350);
-  expect(body.has("ep.traffic_class")).toBe(false);
-  expect(body.has("ep.traffic_phase")).toBe(false);
+  expect(withLabels(params)).toEqual({
+    vv_type: "pending",
+    vv_detail: "none|-|-|-|-|-",
+    ordinary: 1,
+  });
 });

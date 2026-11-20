@@ -123,11 +123,38 @@ Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a securi
 
 ## AI agent verification (optional)
 
-`AGENT_VERIFICATION=on` adds server operator labels to `/e` and `/d`; default off.
+`AGENT_VERIFICATION=on` adds verified operator evidence to `/e` and `/d`; default off.
+GA4 receives only two classification event parameters: `vv_type` and `vv_detail`,
+with available browser labels even when server verification is off.
 It labels traffic without routing conversions. **unverified ≠ human**.
 Only JavaScript-executing visitors that pass the obvious-bot filter reach this path;
 `bot`/`crawl`/`spider` and `HeadlessChrome` UAs are dropped first, including the full
 ChatGPT-User UA with its `openai.com/bot` URL. Reverse DNS is disabled.
+
+Register both as **event-scoped custom dimensions**. `vv_type` is human, pending,
+agent_verified, agent_unverified, crawler_verified, bot_automation, bot_suspicious or
+bot_spoofed. Verified unknown purpose maps to pending; no role is inferred.
+`vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`,
+maximum 100 characters, missing parts `-`, unknown operator `none`.
+Example: `openai|signature_valid|user_directed|signature_agent|human|final`.
+The [complete dictionary](INSTALL.md#analyst-value-dictionary) explains every segment,
+priority and session rank. Strongest type and known operator stick immediately to
+later hits in a bounded memory-only session (denied pings: page only); no delays.
+
+| Browser input without stronger server evidence | vv_type |
+|---|---|
+| human | human |
+| suspicious | bot_suspicious |
+| automated | bot_automation |
+| declared_agent | agent_unverified |
+| none / missing | pending |
+
+GTM-only sites keep traffic_class for now.
+
+In GA4 use **begins with** `agent_` or `bot_` on vv_type; use **begins with** `openai|`
+on vv_detail for OpenAI. Looker Studio operator dimension:
+`REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Data API names are `customEvent:vv_type`
+and `customEvent:vv_detail`. The old six field names are no longer forwarded.
 
 Live signature capture and end-to-end verification have been confirmed only for
 the ChatGPT agent (OpenAI). On one demo shop on 2026-11-20, one header-capture run

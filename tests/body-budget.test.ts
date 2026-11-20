@@ -2,12 +2,8 @@ import { expect, it } from "vitest";
 import { collectRequest } from "../src/server/google.js";
 
 const labels = {
-  "ep.agent_verification": "signature_valid",
-  "ep.agent_operator": "openai",
-  "ep.agent_purpose": "user_directed",
-  "ep.agent_claim": "signature_agent",
-  "ep.traffic_class": "declared_agent",
-  "ep.traffic_phase": "final",
+  "ep.vv_type": "agent_verified",
+  "ep.vv_detail": "openai|signature_valid|user_directed|signature_agent|declared_agent|final",
 };
 const items = (body: URLSearchParams) => [...body].filter(([key]) => /^pr\d+$/.test(key));
 

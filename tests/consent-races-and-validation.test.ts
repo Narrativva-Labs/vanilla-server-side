@@ -181,7 +181,7 @@ it("collector limits final parameters and drops invalid names", async () => {
     });
     expect(response.statusCode).toBe(204);
     const sent = new URL(String(google.mock.calls[0]![0])).searchParams;
-    expect([...sent.keys()].filter((key) => key.startsWith("epn."))).toHaveLength(24);
+    expect([...sent.keys()].filter((key) => key.startsWith("epn."))).toHaveLength(22);
     expect(sent.get("sid")).toMatch(/^[0-9]+$/);
     expect(sent.has("ep.bad-name")).toBe(false);
     expect(sent.has("ep.custom")).toBe(false);

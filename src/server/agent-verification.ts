@@ -1,12 +1,12 @@
 import {
   createVerifier,
   defaultRegistry,
-  toAnalyticsFields,
+  type AgentVerdict,
   type VerifierOptions,
 } from "visitor-verdict-server";
 import type { FastifyRequest } from "fastify";
 
-export type AgentFields = ReturnType<typeof toAnalyticsFields>;
+export type AgentFields = AgentVerdict;
 // Test dependencies are supplied in code, never from the environment or a request.
 export type AgentVerifierOptions = Pick<VerifierOptions, "fetcher" | "now">;
 // Key directories and IP lists load in the background; a slow operator endpoint (about 0.9 s
@@ -45,7 +45,7 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
   } catch {
     // Warm-up is optional.
   }
-  const label = async (req: FastifyRequest): Promise<Partial<AgentFields>> => {
+  const label = async (req: FastifyRequest): Promise<AgentFields | undefined> => {
     try {
       const verdict = await verifier.verify(
         {
@@ -57,16 +57,9 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
         },
         { cacheOnly: true },
       );
-      if (
-        ["cache_miss", "internal_error", "deadline_exceeded", "ip_evidence_unavailable"].includes(
-          verdict.reason,
-        ) ||
-        verdict.reason.startsWith("directory_")
-      )
-        return {};
-      return toAnalyticsFields(verdict);
+      return verdict;
     } catch {
-      return {};
+      return undefined;
     }
   };
   /** Stop the background refresh timers; call from the app's onClose hook. */

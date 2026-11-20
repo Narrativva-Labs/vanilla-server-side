@@ -1,3 +1,4 @@
+import { createLabelMemory } from "./labels.js";
 import { createAgentLabeller, type AgentVerifierOptions } from "./agent-verification.js";
 import { validEventName } from "./mp-validation.js";
 import {
@@ -45,6 +46,7 @@ export function createApp(
     ? createAgentLabeller(config.trackerHost, verifierOptions)
     : undefined;
   const label = labeller?.label;
+  const labelMemory = createLabelMemory();
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));
   const pings = config.deniedPings !== false;
   // LOG_EVENTS=on: one line per event with its name, the answer and Google's outcome only.
@@ -87,11 +89,13 @@ export function createApp(
   const timer = setInterval(() => {
     prune();
     limiter.sweep();
+    labelMemory.sweep();
   }, 60_000);
   timer.unref();
   app.addHook("onClose", async () => {
     clearInterval(timer);
     labeller?.close();
+    labelMemory.clear();
     seen.clear();
     inFlight.clear();
     revoked.clear();
@@ -213,6 +217,7 @@ export function createApp(
           fetcher,
           req.ip,
           label?.(req),
+          labelMemory,
         );
         if (result === "sent") status.sent++;
         else status.errors++;
@@ -393,6 +398,7 @@ export function createApp(
             },
           },
           verification,
+          labelMemory,
         );
         inFlight.set(event.event_id, delivery);
         let result: "sent" | "retry" | "dropped";
