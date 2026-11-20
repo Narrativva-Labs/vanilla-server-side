@@ -1,4 +1,3 @@
-import type { IncomingHttpHeaders } from "node:http";
 import { defaultRegistry, serverAgentTokens } from "visitor-verdict-server";
 import type { LabelObserver } from "./labels.js";
 
@@ -49,11 +48,16 @@ export function createAgentCounters() {
   };
   return {
     counters,
-    observe(kind: "events" | "pings", headers: IncomingHttpHeaders): LabelObserver {
-      const signatureHeaders = ["signature", "signature-input", "signature-agent"].some((name) =>
-        Object.hasOwn(headers, name),
-      );
-      const uaClaim = claims.some((pattern) => pattern.test(headers["user-agent"] ?? ""));
+    observe(kind: "events" | "pings", rawHeaders: readonly string[]): LabelObserver {
+      let signatureHeaders = false;
+      const userAgents: string[] = [];
+      for (let i = 0; i + 1 < rawHeaders.length; i += 2) {
+        const name = rawHeaders[i]!.toLowerCase();
+        if (["signature", "signature-input", "signature-agent"].includes(name))
+          signatureHeaders = true;
+        if (name === "user-agent") userAgents.push(rawHeaders[i + 1]!);
+      }
+      const uaClaim = claims.some((pattern) => pattern.test(userAgents.join(", ")));
       let counted = false;
       return (labels, verdict, browserClass) => {
         if (counted) return;
@@ -62,7 +66,10 @@ export function createAgentCounters() {
         counts.total = Math.min(Number.MAX_SAFE_INTEGER, counts.total + 1);
         increment(counts.byType, labels.vv_type);
         const unavailable =
-          !verdict || /cache_miss|unavailable|timeout|feed_cache_busy/.test(verdict.reason);
+          !verdict ||
+          /cache_miss|unavailable|timeout|feed_cache_busy|deadline_exceeded|internal_error|invalid_clock/.test(
+            verdict.reason,
+          );
         // Successful and invalid proof keep their outcome even if another source was unavailable.
         const outcome =
           unavailable && (!verdict || verdict.verification === "none")

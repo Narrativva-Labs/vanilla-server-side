@@ -261,7 +261,7 @@ A loaded document is not proof of an active key. Last outcome is null before any
 refresh completes and otherwise describes the most recent directory/feed refresh.
 Directory, IP-list and SAIL refresh failures warn at most once per failing endpoint hostname per ten minutes, with only
 that hostname and a short reason code; no visitor data or request URL is logged.
-For example, a failed DuckAssist IP-list refresh names assistbot.duckduckgo.com,
+For example, a failed DuckAssist key-directory refresh names assistbot.duckduckgo.com,
 without its path or query. lastRefreshOk describes
 the latest completed refresh of any document, not whether all feeds are healthy.
 

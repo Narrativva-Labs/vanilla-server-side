@@ -223,7 +223,7 @@ export function createApp(
           req.ip,
           label?.(req),
           labelMemory,
-          agentCounters.observe("pings", req.headers),
+          agentCounters.observe("pings", req.raw.rawHeaders),
         );
         if (result === "sent") status.sent++;
         else status.errors++;
@@ -405,7 +405,7 @@ export function createApp(
           },
           verification,
           labelMemory,
-          agentCounters.observe("events", req.headers),
+          agentCounters.observe("events", req.raw.rawHeaders),
         );
         inFlight.set(event.event_id, delivery);
         let result: "sent" | "retry" | "dropped";

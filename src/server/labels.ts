@@ -28,7 +28,8 @@ const rank: Record<Labels["vv_type"], number> = {
 export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now = Date.now) {
   const sessions = new Map<string, { type: Labels["vv_type"]; operator: string; at: number }>();
   return {
-    apply(key: string, labels: Labels): Labels {
+    /** With commit=false, preview the label without changing sticky evidence or its expiry. */
+    apply(key: string, labels: Labels, commit = true): Labels {
       const time = now();
       const saved = sessions.get(key);
       const previous = saved && time - saved.at < ttlMs ? saved : undefined;
@@ -40,9 +41,11 @@ export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now 
       // Operator segments validated by visitorLabels; replacing none cannot exceed its limit.
       const vv_detail = detail.join("|");
       if (vv_detail.length > 100) throw new RangeError("vv_detail exceeds 100 characters");
-      sessions.delete(key);
-      sessions.set(key, { type, operator, at: time });
-      while (sessions.size > capacity) sessions.delete(sessions.keys().next().value!);
+      if (commit) {
+        sessions.delete(key);
+        sessions.set(key, { type, operator, at: time });
+        while (sessions.size > capacity) sessions.delete(sessions.keys().next().value!);
+      }
       return { vv_type: type, vv_detail };
     },
     sweep() {

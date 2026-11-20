@@ -23,6 +23,8 @@ const config = {
 };
 
 it("flag off has explicit disabled health and no startup verification log", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(1700000000000);
   const info = vi.spyOn(console, "info").mockImplementation(() => {});
   const app = createApp({ ...config, agentVerification: false });
   apps.push(app);
@@ -34,6 +36,8 @@ it("flag off has explicit disabled health and no startup verification log", asyn
   expect(info).not.toHaveBeenCalled();
 });
 it("startup is logged once and /health shows cache progress and failures without visitor data", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(1700000000000);
   const info = vi.spyOn(console, "info").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
   let finish!: () => void;
@@ -129,6 +133,15 @@ it("directory, IP and SAIL warnings share one ten-minute limit per failing endpo
   expect(warn.mock.calls[0]).toEqual([
     "Agent verification refresh failed for assistbot.duckduckgo.com: directory_timeout",
   ]);
+  vi.setSystemTime(1600000000000);
+  callbacks[0]!(event);
+  expect(warn).toHaveBeenCalledTimes(5);
+  callbacks[0]!({ ...event, hostname: undefined });
+  callbacks[0]!({ ...event, hostname: "" });
+  expect(warn).toHaveBeenCalledTimes(6);
+  expect(warn).toHaveBeenLastCalledWith(
+    "Agent verification refresh failed for unknown: directory_timeout",
+  );
   a.close();
 });
 it("logs the failed directory hostname from real concurrent refreshes, never tracker, path or transport details", async () => {

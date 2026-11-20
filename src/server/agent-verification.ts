@@ -16,8 +16,8 @@ const warnings = new Map<string, number>();
 function warnRefresh(host: string, reason: string) {
   const now = Date.now();
   const previous = warnings.get(host);
-  if (previous !== undefined && now - previous < 600000) return;
-  for (const [name, at] of warnings) if (now - at >= 600000) warnings.delete(name);
+  if (previous !== undefined && now >= previous && now - previous < 600000) return;
+  for (const [name, at] of warnings) if (now < at || now - at >= 600000) warnings.delete(name);
   if (!warnings.has(host) && warnings.size >= 128) return;
   warnings.delete(host);
   warnings.set(host, now);
@@ -33,8 +33,7 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
     reverseDns: { enabled: false },
     fetchTimeoutMs: FETCH_TIMEOUT_MS,
     onRefresh: (event) => {
-      if (!event.ok && event.hostname)
-        warnRefresh(event.hostname, event.reason ?? "refresh_failed");
+      if (!event.ok) warnRefresh(event.hostname || "unknown", event.reason ?? "refresh_failed");
     },
   });
   console.info(`Agent verification on for ${host}`);

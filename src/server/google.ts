@@ -307,6 +307,29 @@ async function post(
   }
 }
 const browser = (userAgent?: string) => (userAgent ? { "user-agent": userAgent } : undefined);
+/** Preview sticky labels while encoding; commit only labels present in a deliverable hit. */
+function stageLabels(memory?: LabelMemory, observe?: LabelObserver) {
+  let pending: Parameters<LabelObserver> | undefined;
+  let saved: { key: string; labels: Parameters<LabelObserver>[0] } | undefined;
+  return {
+    memory: memory && {
+      ...memory,
+      apply(key: string, labels: Parameters<LabelObserver>[0]) {
+        saved = { key, labels };
+        return memory.apply(key, labels, false);
+      },
+    },
+    observe: (...args: Parameters<LabelObserver>) => {
+      pending = args;
+    },
+    commit(request: { url: URL; body?: string }) {
+      const fields = new URLSearchParams(request.body ?? request.url.search);
+      if (!fields.has("ep.vv_type") || !pending) return;
+      if (saved) memory?.apply(saved.key, saved.labels);
+      observe?.(...pending);
+    },
+  };
+}
 export async function sendGoogle(
   destination: Destination,
   event: TrackingEvent,
@@ -319,17 +342,19 @@ export async function sendGoogle(
   observeLabels?: LabelObserver,
 ): Promise<Delivery> {
   const agentFields = verification ? await verification : undefined;
+  const staged = stageLabels(labelMemory, observeLabels);
   const url = buildEventCollectUrl(
     destination,
     event,
     getCurrent(),
     opening,
     agentFields,
-    labelMemory,
-    observeLabels,
+    staged.memory,
+    staged.observe,
   );
   const request = url && collectRequest(url, agentFields !== undefined);
   if (!request || signal.aborted) return "dropped";
+  staged.commit(request);
   const delivery = await post(
     request.url,
     { headers: browser(opening?.userAgent), body: request.body },
@@ -351,6 +376,7 @@ export async function sendDeniedPing(
   observeLabels?: LabelObserver,
 ) {
   const agentFields = verification ? await verification : undefined;
+  const staged = stageLabels(labelMemory, observeLabels);
   function strip(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(strip);
     if (value && typeof value === "object")
@@ -366,10 +392,10 @@ export async function sendDeniedPing(
     withLabels(
       { ...cleaned, session_id: ping.session_id },
       agentFields,
-      labelMemory
-        ? { memory: labelMemory, key: JSON.stringify(["page", ping.page_id]) }
+      staged.memory
+        ? { memory: staged.memory, key: JSON.stringify(["page", ping.page_id]) }
         : undefined,
-      observeLabels,
+      staged.observe,
     ),
   );
   const first = ping.hit_index === 1;
@@ -394,6 +420,7 @@ export async function sendDeniedPing(
   appendParams(url, params);
   const request = collectRequest(url, agentFields !== undefined);
   if (!request) return Promise.resolve<Delivery>("dropped");
+  staged.commit(request);
   return post(
     request.url,
     { headers: browser(userAgent), body: request.body },

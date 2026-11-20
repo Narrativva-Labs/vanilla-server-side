@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import * as library from "visitor-verdict-server";
+import { createAgentCounters } from "../src/server/agent-counters.js";
 import { createApp } from "../src/server/app.js";
 
 vi.mock("visitor-verdict-server", async (original) => ({
@@ -117,9 +118,21 @@ for (const route of ["/e", "/d"]) {
   it(`counts all eight final labels and verification outcomes for ${route}, without visitor data`, async () => {
     const { app, set } = setup();
     const before = (await app.inject("/health")).json().agentVerification.counters;
-    for (const [, browser, evidence] of cases) {
+    for (const [type, browser, evidence] of cases) {
       set(evidence);
       expect((await app.inject(hit(route, browser))).statusCode).toBe(204);
+      const snapshot = (await app.inject("/health")).json().agentVerification.counters[
+        route === "/e" ? "events" : "pings"
+      ];
+      expect(snapshot.byType[type]).toBe(1);
+      expect(snapshot.byType).toEqual(
+        Object.fromEntries(
+          cases.map(([key], index) => [
+            key,
+            index <= cases.findIndex(([key]) => key === type) ? 1 : 0,
+          ]),
+        ),
+      );
     }
     const health = (await app.inject("/health")).json();
     const counters = health.agentVerification.counters;
@@ -215,4 +228,86 @@ it("counts each signature header independently, including empty values, and reje
   expect(counts.total).toBe(3);
   expect(counts.byType.pending).toBe(3);
   expect(counts.evidence).toEqual({ signatureHeaders: 3, uaClaim: 0, browserNonHuman: 0 });
+});
+
+it("classifies unavailable reasons while preserving proof outcomes", () => {
+  const { observe, counters } = createAgentCounters();
+  const labels = { vv_type: "human", vv_detail: "none" } as const;
+  const reasons = [
+    "cache_miss",
+    "unavailable",
+    "directory_timeout",
+    "feed_cache_busy",
+    "deadline_exceeded",
+    "internal_error",
+    "invalid_clock",
+  ];
+  for (const reason of reasons) {
+    observe("events", [])(labels, verdict("none", reason));
+    for (const proof of ["signature_valid", "signature_invalid", "ip_match"] as const)
+      observe("events", [])(labels, verdict(proof, reason));
+  }
+  expect(counters.events.byVerification).toEqual({
+    "cache_miss/unavailable": reasons.length,
+    none: 0,
+    no_signature: 0,
+    signature_valid: reasons.length,
+    signature_invalid: reasons.length,
+    ip_match: reasons.length,
+  });
+  expect(counters.events.evidence).toEqual({ signatureHeaders: 0, uaClaim: 0, browserNonHuman: 0 });
+});
+it("uses duplicate raw UA headers and server-only tokens, case insensitively", () => {
+  const { observe, counters } = createAgentCounters();
+  for (const token of ["ChatGPT-User", "Google-NotebookLM", "Yeti"])
+    observe("pings", ["User-Agent", "Mozilla/5.0", "USER-AGENT", token, "SIGNATURE", ""])({
+      vv_type: "pending",
+      vv_detail: "none",
+    });
+  expect(counters.pings.evidence).toEqual({ signatureHeaders: 3, uaClaim: 3, browserNonHuman: 0 });
+});
+it("saturates every counter and counts an observer only once", () => {
+  const { observe, counters } = createAgentCounters();
+  const counts = counters.events;
+  const labels = { vv_type: "bot_automation", vv_detail: "none" } as const;
+  const once = observe("events", ["signature", "", "user-agent", "Google-NotebookLM"]);
+  once(labels, undefined, "automated");
+  once(labels, undefined, "automated");
+  expect(counts.total).toBe(1);
+  expect(counts.byType.bot_automation).toBe(1);
+  expect(counts.byVerification["cache_miss/unavailable"]).toBe(1);
+  expect(counts.evidence).toEqual({ signatureHeaders: 1, uaClaim: 1, browserNonHuman: 1 });
+  counts.total = Number.MAX_SAFE_INTEGER - 1;
+  for (const bucket of [counts.byType, counts.byVerification, counts.evidence])
+    for (const key of Object.keys(bucket))
+      bucket[key as keyof typeof bucket] = Number.MAX_SAFE_INTEGER - 1;
+  for (let i = 0; i < 3; i++)
+    observe("events", ["signature", "", "user-agent", "Google-NotebookLM"])(
+      labels,
+      undefined,
+      "automated",
+    );
+  expect(counts.total).toBe(Number.MAX_SAFE_INTEGER);
+  expect(counts.byType.bot_automation).toBe(Number.MAX_SAFE_INTEGER);
+  expect(counts.byVerification["cache_miss/unavailable"]).toBe(Number.MAX_SAFE_INTEGER);
+  expect(Object.values(counts.evidence)).toEqual(Array(3).fill(Number.MAX_SAFE_INTEGER));
+});
+it("counts delivery attempts across Google failures and retries, then ignores duplicates", async () => {
+  const { app, google, set } = setup();
+  set(verdict("no_signature"));
+  google.mockResolvedValueOnce(new Response(null, { status: 500 }));
+  const request = hit("/e", "human");
+  expect((await app.inject(request)).statusCode).toBe(503);
+  expect((await app.inject(request)).statusCode).toBe(204);
+  expect((await app.inject(request)).statusCode).toBe(204);
+  expect(google).toHaveBeenCalledTimes(2);
+  expect((await app.inject("/health")).json().agentVerification.counters.events.total).toBe(2);
+});
+it("ignores disabled denied pings", async () => {
+  const google = vi.fn<typeof fetch>();
+  const app = createApp({ ...config, deniedPings: false }, google);
+  apps.push(app);
+  expect((await app.inject(hit("/d"))).statusCode).toBe(204);
+  expect(google).not.toHaveBeenCalled();
+  expect((await app.inject("/health")).json().agentVerification.counters.pings.total).toBe(0);
 });
