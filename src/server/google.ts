@@ -253,14 +253,11 @@ export function collectRequest(
     else head.searchParams.append(key, value);
   let size = parts.reduce((n, part) => n + Buffer.byteLength(part.text) + 1, -1);
   // Optional labels must never turn an otherwise deliverable event into an oversized hit.
-  const withoutItems = parts
-    .filter((part) => !/^pr\d+$/.test(part.key))
-    .reduce((n, part) => n + Buffer.byteLength(part.text) + 1, -1);
   const optional = (key: string) =>
     (agentFields && /^ep\.agent_(claim|verification|operator|purpose)$/.test(key)) ||
     /^ep\.traffic_(class|phase)$/.test(key);
-  if (withoutItems > COLLECT_BODY_BYTES) {
-    for (let i = parts.length - 1; i >= 0; i--) {
+  if (size > COLLECT_BODY_BYTES) {
+    for (let i = parts.length - 1; i >= 0 && size > COLLECT_BODY_BYTES; i--) {
       if (!optional(parts[i]!.key)) continue;
       size -= Buffer.byteLength(parts[i]!.text) + 1;
       parts.splice(i, 1);

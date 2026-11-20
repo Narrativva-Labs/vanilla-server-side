@@ -415,7 +415,7 @@ it("labels an invalid signature and still sends the hit; obvious bots stay filte
   expect(google).toHaveBeenCalledTimes(2);
 });
 
-it("omits optional labels when they would push a deliverable body over 16 KiB", () => {
+it("removes only the optional labels needed to keep a deliverable body within 16 KiB", () => {
   const url = new URL("https://www.google-analytics.com/g/collect?v=2&en=page_view");
   url.searchParams.set("ep.payload", "x".repeat(16320));
   url.searchParams.set("ep.agent_verification", "signature_valid");
@@ -426,7 +426,8 @@ it("omits optional labels when they would push a deliverable body over 16 KiB", 
   expect(request).toBeDefined();
   const body = new URLSearchParams(request!.body);
   expect(body.get("ep.payload")).toHaveLength(16320);
-  expect(body.has("ep.agent_verification")).toBe(false);
+  expect(Buffer.byteLength(request!.body!)).toBeLessThanOrEqual(16384);
+  expect(body.get("ep.agent_verification")).toBe("signature_valid");
   expect(body.has("ep.agent_operator")).toBe(false);
   expect(body.has("ep.agent_purpose")).toBe(false);
   expect(body.has("ep.agent_claim")).toBe(false);

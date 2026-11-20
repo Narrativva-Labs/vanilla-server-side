@@ -72,7 +72,7 @@ it("startup is logged once and /health shows cache progress and failures without
   );
   expect(Object.keys(health)).toEqual(["enabled", "directoriesLoaded", "lastRefreshOk"]);
 });
-it("directory warnings are limited per configured host for ten minutes, not for IP-feed failures", () => {
+it("directory, IP and SAIL warnings share one ten-minute limit per configured host", () => {
   vi.useFakeTimers();
   vi.setSystemTime(1800000000000);
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -112,6 +112,14 @@ it("directory warnings are limited per configured host for ten minutes, not for 
   callbacks[0]!({ ...event, kind: "ip" });
   callbacks[0]!({ ...event, ok: true });
   expect(warn).toHaveBeenCalledTimes(2);
+  vi.advanceTimersByTime(600000);
+  callbacks[0]!({ ...event, kind: "ip" });
+  expect(warn).toHaveBeenCalledTimes(3);
+  callbacks[0]!({ ...event, kind: "sail" });
+  expect(warn).toHaveBeenCalledTimes(3);
+  vi.advanceTimersByTime(600000);
+  callbacks[0]!({ ...event, kind: "sail" });
+  expect(warn).toHaveBeenCalledTimes(4);
   expect(warn.mock.calls[0]).toEqual([
     "Agent verification refresh failed for warnings.example:8443: directory_timeout",
   ]);

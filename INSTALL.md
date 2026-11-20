@@ -150,7 +150,7 @@ Send that only after the required consent, remove debug flags after testing, and
 
 This needs a Google Ads account and an ad click with both `ad_storage` and `ad_user_data` granted, so your banner must send them. A conversion credited to a real ad click: Not verified yet.
 
-1. In the **second property**, open Admin -> Events and mark the event you want as a key event.
+1. In the **second property**, open Admin -> Events and mark an approved purchase event as a key event. Do not import lead events from this property.
 2. In Google Ads, keep auto-tagging on, so that clicks carry `gclid`.
 3. In the **second property**, open Admin -> Product links -> Google Ads links and link your Ads account. Do not link the regular property for this.
 4. After the event has been collected, import it in Google Ads under Goals -> Conversions -> New conversion action -> Import -> Google Analytics.
@@ -159,14 +159,14 @@ This needs a Google Ads account and an ad click with both `ad_storage` and `ad_u
 Update your privacy text first: Google's role differs between Analytics and Ads, as Google's [list of services](https://business.safety.google/adsservices/) shows.
 
 
-Importing key events also imports leads made by agents and automation. For leads,
-use a derived event in **GA4 Admin → Events → Create event**, for example
-`generate_lead_verified`, matching event_name=generate_lead, agent_verification=no_signature
-and traffic_class ≠ automated; **check the available operators in the UI** and test
-missing-value handling. This is a screening rule, not backend lead qualification.
-Alternatively, do not import leads from the second property. Settled purchases remain
-eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/docs/conversion-guidance.md);
-backend payment/fraud checks and consent still apply. [GA4 event creation](https://support.google.com/analytics/answer/10085872).
+Do not import leads from the second property into Google Ads: importing key events
+also imports leads from agents and automation. Send qualified leads from the backend/CRM
+using [offline conversion import](https://support.google.com/google-ads/answer/2998031)
+or [enhanced conversions for leads](https://support.google.com/google-ads/answer/11021502).
+GA4's UI rules are calculated client-side and do not apply to Vanilla's server-to-server
+hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)). Settled purchases
+remain eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/docs/conversion-guidance.md);
+backend payment/fraud checks still apply.
 
 ## What to disclose
 
@@ -226,8 +226,10 @@ Startup prints `Agent verification on for <host>`. `/health` exposes
 `agentVerification: { enabled, directoriesLoaded: "n/N", lastRefreshOk }`.
 A loaded document is not proof of an active key. Last outcome is null before any
 refresh completes and otherwise describes the most recent directory/feed refresh.
-Directory failures warn at most once per configured host per ten minutes, with only
+Directory, IP-list and SAIL refresh failures warn at most once per configured host per ten minutes, with only
 host and a short reason code; no visitor data or request URL is logged.
+The host is TRACKER_DOMAIN, not the remote operator endpoint. lastRefreshOk describes
+the latest completed refresh of any document, not whether all feeds are healthy.
 
 The four agent names are **reserved parameter names**: client-supplied
 agent_verification, agent_operator, agent_purpose and agent_claim are stripped even
@@ -272,7 +274,7 @@ Purpose mappings and sources: [server library](https://github.com/Narrativva-Lab
 | human | signature_valid / ip_match | Verified operator, looks human in browser |
 | declared_agent | signature_valid / ip_match | Verified declared agent/bot; split by agent_purpose |
 | declared_agent | no_signature | Declared, not verified: a false claim or an operator that cannot be verified; e.g. a browser claiming ChatGPT-User from an IP outside OpenAI's list |
-| automated | signature_valid | Signed automation, e.g. a cloud browser |
+| automated | signature_valid / ip_match | Verified automation, e.g. a cloud browser |
 | automated | no_signature | Clear browser automation, unverified |
 | any / absent | signature_invalid | Broken, expired or forged signature; never proof of humanity |
 | suspicious | any | Soft browser evidence; keep a separate diagnostic cohort |

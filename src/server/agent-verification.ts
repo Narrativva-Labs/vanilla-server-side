@@ -33,8 +33,7 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
     reverseDns: { enabled: false },
     fetchTimeoutMs: FETCH_TIMEOUT_MS,
     onRefresh: (event) => {
-      if (event.kind === "directory" && !event.ok)
-        warnRefresh(host, event.reason ?? "directory_unavailable");
+      if (!event.ok) warnRefresh(host, event.reason ?? "refresh_failed");
     },
   });
   console.info(`Agent verification on for ${host}`);
