@@ -2,6 +2,7 @@ import { deviceCategory, deviceModel, deviceBrowser } from "./device.js";
 import { createTracker } from "./tracker.js";
 import { createConsentObserver } from "./consent.js";
 import { normalizeEventItem } from "./data-layer.js";
+import { readTraffic } from "./traffic.js";
 import { cookiebot } from "./cmp/cookiebot.js";
 import { cookieconsent } from "./cmp/cookieconsent.js";
 import { cookieyes } from "./cmp/cookieyes.js";
@@ -45,6 +46,7 @@ if (script && !win.__vanillaGA) {
         screen_resolution: `${window.screen?.width ?? 0}x${window.screen?.height ?? 0}`,
       }),
       engagement,
+      traffic: () => readTraffic(window),
       href: () => location.href,
       referrer: () => previousPage ?? document.referrer,
       now: Date.now,

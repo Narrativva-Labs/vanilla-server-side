@@ -13,7 +13,6 @@ const DEADLINE_MS = 300;
 // Key directories and IP lists load in the background; a slow operator endpoint (about 0.9 s
 // from a European VPS for chatgpt.com) must not be aborted by the per-hit deadline.
 const FETCH_TIMEOUT_MS = 3000;
-const names = ["agent_claim", "agent_verification", "agent_operator"];
 
 export function createAgentLabeller(host: string | undefined, options: AgentVerifierOptions) {
   if (!host) throw new Error("Set TRACKER_DOMAIN to the external tracker host");
@@ -74,16 +73,4 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
     }
   };
   return { label, close };
-}
-
-/** Keep server labels ahead of custom parameters, inside the existing 25-field limit. */
-export function withAgentFields(
-  params: Record<string, unknown>,
-  fields?: Partial<AgentFields>,
-): Record<string, unknown> {
-  if (fields === undefined) return params;
-  return {
-    ...fields,
-    ...Object.fromEntries(Object.entries(params).filter(([key]) => !names.includes(key))),
-  };
 }

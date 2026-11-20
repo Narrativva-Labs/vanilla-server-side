@@ -1,4 +1,5 @@
-import { withAgentFields, type AgentFields } from "./agent-verification.js";
+import type { AgentFields } from "./agent-verification.js";
+import { withLabels } from "./labels.js";
 /** All events use the Google tag wire format; see the protocol notes. */
 import { randomInt } from "node:crypto";
 import { validateParams, validEventName } from "./mp-validation.js";
@@ -177,7 +178,7 @@ export function buildEventCollectUrl(
   // URLs are cleaned here too: a request does not have to come from the tracker.
   const cleaned = cleanUrls(redactAds(event.params)) as Record<string, unknown>;
   const params = validateParams(
-    withAgentFields({ ...cleaned, session_id: event.session_id }, agentFields),
+    withLabels({ ...cleaned, session_id: event.session_id }, agentFields),
   );
   const url = buildCollectUrl(destination, {
     name: event.name,
@@ -255,9 +256,12 @@ export function collectRequest(
   const withoutItems = parts
     .filter((part) => !/^pr\d+$/.test(part.key))
     .reduce((n, part) => n + Buffer.byteLength(part.text) + 1, -1);
-  if (agentFields && withoutItems > COLLECT_BODY_BYTES) {
+  const optional = (key: string) =>
+    (agentFields && /^ep\.agent_(claim|verification|operator)$/.test(key)) ||
+    /^ep\.traffic_(class|phase)$/.test(key);
+  if (withoutItems > COLLECT_BODY_BYTES) {
     for (let i = parts.length - 1; i >= 0; i--) {
-      if (!/^ep\.agent_(claim|verification|operator)$/.test(parts[i]!.key)) continue;
+      if (!optional(parts[i]!.key)) continue;
       size -= Buffer.byteLength(parts[i]!.text) + 1;
       parts.splice(i, 1);
     }
@@ -341,7 +345,7 @@ export async function sendDeniedPing(
   }
   const cleaned = cleanUrls(redactAds(strip(ping.params))) as Record<string, unknown>;
   const params = validateParams(
-    withAgentFields({ ...cleaned, session_id: ping.session_id }, agentFields),
+    withLabels({ ...cleaned, session_id: ping.session_id }, agentFields),
   );
   const first = ping.hit_index === 1;
   const url = buildCollectUrl(destination, {

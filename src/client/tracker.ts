@@ -23,6 +23,8 @@ export interface Runtime {
   title?(): string;
   device?(): TrackingEvent["device"];
   engagement?(): number;
+  /** Optional browser class parameters, read again for every request. */
+  traffic?(): Record<string, string>;
   href(): string;
   referrer(): string;
   warn(message: string): void;
@@ -272,7 +274,9 @@ export function createTracker(
     queue.push({ event: snapshot, attempts: 0, next: 0 });
     void flush();
   }
-  function requestBody(event: TrackingEvent) {
+  function requestBody(queued: TrackingEvent) {
+    // The latest browser class when the request leaves, not when the event was queued.
+    const event = { ...queued, params: { ...queued.params, ...runtime.traffic?.() } };
     // Consent may have narrowed while the event waited in the queue.
     const body = JSON.stringify(
       clickConsent(event.consent) ? event : { ...event, click_ids: undefined },
@@ -322,6 +326,7 @@ export function createTracker(
             page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PING_URL_BYTES),
             page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
             ...item.params,
+            ...runtime.traffic?.(),
           }),
         ),
       ) as Record<string, unknown>;

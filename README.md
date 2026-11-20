@@ -125,7 +125,8 @@ labels events: verdicts never withhold hits, change consent, or replace the exis
 obvious-bot filter. Unsigned traffic is not proof of a human. Verification has a
 300 ms deadline; failures or timeouts send the hit without verification fields.
 The three server labels take priority over client custom parameters within the
-existing 25-parameter limit. When enabled, client values for these names are ignored.
+existing 25-parameter limit (order below, under the Visitor Verdict browser class).
+When enabled, client values for these names are ignored.
 
 Privacy: the verifier uses the client IP in memory only and exports only three
 low-cardinality strings. It fetches public operator key directories and IP lists
@@ -142,3 +143,48 @@ for the event parameters: `agent_verification`, `agent_operator`, `agent_claim`.
 For example, a verified OpenAI signature produces `signature_valid`, `openai`,
 and `signature_agent`, respectively; unsigned traffic without operator evidence
 produces `no_signature`, `none`, and `none`.
+
+## Visitor Verdict browser class (optional)
+
+When the [Visitor Verdict](https://github.com/Narrativva-Labs/visitor-verdict)
+browser detector runs on the page, Vanilla adds its class to full events and
+denied-consent pings as `traffic_class` (`human`, `suspicious`, `automated` or
+`declared_agent`), together with `traffic_phase` (`initial` or `final`). Without the
+detector nothing changes. Vanilla never loads the detector and reads nothing else:
+when a request leaves, it reads `window.__visitorVerdict`, so later events carry the
+final phase. It adds no storage, cookies or requests. A global that is not the
+detector's frozen snapshot, or an unknown value, is ignored and the event is sent
+without it. The collector accepts only these values and drops any other value of
+the parameter, never the event. This works whether `AGENT_VERIFICATION` is on or
+off, and consent behavior is unchanged: full events only with consent, denied
+pings as before.
+
+Without GTM, load the detector with a plain `<script>` tag before `s.js`, using the
+URL and integrity value from
+[Pinned direct-script build](https://github.com/Narrativva-Labs/visitor-verdict#pinned-direct-script-build)
+in its README, or self-host `dist/visitor-verdict.min.js` from that repository.
+Events sent before the detector publishes its first class carry none. The detector
+also pushes its own `traffic_class` event to the dataLayer; leave that name out of
+`TRACKED_EVENTS`. The detector keeps a short history in `sessionStorage`; see its
+privacy notes before adding it to your disclosure.
+
+`traffic_class` is what the browser claims about itself; anything running on the
+page can spoof it. `agent_verification` is what the server verified from the
+request signature or operator IP. They stay separate on purpose, and together they
+say more than either:
+
+| `traffic_class` | `agent_verification` | Reading |
+| --- | --- | --- |
+| `human` | `no_signature` | A human, or a well-masked bot |
+| `human` | `signature_valid` | A verified AI agent that looks human in the browser |
+| `automated` | `no_signature` | A bot or scraper |
+| `declared_agent` | `signature_valid` or `ip_match` | A verified declared bot or agent |
+| `declared_agent` | `no_signature` | A false claim, such as a fake Googlebot |
+
+Within the 25-parameter limit, which counts the automatic fields first, the order
+is fixed: `agent_verification`, `agent_operator`, `agent_claim`, `traffic_class`,
+`traffic_phase`, then the site's own parameters. If an event would exceed Google's
+16 KiB even without its items, these labels are left out first.
+
+In GA4, register the **event-scoped custom dimension** `traffic_class` and,
+optionally, `traffic_phase`, using the same names for the event parameters.
