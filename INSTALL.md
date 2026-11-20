@@ -2,7 +2,7 @@
 
 By František Bujnovský. You need a domain, access to its DNS settings and a Google Analytics account. The software is free; you pay your chosen server provider. For scale: Hetzner lists [cloud servers](https://www.hetzner.com/cloud/) from € 5.99 a month without VAT, read on 2026-11-06. The install script took about 100 seconds on a clean test machine in CI, without DNS waiting. How long a first setup takes a beginner: Not verified. Each website operator runs their own server.
 
-Want to see it working first? `npm ci && npm run demo` runs everything locally with no account. See the [README](README.md#try-it-first). For how it works, see the [technical overview](docs/technical-overview.md).
+Want to see it working first? With Node 22.12+ within 22.x, 24.x, or 26+, `npm ci && npm run demo` runs everything locally with no account. Docker uses Node 26. See the [README](README.md#try-it-first). For how it works, see the [technical overview](docs/technical-overview.md).
 
 ## 1. Create a separate Google Analytics property
 
@@ -43,6 +43,11 @@ The result must show your VPS address. DNS changes can take time. The installer 
 
 ## 5. Install
 
+No release is tagged yet: installation and `./update.sh` follow the default branch.
+Record `git rev-parse HEAD` before deployment and updates; rollback instructions are
+[below](#updates-and-maintenance). There are no maintained release branches.
+
+
 In your SSH session:
 
 ```sh
@@ -81,7 +86,7 @@ dataLayer.push({
 
 The installer generates a signing secret, writes .env with owner-only permissions, checks DNS, starts the services and waits up to three minutes for HTTPS, including health request timeouts. Caddy obtains and renews certificates. Rerunning preserves .env. For manual changes, run sudo nano .env then sudo docker compose up -d --build. Never share or commit .env.
 
-The installation is tested on a clean Ubuntu in CI, on x86 and ARM servers: first install, a second run that keeps .env, and an update. The certificate and public DNS are not verified there. On 2026-11-17 a minimal Ubuntu 24.04 on ARM, without git or Docker, went through the steps above in a local container up to `docker compose up`; the build then failed on the container's nested file system, so that run is not a completed installation.
+The installation is tested on a clean Ubuntu in CI, on x86 and ARM servers: first install, a second run that keeps .env, and an update. The certificate and public DNS are not verified there. The live test sites use nginx, not the default Caddy setup. A real Let's Encrypt certificate obtained through this installer has not been tested; see [verification limits](docs/verification.md). On 2026-11-17 a minimal Ubuntu 24.04 on ARM, without git or Docker, went through the steps above in a local container up to `docker compose up`; the build then failed on the container's nested file system, so that run is not a completed installation.
 
 The installer sets COOKIE_DOMAIN to the hostname of SITE_ORIGIN with a leading www removed. The tracker must be that domain or any subdomain of it. For https://www.example.co.uk, both example.co.uk and kx7qpa.eu.example.co.uk work; the cookie domain stays example.co.uk. For https://eu.example.com, use kx7qpa.eu.example.com (a tracker at kx7qpa.example.com is outside the derived cookie domain). An incompatible domain stops installation with advice. The installer preserves this configuration when rerun.
 
@@ -214,6 +219,34 @@ With `AGENT_VERIFICATION=on`, /e and /d label verified operator evidence from
 Visitor Verdict. The default is off. This labels traffic; it does not itself
 withhold anything or change consent. **unverified ≠ human**.
 
+Only JavaScript-executing visitors that pass the obvious-bot filter reach verification.
+UAs matching `bot`/`crawl`/`spider` or `HeadlessChrome` are dropped first, including the
+full ChatGPT-User UA containing `openai.com/bot`. Most crawler registry entries therefore
+never reach GA4 in the default setup. Registry entries are capabilities, not observed coverage.
+Live signature capture has been confirmed only for the ChatGPT agent (OpenAI);
+other signing configurations have no captured live request here. See the
+[measured sample and limits](README.md#ai-agent-verification-optional).
+
+### Operator capabilities
+
+Capabilities below describe the bundled 0.2.0 registry at commit `19a9208`, before
+Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
+A published IP match is network evidence, not cryptographic request authentication.
+
+| Evidence available | Operators / routes | Local live signature capture |
+|---|---|---|
+| HTTP signature | OpenAI ChatGPT cloud browser | Yes, one header-capture run (32 requests) |
+| HTTP signature configuration, not captured here | Google hosted agent, DuckDuckGo, Browserbase, Manus; some identities are provisional | No |
+| Published IP/SAIL feeds | OpenAI fetchers/crawlers; Google mapped agent/fetcher/crawler tokens; Anthropic (Claude-Agent uses SAIL); Perplexity; DuckAssistBot; Apple; Microsoft; Mistral User/Index; Kimi; Common Crawl; Seznam; Naver | No additional signature captures |
+| Configured static IPs | Kagi | No |
+| rDNS only, inactive here | Baidu, Petal, Yandex, Amazon Ads | No |
+| Claim only | Amazon crawler family, You.com, Sogou, ByteDance, DeepSeek, Zhipu, Shenma, 360, Diffbot, Timpi; Mistral Training | No |
+
+A recognized UA or an accessible key directory alone verifies no request. Signature
+verification needs a valid covered request and usable cached key; IP evidence needs
+a matching token and trusted source IP. [Server documentation](https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server#operator-coverage-and-sources-checked-2026-11-20)
+tracks the detailed sources and limits.
+
 `TRACKER_DOMAIN` is the trusted external host, without a scheme/path; a port is
 allowed, for example `tracker.example:8443`. Both routes use cache-only verification:
 a missing, expired or unavailable cache sends the hit without agent labels and starts
@@ -257,7 +290,7 @@ traffic_class and traffic_phase as six event-scoped custom dimensions. **unverif
 
 | Parameter | Values and interpretation |
 |---|---|
-| agent_verification | signature_valid: trusted signature; ip_match: published IP (or optional library rDNS); signature_invalid: failed WBA signature; no_signature: no verified operator evidence; none: indeterminate/untrusted/context failure |
+| agent_verification | signature_valid: trusted signature; ip_match: published IP (rDNS is disabled in Vanilla); signature_invalid: failed WBA signature; no_signature: no verified operator evidence; none: indeterminate/untrusted/context failure |
 | agent_verification = (not set) | Verification off; cache miss/operator unavailable; label dropped for the 25-parameter/16 KiB budget; hits before enabling. This is missing coverage, not human evidence |
 | agent_operator | Registry operator ID below, or none without a verified operator |
 | agent_claim | signature_agent, ua_token, none; claims alone are untrusted |
@@ -265,8 +298,9 @@ traffic_class and traffic_phase as six event-scoped custom dimensions. **unverif
 | traffic_class | human, suspicious, automated, declared_agent; browser evidence only; missing if detector absent/early or label dropped |
 | traffic_phase | initial, final; missing if detector absent/early or label dropped |
 
-Registry IDs: `kimi`, `commoncrawl`, `seznam`, `naver`, `kagi`, `baidu`, `petal`, `yandex`, `amazon`, `amazonads`, `you`, `sogou`, `bytedance`, `deepseek`, `zhipu`, `shenma`, `qihoo`, `diffbot`, `timpi`, `apple`, `microsoft`, `mistral`, `duckduckgo`, `openai`, `google`, `browserbase`, `manus`, `anthropic`, `perplexity`.
-Purpose mappings and sources: [server library](https://github.com/Narrativva-Labs/visitor-verdict/tree/main/server#purpose-and-health).
+Operator IDs identify registry entries, not guaranteed verified coverage; see
+[operator capabilities](#operator-capabilities). Purpose mappings describe documented
+product roles, not the customer's intent; a verified operator may still submit spam.
 
 | traffic_class | agent_verification | Reading |
 |---|---|---|
@@ -294,12 +328,17 @@ from these labels.
 3. Check startup output for `Agent verification on for <host>`.
 4. Check `https://<host>/health`: enabled must be true; directoriesLoaded moves from
    0/N as warm-up finishes. lastRefreshOk=false or n<N calls for checking egress and
-   the rate-limited host/reason warning. Hits still leave offline, without missing labels
-   being reclassified as human.
+   the rate-limited host/reason warning. Hits are still forwarded without available agent labels; missing labels
+   are not reclassified as human.
 5. In GA4 **Admin → Data display → Custom definitions**, create the six event-scoped
    dimensions above. These use six of the [50 slots in a standard property](https://support.google.com/analytics/answer/14240153).
 
-Allow outbound HTTPS to these exact key-directory hosts (derived from the registry):
-`assistbot.duckduckgo.com`, `chatgpt.com`, `agent.bot.goog`, `www.browserbase.com`, `api.manus.im`. IP-list/SAIL hosts: `www.kimi.ai`, `index.commoncrawl.org`, `search.seznam.cz`, `searchadvisor.naver.com`, `search.developer.apple.com`, `www.bing.com`, `mistral.ai`, `duckduckgo.com`, `openai.com`, `developers.google.com`, `claude.com`, `www.perplexity.ai`.
+Allow outbound HTTPS for the bundled registry as needed:
+
+**Key directories, warmed at startup:**
+`assistbot.duckduckgo.com`, `chatgpt.com`, `agent.bot.goog`, `www.browserbase.com`, `api.manus.im`.
+
+**IP-list/SAIL hosts, loaded on matching claims:** `www.kimi.ai`, `index.commoncrawl.org`, `search.seznam.cz`, `searchadvisor.naver.com`, `search.developer.apple.com`, `www.bing.com`, `mistral.ai`, `duckduckgo.com`, `openai.com`, `developers.google.com`, `claude.com`, `www.perplexity.ai`.
+Many crawler claims are dropped by the bot filter before these feeds are needed.
 No visitor values are appended to these URLs. Key directories load at startup;
 IP/SAIL feeds load as relevant claims arrive. Startup and misses never wait for egress.

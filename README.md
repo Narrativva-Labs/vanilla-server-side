@@ -6,8 +6,6 @@ A small, self-hosted analytics collector by František Bujnovský. Your regular 
 
 It measures for Google Analytics only and sends nothing to Meta or other platforms.
 
-Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).
-
 You get a second measurement under your own control: a signed cookie set by your server, a consent check on your server, and one Google transport for sessions and purchases. The server checks the consent state the browser reports and cannot confirm it independently, and the data still ends up in Google Analytics. It runs on a small VPS with no database. MIT licensed.
 
 ```text
@@ -17,9 +15,10 @@ Browser -- regular Google tag / GTM -----------------> regular property (unchang
         waits for consent   signed cookie              /g/collect for every event
                             consent check              session flags on the first hit
                             bot filter
+                            optional operator verification
 ```
 
-Use the second property for Vanilla only. Never point it at the property your regular tag uses: nothing deduplicates the two streams.
+Use the second property for Vanilla only. Never point it at the property your regular tag uses: nothing deduplicates the two streams. This provides a parallel comparison while keeping the regular tag available. Accept the maintenance risk of the undocumented `/g/collect` endpoint only if that comparison is useful to you; this project has not established an accuracy advantage over sGTM or independent analytics.
 
 ## Quick start
 
@@ -41,7 +40,7 @@ Page views then work by themselves. Other events are read from `dataLayer`, not 
 
 ## Try it first
 
-No account and no server. It needs Node 22.12, 24 or 26, and after `npm ci` it runs offline.
+No account and no server. Use Node 22.12+ within 22.x, 24.x, or 26+ (the package engine range); the Docker image and development commands use Node 26. After `npm ci` it runs offline.
 
 ```sh
 npm ci
@@ -96,12 +95,12 @@ backend payment/fraud checks still apply.
 
 ## Limits
 
-- **Tested on small sites.** Real traffic so far comes from two small sites. On the online store the consented visitors, sessions and page views of both properties matched in BigQuery on 2026-11-14, with small differences in some other slices; on the company website a difference between the two exposed a broken GTM consent setup. A busy site: Not verified. What is better, the same and worse than the Google tag: [verification](docs/verification.md#better-same-and-worse-than-the-google-tag).
+- **Tested on small sites.** Real traffic so far comes from two small sites. On the online store, both properties recorded 15 consented visitors, 17 sessions and 37 page views in BigQuery on 2026-11-14, with small differences in some other slices; on the company website a difference between the two exposed a broken GTM consent setup. A busy site: Not verified. What is better, the same and worse than the Google tag: [verification](docs/verification.md#better-same-and-worse-than-the-google-tag).
 - **Reporting can differ from the regular tag.** In the November 7–8 comparison, collect kept all tested hits in the attributed session; mixed transport lost attribution on some MP events. See the [test notes](docs/measurement-protocol-notes.md#all-collect-comparison).
 - **`/g/collect` has no public contract.** Google can change it without notice, and it returns 204 for anything. The fields follow captured Google tag hits, so they need a recheck over time. See the [notes](docs/measurement-protocol-notes.md#gcollect).
 - **Safari kept the cookie for 7 days in the one run measured.** Safari 26.6.2 stored it for 7.0 days with the tracker on a different IPv4 /16 from the website, the case [WebKit's cap](https://webkit.org/blog/15697/private-browsing-2-0/) describes. A default install runs on a different server, so expect the same. In a return after 8 days the cookie had expired, so Vanilla counted a new user while the regular Google tag counted a returning one. The server renews the cookie on each delivered event; whether that keeps the identity for a visitor who returns within 7 days: Not verified. [Details](docs/technical-overview.md#safari).
 - **Content blockers.** Getting past them is a side benefit, not the purpose of this project. A neutral random subdomain and neutral paths lower the chance of a filter list match, but guarantee nothing: first-party does not mean unblockable. In one run, uBlock Origin Lite with default lists did not stop the tracker. Consent rules stay the same: full events require consent, and a refusal stops regular measurement, apart from cookieless event pings. [Details](docs/technical-overview.md#content-blockers)
-- **Bots.** A short User-Agent filter stops obvious ones. Anything that claims to be a browser passes.
+- **Bots.** A short User-Agent filter drops obvious bots before optional [operator verification](#ai-agent-verification-optional). Non-JavaScript fetchers never run the tracker. Browser-looking automation can pass; a missing signature does not establish humanity.
 - **Google accepts at most 16 KiB of event data in one hit, about 130 items.** Like the Google tag, a long event goes in the request body. Above 16 KiB Google refuses the hit (HTTP 413), and the Google tag loses the whole purchase. Vanilla leaves out the last items instead and logs how many, so revenue, transaction ID and the conversion arrive; the item reports miss those items.
 - **No cross-domain identity, durable queue or backfill.** If your server is down, its events are lost; the regular tag is unaffected.
 - **Each open tab keeps its own consent state** until it reloads, so a refusal in one tab does not stop a second open tab at once.
@@ -124,80 +123,31 @@ Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a securi
 
 ## AI agent verification (optional)
 
-With `AGENT_VERIFICATION=on`, /e and /d label verified operator evidence from
-Visitor Verdict. The default is off. This labels traffic; it does not itself
-withhold anything or change consent. **unverified ≠ human**.
+`AGENT_VERIFICATION=on` adds server operator labels to `/e` and `/d`; default off.
+It labels traffic without routing conversions. **unverified ≠ human**.
+Only JavaScript-executing visitors that pass the obvious-bot filter reach this path;
+`bot`/`crawl`/`spider` and `HeadlessChrome` UAs are dropped first, including the full
+ChatGPT-User UA with its `openai.com/bot` URL. Reverse DNS is disabled.
 
-`TRACKER_DOMAIN` is the trusted external host, without a scheme/path; a port is
-allowed, for example `tracker.example:8443`. Both routes use cache-only verification:
-a missing, expired or unavailable cache sends the hit without agent labels and starts
-one background refresh. There is no wait for operator I/O or later backfill.
-Key directories warm once at startup and refresh in the background (about every
-270 seconds for no-store). Failed refreshes retain valid cached data up to the hard
-24-hour age limit, always honouring JWK validity/removal. Reverse DNS is disabled.
+Live signature capture and end-to-end verification have been confirmed only for
+the ChatGPT agent (OpenAI). On one demo shop on 2026-11-20, one header-capture run
+produced 32 signed requests, all verified against the operator key directory.
+GA4 Realtime showed `signature_valid` on 5/5 `view_cart` events after cache warming
+(1/5 before); only 1/5 had a browser class because early events preceded detection.
+This is one operator on one site, not a coverage estimate. Standard reports,
+BigQuery and advertising attribution for these agent events are unverified.
+The [field observations](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/research/agents-and-tells.md#field-observations-v10-2026-11-19)
+include five badge runs across personal and business accounts, an unsigned masked-headless
+negative control and two unsigned Grok runs; these are separate samples.
 
-Startup prints `Agent verification on for <host>`. `/health` exposes
-`agentVerification: { enabled, directoriesLoaded: "n/N", lastRefreshOk }`.
-A loaded document is not proof of an active key. Last outcome is null before any
-refresh completes and otherwise describes the most recent directory/feed refresh.
-Directory, IP-list and SAIL refresh failures warn at most once per configured host per ten minutes, with only
-host and a short reason code; no visitor data or request URL is logged.
-The host is TRACKER_DOMAIN, not the remote operator endpoint. lastRefreshOk describes
-the latest completed refresh of any document, not whether all feeds are healthy.
+Other registry entries offer uncaptured signature configurations, IP/SAIL evidence,
+inactive rDNS rules or claims only. Registry size is not measured coverage.
+See [operator capabilities](INSTALL.md#operator-capabilities),
+[setup, health and egress](INSTALL.md#enable-in-five-steps),
+[optional browser-class setup](INSTALL.md#visitor-verdict-browser-class-optional)
+and the [analyst value dictionary](INSTALL.md#analyst-value-dictionary).
 
-The four agent names are **reserved parameter names**: client-supplied
-agent_verification, agent_operator, agent_purpose and agent_claim are stripped even
-with verification off or no room for server labels. Priority within 25 parameters:
-GA4 automatic fields; standard event/ecommerce fields (transaction_id, value,
-currency, items, coupon, shipping, tax and other recommended fields); agent_verification,
-agent_operator, agent_purpose, agent_claim, traffic_class, traffic_phase; other site
-parameters. Optional labels only fill the remainder and are removed first for a
-16 KiB body, so they never displace standard conversion fields.
+Runtime dependencies are Fastify and the vendored `visitor-verdict-server` package;
+the latter depends on `structured-headers`. There is no database.
 
-## Visitor Verdict browser class (optional)
-
-Load the [Visitor Verdict detector](https://github.com/Narrativva-Labs/visitor-verdict#pinned-direct-script-build)
-with a plain script tag before s.js (or self-host its pinned build). Vanilla never
-loads it. It reads the frozen window.__visitorVerdict snapshot when sending a hit:
-only class and phase are forwarded, on both full events and denied pings. Unknown
-values are dropped. The browser class works with verification off and is spoofable.
-The detector uses minimal sessionStorage; disclose it before installing. Leave its
-own traffic_class event out of TRACKED_EVENTS. Early hits may lack a browser class.
-
-## Analyst value dictionary
-
-Register agent_verification, agent_operator, agent_purpose, agent_claim,
-traffic_class and traffic_phase as six event-scoped custom dimensions. **unverified ≠ human**.
-
-| Parameter | Values and interpretation |
-|---|---|
-| agent_verification | signature_valid: trusted signature; ip_match: published IP (or optional library rDNS); signature_invalid: failed WBA signature; no_signature: no verified operator evidence; none: indeterminate/untrusted/context failure |
-| agent_verification = (not set) | Verification off; cache miss/operator unavailable; label dropped for the 25-parameter/16 KiB budget; hits before enabling. This is missing coverage, not human evidence |
-| agent_operator | Registry operator ID below, or none without a verified operator |
-| agent_claim | signature_agent, ua_token, none; claims alone are untrusted |
-| agent_purpose | user_directed, crawler, unknown. Known only for verified evidence; describes a documented product role, never the customer's intent |
-| traffic_class | human, suspicious, automated, declared_agent; browser evidence only; missing if detector absent/early or label dropped |
-| traffic_phase | initial, final; missing if detector absent/early or label dropped |
-
-Registry IDs: `kimi`, `commoncrawl`, `seznam`, `naver`, `kagi`, `baidu`, `petal`, `yandex`, `amazon`, `amazonads`, `you`, `sogou`, `bytedance`, `deepseek`, `zhipu`, `shenma`, `qihoo`, `diffbot`, `timpi`, `apple`, `microsoft`, `mistral`, `duckduckgo`, `openai`, `google`, `browserbase`, `manus`, `anthropic`, `perplexity`.
-Purpose mappings and sources: [server library](https://github.com/Narrativva-Labs/visitor-verdict/tree/main/server#purpose-and-health).
-
-| traffic_class | agent_verification | Reading |
-|---|---|---|
-| human | no_signature | Human-looking, unverified; a masked bot can look the same |
-| human | signature_valid / ip_match | Verified operator, looks human in browser |
-| declared_agent | signature_valid / ip_match | Verified declared agent/bot; split by agent_purpose |
-| declared_agent | no_signature | Declared, not verified: a false claim or an operator that cannot be verified; e.g. a browser claiming ChatGPT-User from an IP outside OpenAI's list |
-| automated | signature_valid / ip_match | Verified automation, e.g. a cloud browser |
-| automated | no_signature | Clear browser automation, unverified |
-| any / absent | signature_invalid | Broken, expired or forged signature; never proof of humanity |
-| suspicious | any | Soft browser evidence; keep a separate diagnostic cohort |
-| absent | any / (not set) | No browser class: absent detector, early hit or budget; server evidence is independent |
-
-User agents matching bot/crawl/spider in the existing obvious-bot filter are dropped
-**before labelling and never reach GA4**. This includes many official crawler UAs and
-a full ChatGPT-User UA containing the openai.com/bot URL. The bare browser claim in
-the example above can pass. Missing data from that filter cannot be reconstructed
-from these labels.
-
-For setup, health and egress, see [INSTALL](INSTALL.md#enable-in-five-steps).
+Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).

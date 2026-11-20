@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Vendor Visitor Verdict server 0.2.1: reject Google customer cloud DNS, scope purpose to verified rules and record registry evidence.
+- Assert the actual 16 KiB posted body limit, preserved purchase value/currency and exact retained item prefix; cover the refresh warning host cap.
+
 - Optional agent verification labels and cache health, including agent_purpose.
 - Optional Visitor Verdict browser class/phase on events and pings.
 - Reserve agent_verification, agent_operator, agent_purpose and agent_claim; client values never pass through.
