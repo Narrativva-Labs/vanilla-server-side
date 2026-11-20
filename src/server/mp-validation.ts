@@ -22,6 +22,49 @@ const automatic = [
   "page_referrer",
   "page_title",
 ];
+// Preserve recommended event semantics before spending the remaining budget on optional labels.
+const standard = [
+  "transaction_id",
+  "value",
+  "currency",
+  "items",
+  "coupon",
+  "shipping",
+  "tax",
+  "affiliation",
+  "payment_type",
+  "shipping_tier",
+  "item_list_id",
+  "item_list_name",
+  "promotion_id",
+  "promotion_name",
+  "creative_name",
+  "creative_slot",
+  "search_term",
+  "method",
+  "content_type",
+  "item_id",
+  "group_id",
+  "level",
+  "level_name",
+  "character",
+  "virtual_currency_name",
+  "achievement_id",
+  "score",
+  "success",
+  "ad_platform",
+  "ad_source",
+  "ad_format",
+  "ad_unit_name",
+];
+const labels = [
+  "agent_verification",
+  "agent_operator",
+  "agent_claim",
+  "traffic_class",
+  "traffic_phase",
+];
+const priority = [...automatic, ...standard, ...labels];
 const pageText = new Set(["page_location", "page_referrer", "page_title"]);
 /** Google keeps the first 100 characters of a longer value (BigQuery, 2026-11-11), like a Google tag hit. */
 const TEXT_CHARS = 100;
@@ -67,10 +110,8 @@ export function validateParams(
 ) {
   const output: Record<string, unknown> = {};
   const entries = [
-    ...automatic
-      .filter((key) => Object.hasOwn(input, key))
-      .map((key) => [key, input[key]] as const),
-    ...Object.entries(input).filter(([key]) => !automatic.includes(key)),
+    ...priority.filter((key) => Object.hasOwn(input, key)).map((key) => [key, input[key]] as const),
+    ...Object.entries(input).filter(([key]) => !priority.includes(key)),
   ];
   for (const [key, raw] of entries) {
     if (!validName(key)) {

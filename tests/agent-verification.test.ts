@@ -187,12 +187,12 @@ it("labels unsigned visitors without network access and preserves the parameter 
   expect(fetcher).not.toHaveBeenCalled();
 });
 
-for (const failure of ["throw", "reject", "timeout"] as const) {
+for (const failure of ["throw", "reject"] as const) {
   it(`sends both hits without labels after a verifier ${failure}`, async () => {
     const verify = vi.fn(() => {
       if (failure === "throw") throw new Error("failure");
       if (failure === "reject") return Promise.reject(new Error("failure"));
-      return new Promise<verdict.AgentVerdict>(() => {});
+      return Promise.reject(new Error("failure"));
     });
     vi.spyOn(verdict, "createVerifier").mockReturnValue(fakeVerifier(verify));
     const { post, hit, google } = setup();
@@ -266,6 +266,94 @@ it("bounds a stalled directory fetch and sends without labels", async () => {
   expect(google).toHaveBeenCalledTimes(2);
 });
 
+it("an offline operator adds no network wait before Google on /e or /d", async () => {
+  const timings: Record<string, number[]> = {};
+  for (const enabled of [false, true]) {
+    const { app, post, google, hit } = setup(enabled, {
+      fetcher: () => new Promise<Response>(() => {}),
+      now: () => Date.parse(signed[0]!.ts) / 1000,
+    });
+    await app.ready();
+    for (const route of ["/e", "/d"]) {
+      // Prime route compilation and identity setup before comparing delivery latency.
+      await post(route, signed[0]!.headers);
+      const samples: number[] = [];
+      let started = 0;
+      google.mockImplementation(async () => {
+        samples.push(performance.now() - started);
+        return new Response(null, { status: 204 });
+      });
+      for (let i = 0; i < 7; i++) {
+        started = performance.now();
+        expect(
+          (
+            await post(route, signed[0]!.headers, {
+              agent_verification: "signature_valid",
+              agent_operator: "spoofed",
+              agent_claim: "spoofed",
+            })
+          ).statusCode,
+        ).toBe(204);
+        for (const name of ["agent_verification", "agent_operator", "agent_claim"])
+          expect(hit().has(`ep.${name}`)).toBe(false);
+      }
+      timings[`${enabled}:${route}`] = samples.sort((a, b) => a - b);
+    }
+  }
+  for (const route of ["/e", "/d"]) {
+    const off = timings[`false:${route}`]![3]!;
+    const on = timings[`true:${route}`]![3]!;
+    expect(on).toBeLessThan(off + 5);
+  }
+});
+
+it("a cold hit omits labels and a later hit uses the completed startup warm-up", async () => {
+  const warm = spyOnWarm();
+  let release!: (response: Response) => void;
+  const { post, hit } = setup(true, {
+    fetcher: async (url) =>
+      url === chatgpt
+        ? new Promise<Response>((resolve) => {
+            release = resolve;
+          })
+        : new Response(null, { status: 404 }),
+    now: () => Date.parse(signed[0]!.ts) / 1000,
+  });
+  expect((await post("/e", signed[0]!.headers)).statusCode).toBe(204);
+  expect(hit().has("ep.agent_verification")).toBe(false);
+  release(new Response(directory, { headers: { "cache-control": "no-store" } }));
+  await warm.mock.results[0]!.value;
+  expect((await post("/e", signed[0]!.headers)).statusCode).toBe(204);
+  expect(hit().get("ep.agent_verification")).toBe("signature_valid");
+});
+
+for (const enabled of [false, true])
+  it(`always strips client-supplied reserved agent names with verification ${enabled}`, async () => {
+    const { post, hit } = setup(enabled, {
+      fetcher: async () => {
+        throw Error("offline");
+      },
+    });
+    for (const route of ["/e", "/d"]) {
+      expect(
+        (
+          await post(
+            route,
+            {},
+            {
+              agent_verification: "signature_valid",
+              agent_operator: "spoofed",
+              agent_claim: "spoofed",
+            },
+          )
+        ).statusCode,
+      ).toBe(204);
+      expect(hit().get("ep.agent_verification")).toBe(enabled ? "no_signature" : null);
+      expect(hit().get("ep.agent_operator")).toBe(enabled ? "none" : null);
+      expect(hit().get("ep.agent_claim")).toBe(enabled ? "none" : null);
+    }
+  });
+
 it("omits fields after a failed directory fetch without failing either hit", async () => {
   const fetcher = vi.fn(async () => {
     throw new Error("unavailable");
@@ -291,13 +379,16 @@ it("passes raw headers, trusted client IP and the unchanged target to verificati
   vi.spyOn(verdict, "createVerifier").mockReturnValue(fakeVerifier(verify));
   const { post } = setup();
   expect((await post("/e?raw=%2f&x=1")).statusCode).toBe(204);
-  expect(verify).toHaveBeenCalledWith({
-    method: "POST",
-    host: config.trackerHost,
-    headers: expect.any(Array),
-    clientIp: "127.0.0.1",
-    target: "/e?raw=%2f&x=1",
-  });
+  expect(verify).toHaveBeenCalledWith(
+    {
+      method: "POST",
+      host: config.trackerHost,
+      headers: expect.any(Array),
+      clientIp: "127.0.0.1",
+      target: "/e?raw=%2f&x=1",
+    },
+    { cacheOnly: true },
+  );
 });
 
 it("labels an invalid signature and still sends the hit; obvious bots stay filtered", async () => {

@@ -255,8 +255,16 @@ it("keeps server labels, then the browser class, ahead of site parameters under 
   }
 });
 
-it("without verification, site values for agent names stay site parameters", () => {
-  expect(withLabels({ agent_claim: "site", traffic_class: "x" })).toEqual({ agent_claim: "site" });
+it("agent names are reserved even without verification or returned server labels", () => {
+  const params = {
+    agent_verification: "signature_valid",
+    agent_operator: "spoofed",
+    agent_claim: "site",
+    traffic_class: "x",
+    ordinary: 1,
+  };
+  expect(withLabels(params)).toEqual({ ordinary: 1 });
+  expect(withLabels(params, {})).toEqual({ ordinary: 1 });
 });
 
 it("omits the browser class when it would push a deliverable body over 16 KiB", () => {

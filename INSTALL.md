@@ -207,11 +207,13 @@ verification then creates no verifier and makes no verification network requests
 
 Visitor Verdict checks signatures and supported operator IP evidence. This only
 labels events: verdicts never withhold hits, change consent, or replace the existing
-obvious-bot filter. Unsigned traffic is not proof of a human. Verification has a
-300 ms deadline; failures or timeouts send the hit without verification fields.
-The three server labels take priority over client custom parameters within the
-existing 25-parameter limit (order below, under the Visitor Verdict browser class).
-When enabled, client values for these names are ignored.
+obvious-bot filter. Unsigned traffic is not proof of a human. Both /e and /d use cache-only
+verification: they never wait for an operator fetch. A cold, expired or unavailable
+cache returns cache_miss, triggers a background refresh and sends the hit without
+agent labels; a later hit can use the refreshed evidence. There is no 300 ms wait.
+The three agent label names are **reserved parameter names**: client-supplied
+agent_verification, agent_operator and agent_claim are always stripped, also when
+AGENT_VERIFICATION=off or no server labels fit the parameter budget.
 
 Privacy: the verifier uses the client IP in memory only and exports only three
 low-cardinality strings. It fetches public operator key directories and IP lists
@@ -263,8 +265,13 @@ say more than either:
 | `declared_agent` | `no_signature` | A false claim, such as a fake Googlebot |
 
 Within the 25-parameter limit, which counts the automatic fields first, the order
-is fixed: `agent_verification`, `agent_operator`, `agent_claim`, `traffic_class`,
-`traffic_phase`, then the site's own parameters. If an event would exceed Google's
+is fixed: GA4 automatic fields, then standard event fields (`transaction_id`,
+`value`, `currency`, `items`, plus applicable `coupon`, `shipping`, `tax` and other
+recommended-event fields), then `agent_verification`, `agent_operator`, `agent_claim`,
+`traffic_class`, `traffic_phase`, then other site parameters in their original order.
+Optional labels only fill the remaining budget; they never displace standard
+ecommerce or conversion fields. The three agent names are reserved parameter names
+even when their server values are omitted. If an event would exceed Google's
 16 KiB even without its items, these labels are left out first.
 
 In GA4, register the **event-scoped custom dimension** `traffic_class` and,
