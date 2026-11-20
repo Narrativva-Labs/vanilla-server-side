@@ -229,7 +229,7 @@ other signing configurations have no captured live request here. See the
 
 ### Operator capabilities
 
-Capabilities below describe the bundled 0.3.0 registry, before
+Capabilities below describe the bundled 0.3.1 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
@@ -256,12 +256,13 @@ Key directories warm once at startup and refresh in the background (about every
 24-hour age limit, always honouring JWK validity/removal. Reverse DNS is disabled.
 
 Startup prints `Agent verification on for <host>`. `/health` exposes
-`agentVerification: { enabled, directoriesLoaded: "n/N", lastRefreshOk }`.
+`agentVerification: { enabled, directoriesLoaded: "n/N", lastRefreshOk, counters }`.
 A loaded document is not proof of an active key. Last outcome is null before any
 refresh completes and otherwise describes the most recent directory/feed refresh.
-Directory, IP-list and SAIL refresh failures warn at most once per configured host per ten minutes, with only
-host and a short reason code; no visitor data or request URL is logged.
-The host is TRACKER_DOMAIN, not the remote operator endpoint. lastRefreshOk describes
+Directory, IP-list and SAIL refresh failures warn at most once per failing endpoint hostname per ten minutes, with only
+that hostname and a short reason code; no visitor data or request URL is logged.
+For example, a failed DuckAssist IP-list refresh names assistbot.duckduckgo.com,
+without its path or query. lastRefreshOk describes
 the latest completed refresh of any document, not whether all feeds are healthy.
 
 Client-supplied vv_type, vv_detail and the old agent_verification, agent_operator,
@@ -374,3 +375,43 @@ Allow outbound HTTPS for the bundled registry as needed:
 Many crawler claims are dropped by the bot filter before these feeds are needed.
 No visitor values are appended to these URLs. Key directories load at startup;
 IP/SAIL feeds load as relevant claims arrive. Startup and misses never wait for egress.
+
+
+### Anonymous hit counters
+
+Use `/health` → `agentVerification.counters` to **measure your own share of verified agents and bots**
+before choosing any routing rules. `since` is the process start time in ISO UTC.
+All other leaves are nonnegative integers. State is fixed-size, memory-only and resets
+on restart, without a reset endpoint or persistence. Each running process has its own
+totals; after a restart start a new measurement interval.
+
+`events` counts full `/e` events; `pings` counts cookieless `/d` pings separately.
+Each group contains:
+
+- `total`: hits that reached server labelling, once per delivery attempt. This includes
+  Google delivery failures; retries that reach labelling count again. Duplicate events,
+  rejected requests, disabled pings and obvious bots filtered before labelling do not count.
+- `byType`: one counter for each of the eight `vv_type` values, after sticky session/page
+  evidence is applied. These sum to `total`.
+- `byVerification`: signature_valid, ip_match, signature_invalid, no_signature, none,
+  and `cache_miss/unavailable`. The last bucket covers unavailable verification (including
+  verification off or an exception), cache misses and unavailable evidence with no proof.
+  Valid or invalid proof keeps its verification outcome. These sum to `total`.
+- `evidence.signatureHeaders`: hits carrying any Signature, Signature-Input or
+  Signature-Agent header, even empty or malformed. Presence is not proof.
+- `evidence.uaClaim`: hits with a known UA claim token, using the verifier's token list
+  and boundaries, including with verification off.
+- `evidence.browserNonHuman`: hits with a valid suspicious, automated or declared_agent
+  browser class. Missing, invalid and human classes do not increment this counter.
+
+Evidence counters overlap; do not sum them to estimate a visitor count. Divide a
+`byType` or `byVerification` bucket by its group's `total` for a labelled-hit share,
+keeping full events and pings separate. A visit can generate many hits, and pings and
+full events may describe the same page. The denominator excludes non-JavaScript
+fetchers and filtered bots, so it is not a share of all HTTP requests or all visitors.
+Counters store no hosts, IPs, UAs, identifiers, signatures, URLs or per-hit records.
+Only the timestamp and aggregate integers are exposed under `counters`.
+
+Since verifier 0.3.1, refresh callbacks carry the public endpoint hostname (no URL), and
+`serverAgentTokens` exposes the claim-token list, so presence counting uses the same tokens
+as verification.

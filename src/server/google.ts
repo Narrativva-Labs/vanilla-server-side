@@ -1,5 +1,5 @@
 import type { AgentFields } from "./agent-verification.js";
-import { withLabels, type LabelMemory } from "./labels.js";
+import { withLabels, type LabelMemory, type LabelObserver } from "./labels.js";
 /** All events use the Google tag wire format; see the protocol notes. */
 import { randomInt } from "node:crypto";
 import { validateParams, validEventName } from "./mp-validation.js";
@@ -169,6 +169,7 @@ export function buildEventCollectUrl(
   opening?: Opening,
   agentFields?: AgentFields,
   labelMemory?: LabelMemory,
+  observeLabels?: LabelObserver,
 ) {
   const consent = intersect(normalizeConsent(event.consent), normalizeConsent(current));
   if (!canTrack(consent) || !timely(event)) return undefined;
@@ -188,6 +189,7 @@ export function buildEventCollectUrl(
             key: JSON.stringify(["session", event.client_id, event.session_id]),
           }
         : undefined,
+      observeLabels,
     ),
   );
   const url = buildCollectUrl(destination, {
@@ -314,6 +316,7 @@ export async function sendGoogle(
   opening?: Opening,
   verification?: Promise<AgentFields | undefined>,
   labelMemory?: LabelMemory,
+  observeLabels?: LabelObserver,
 ): Promise<Delivery> {
   const agentFields = verification ? await verification : undefined;
   const url = buildEventCollectUrl(
@@ -323,6 +326,7 @@ export async function sendGoogle(
     opening,
     agentFields,
     labelMemory,
+    observeLabels,
   );
   const request = url && collectRequest(url, agentFields !== undefined);
   if (!request || signal.aborted) return "dropped";
@@ -344,6 +348,7 @@ export async function sendDeniedPing(
   ip?: string,
   verification?: Promise<AgentFields | undefined>,
   labelMemory?: LabelMemory,
+  observeLabels?: LabelObserver,
 ) {
   const agentFields = verification ? await verification : undefined;
   function strip(value: unknown): unknown {
@@ -364,6 +369,7 @@ export async function sendDeniedPing(
       labelMemory
         ? { memory: labelMemory, key: JSON.stringify(["page", ping.page_id]) }
         : undefined,
+      observeLabels,
     ),
   );
   const first = ping.hit_index === 1;

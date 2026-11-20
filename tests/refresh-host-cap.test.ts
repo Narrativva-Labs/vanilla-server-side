@@ -35,7 +35,8 @@ it("refresh warnings track at most 128 hosts; a 129th new host is not logged", (
     at: 1900000000,
     reason: "directory_timeout",
   };
-  for (const callback of callbacks) callback(event);
+  for (const [i, callback] of callbacks.entries())
+    callback({ ...event, hostname: `h${i}.cap.example` });
   expect(warn).toHaveBeenCalledTimes(128);
   expect(warn).not.toHaveBeenCalledWith(
     "Agent verification refresh failed for h128.cap.example: directory_timeout",

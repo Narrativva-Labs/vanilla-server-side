@@ -1,15 +1,15 @@
 # Visitor Verdict server package
 
 - Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server
-- Source commit: `6938422dda698f550dffa3820f6c7e9467689c2f` (branch phase2-verifier).
-- Version: 0.3.0; archive: visitor-verdict-server-0.3.0.tgz.
-- SHA-512 (hex): `b93b4b45cfb77f0bc6777ca2915469575a5eb8cc89ef8d4023863fa13d99d5d281cad6c20bbbc336535ab191cc3a5fc3077b84aaa9bb51800654ed89e0f889c1`
-- npm integrity: `sha512-uTtLRc+3fwvGd3yikVRpV1peuMyJ741AI4Y/oT2Z1dKBytbCC7vDNlNasZHMOl/DB3uEqqm7UYAGVO2J4PiJwQ==`
+- Source commit: `a5ce30c870a9ea9a482e37db7b33e81ed52678ed` (branch phase2-verifier).
+- Version: 0.3.1; archive: visitor-verdict-server-0.3.1.tgz.
+- SHA-512 (hex): `783899d4231768030f8179addded124c37679f7210ebf3d0a0d96bcf3563e4ea868bbd66ceb314caee6929425c838e3fc07a9f3540576d1b5967e603be3eab0f`
+- npm integrity: `sha512-eDiZ1CMXaAMPgXmt3e0STDdnn3IQ6/PQoNlrzzVj5OqGi71mzrMUyu5pKUJcg44/wHqfNUBXbRtZZ+YDvj6rDw==`
 
 Rebuild: `cd server && npm run build && npm pack`.
-Copy the archive into vendor/, then run `npm install --offline ./vendor/visitor-verdict-server-0.3.0.tgz`.
-Verify bytes using `shasum -a 512 vendor/visitor-verdict-server-0.3.0.tgz`.
+Copy the archive into vendor/, then run `npm install --offline ./vendor/visitor-verdict-server-0.3.1.tgz`.
+Verify bytes using `shasum -a 512 vendor/visitor-verdict-server-0.3.1.tgz`.
 
-Version 0.3.0 replaces toAnalyticsFields with pure visitorLabels. Vanilla sends only
+Version 0.3.1 replaces toAnalyticsFields with pure visitorLabels. Vanilla sends only
 vv_type and vv_detail to GA4; browser traffic_class/traffic_phase remain collector
 inputs. No raw claims or diagnostic request data are exported in these labels.

@@ -1,3 +1,4 @@
+import { createAgentCounters } from "./agent-counters.js";
 import { createLabelMemory } from "./labels.js";
 import { createAgentLabeller, type AgentVerifierOptions } from "./agent-verification.js";
 import { validEventName } from "./mp-validation.js";
@@ -47,6 +48,7 @@ export function createApp(
     : undefined;
   const label = labeller?.label;
   const labelMemory = createLabelMemory();
+  const agentCounters = createAgentCounters();
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));
   const pings = config.deniedPings !== false;
   // LOG_EVENTS=on: one line per event with its name, the answer and Google's outcome only.
@@ -108,10 +110,13 @@ export function createApp(
   app.get("/health", async () => ({
     ok: true,
     google: status,
-    agentVerification: labeller?.status() ?? {
-      enabled: false,
-      directoriesLoaded: "0/0",
-      lastRefreshOk: null,
+    agentVerification: {
+      ...(labeller?.status() ?? {
+        enabled: false,
+        directoriesLoaded: "0/0",
+        lastRefreshOk: null,
+      }),
+      counters: agentCounters.counters,
     },
   }));
   // The tracker never changes while the process runs, so public requests do not touch the disk.
@@ -218,6 +223,7 @@ export function createApp(
           req.ip,
           label?.(req),
           labelMemory,
+          agentCounters.observe("pings", req.headers),
         );
         if (result === "sent") status.sent++;
         else status.errors++;
@@ -399,6 +405,7 @@ export function createApp(
           },
           verification,
           labelMemory,
+          agentCounters.observe("events", req.headers),
         );
         inFlight.set(event.event_id, delivery);
         let result: "sent" | "retry" | "dropped";

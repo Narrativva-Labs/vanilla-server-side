@@ -13,6 +13,7 @@ const reserved = new Set([
   "traffic_phase",
 ]);
 type Labels = ReturnType<typeof visitorLabels>;
+export type LabelObserver = (labels: Labels, verdict?: AgentFields, browserClass?: string) => void;
 const rank: Record<Labels["vv_type"], number> = {
   pending: 0,
   human: 1,
@@ -65,6 +66,7 @@ export function withLabels(
   params: Record<string, unknown>,
   verdict?: AgentFields,
   sticky?: { memory: LabelMemory; key: string },
+  observe?: LabelObserver,
 ): Record<string, unknown> {
   const browser = trafficFields(params.traffic_class, params.traffic_phase);
   let labels = visitorLabels({
@@ -73,6 +75,7 @@ export function withLabels(
     browserPhase: browser.traffic_phase,
   });
   if (sticky) labels = sticky.memory.apply(sticky.key, labels);
+  observe?.(labels, verdict, browser.traffic_class);
   return {
     ...labels,
     ...Object.fromEntries(Object.entries(params).filter(([key]) => !reserved.has(key))),

@@ -131,6 +131,17 @@ Only JavaScript-executing visitors that pass the obvious-bot filter reach this p
 `bot`/`crawl`/`spider` and `HeadlessChrome` UAs are dropped first, including the full
 ChatGPT-User UA with its `openai.com/bot` URL. Reverse DNS is disabled.
 
+Use `/health` → `agentVerification.counters` to **measure your own share of verified agents and bots**.
+It keeps anonymous integer totals in memory since process start (`since`, ISO UTC),
+with separate `events` and `pings` groups. Each has `total`, `byType` (all eight
+`vv_type` values), `byVerification`, and overlapping `evidence` counts for signature
+headers, known UA claim tokens and non-human browser classes. No visitor data is
+retained in these counters; restart resets them. They count labelled hits, including
+Google delivery failures and repeated labelled delivery attempts, rather than unique
+visitors or successful deliveries. Rejected, duplicate and obvious-bot-filtered hits
+are excluded. Browser labels and evidence presence remain measurable with verification
+off. See [counter definitions](INSTALL.md#anonymous-hit-counters) before comparing shares.
+
 Register both as **event-scoped custom dimensions**. `vv_type` is human, pending,
 agent_verified, agent_unverified, crawler_verified, bot_automation, bot_suspicious or
 bot_spoofed. Verified unknown purpose maps to pending; no role is inferred.
