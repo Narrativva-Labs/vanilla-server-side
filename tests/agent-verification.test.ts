@@ -10,6 +10,24 @@ vi.mock("visitor-verdict-server", async (importOriginal) => {
   return { ...actual, createVerifier: vi.fn(actual.createVerifier) };
 });
 
+const actual = await vi.importActual<typeof verdict>("visitor-verdict-server");
+const chatgpt = "https://chatgpt.com/.well-known/http-message-signatures-directory";
+/** Wrap the real verifier so a test can see and await the startup warm-up. */
+function spyOnWarm() {
+  const warm = vi.fn<verdict.AgentVerifier["warm"]>();
+  vi.mocked(verdict.createVerifier).mockImplementation((options) => {
+    const verifier = actual.createVerifier(options);
+    warm.mockImplementation((value) => verifier.warm(value));
+    return { verify: verifier.verify, warm, close: verifier.close };
+  });
+  return warm;
+}
+const fakeVerifier = (verify: verdict.AgentVerifier["verify"]): verdict.AgentVerifier => ({
+  verify,
+  warm: vi.fn(async () => ({ ok: [], failed: [] })),
+  close: vi.fn(),
+});
+
 const capture = JSON.parse(
   readFileSync(new URL("./fixtures/chatgpt-agent-2026-11-20.json", import.meta.url), "utf8"),
 ) as { requests: { method: string; path: string; ts: string; headers: Record<string, string> }[] };
@@ -29,9 +47,7 @@ const apps: ReturnType<typeof createApp>[] = [];
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
   vi.restoreAllMocks();
-  vi.mocked(verdict.createVerifier).mockImplementation(
-    (await vi.importActual<typeof verdict>("visitor-verdict-server")).createVerifier,
-  );
+  vi.mocked(verdict.createVerifier).mockImplementation(actual.createVerifier);
   vi.clearAllMocks();
   vi.useRealTimers();
 });
@@ -96,6 +112,7 @@ it("validates the optional flag and only requires the tracker host when enabled"
 
 it("off constructs no verifier, makes no verification fetch and adds no labels on either route", async () => {
   const construct = vi.spyOn(verdict, "createVerifier");
+  const warm = spyOnWarm();
   const fetcher = vi.fn();
   const { post, google, hit } = setup(false, { fetcher });
   for (const path of ["/e", "/d"]) {
@@ -104,18 +121,23 @@ it("off constructs no verifier, makes no verification fetch and adds no labels o
       expect(hit().has(`ep.${name}`)).toBe(false);
   }
   expect(construct).not.toHaveBeenCalled();
+  expect(warm).not.toHaveBeenCalled();
   expect(fetcher).not.toHaveBeenCalled();
   expect(google).toHaveBeenCalledTimes(2);
 });
 
 it("verifies every captured POST signature on both delivery paths and reuses one verifier/cache", async () => {
   const construct = vi.spyOn(verdict, "createVerifier");
-  const fetcher = vi.fn(async (url: string) => {
-    expect(url).toBe("https://chatgpt.com/.well-known/http-message-signatures-directory");
-    return new Response(directory, { headers: { "cache-control": "max-age=3600" } });
-  });
-  let clock = 0;
+  const warm = spyOnWarm();
+  const fetcher = vi.fn(async (url: string) =>
+    url === chatgpt
+      ? new Response(directory, { headers: { "cache-control": "max-age=3600" } })
+      : new Response(null, { status: 404 }),
+  );
+  let clock = Date.parse(signed[0]!.ts) / 1000;
   const { post, hit, google } = setup(true, { fetcher, now: () => clock });
+  const directories = verdict.defaultRegistry.filter((operator) => operator.directoryUrl).length;
+  expect(await warm.mock.results[0]!.value).toMatchObject({ ok: [chatgpt] });
   for (const request of signed) {
     clock = Date.parse(request.ts) / 1000;
     for (const path of ["/e", "/d"]) {
@@ -128,12 +150,17 @@ it("verifies every captured POST signature on both delivery paths and reuses one
   }
   expect(construct).toHaveBeenCalledTimes(1);
   expect(construct.mock.calls[0]![0].reverseDns).toEqual({ enabled: false });
-  expect(fetcher).toHaveBeenCalledTimes(1);
+  // Only the startup warm-up fetched: one request per registry directory, none per hit.
+  expect(fetcher).toHaveBeenCalledTimes(directories);
+  expect(fetcher.mock.calls.filter(([url]) => url === chatgpt)).toHaveLength(1);
 });
 
 it("labels unsigned visitors without network access and preserves the parameter limit", async () => {
+  const warm = spyOnWarm();
   const fetcher = vi.fn();
   const { post, hit } = setup(true, { fetcher });
+  await warm.mock.results[0]!.value;
+  fetcher.mockClear();
   const params = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`custom_${i}`, i]));
   for (const path of ["/e", "/d"]) {
     expect(
@@ -167,7 +194,7 @@ for (const failure of ["throw", "reject", "timeout"] as const) {
       if (failure === "reject") return Promise.reject(new Error("failure"));
       return new Promise<verdict.AgentVerdict>(() => {});
     });
-    vi.spyOn(verdict, "createVerifier").mockReturnValue({ verify });
+    vi.spyOn(verdict, "createVerifier").mockReturnValue(fakeVerifier(verify));
     const { post, hit, google } = setup();
     for (const path of ["/e", "/d"]) {
       expect((await post(path, {}, { agent_operator: "spoofed" })).statusCode).toBe(204);
@@ -178,6 +205,53 @@ for (const failure of ["throw", "reject", "timeout"] as const) {
     expect(verify.mock.calls).toHaveLength(2);
   });
 }
+
+it("starts one background warm-up with refresh-ahead when on, without blocking startup", async () => {
+  const warm = spyOnWarm();
+  const fetcher = vi.fn(() => new Promise<Response>(() => {}));
+  const { post, google } = setup(true, { fetcher });
+  expect(warm).toHaveBeenCalledTimes(1);
+  expect(warm).toHaveBeenCalledWith({ refreshAhead: true });
+  expect((await post("/e")).statusCode).toBe(204);
+  expect(google).toHaveBeenCalledTimes(1);
+  expect(warm).toHaveBeenCalledTimes(1);
+});
+
+for (const failure of ["throw", "reject"] as const)
+  it(`a warm-up ${failure} never breaks startup or hits`, async () => {
+    const verifier = fakeVerifier(async () => ({
+      claimed: { uaTokens: [], signatureAgents: [] },
+      verification: "no_signature",
+      reason: "signature_headers_absent",
+      signatures: [],
+    }));
+    vi.mocked(verifier.warm).mockImplementation(() => {
+      if (failure === "throw") throw new Error("failure");
+      return Promise.reject(new Error("failure"));
+    });
+    vi.spyOn(verdict, "createVerifier").mockReturnValue(verifier);
+    const { app, post, hit } = setup();
+    expect((await post("/e")).statusCode).toBe(204);
+    expect(hit().get("ep.agent_verification")).toBe("no_signature");
+    await app.close();
+    expect(verifier.close).toHaveBeenCalledTimes(1);
+  });
+
+it("app.close() stops the verifier's refresh timers and leaves no pending timers", async () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  const warm = spyOnWarm();
+  const fetcher = vi.fn(async (url: string) =>
+    url === chatgpt
+      ? new Response(directory, { headers: { "cache-control": "no-store" } })
+      : new Response(null, { status: 404 }),
+  );
+  const { app } = setup(true, { fetcher, now: () => Date.parse(signed[0]!.ts) / 1000 });
+  await warm.mock.results[0]!.value;
+  // The app's sweep interval plus one refresh or retry timer per directory.
+  expect(vi.getTimerCount()).toBeGreaterThan(1);
+  await app.close();
+  expect(vi.getTimerCount()).toBe(0);
+});
 
 it("bounds a stalled directory fetch and sends without labels", async () => {
   const fetcher = vi.fn(() => new Promise<Response>(() => {}));
@@ -214,7 +288,7 @@ it("passes raw headers, trusted client IP and the unchanged target to verificati
     reason: "signature_headers_absent",
     signatures: [],
   }));
-  vi.spyOn(verdict, "createVerifier").mockReturnValue({ verify });
+  vi.spyOn(verdict, "createVerifier").mockReturnValue(fakeVerifier(verify));
   const { post } = setup();
   expect((await post("/e?raw=%2f&x=1")).statusCode).toBe(204);
   expect(verify).toHaveBeenCalledWith({

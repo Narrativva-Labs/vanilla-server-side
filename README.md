@@ -129,8 +129,12 @@ existing 25-parameter limit. When enabled, client values for these names are ign
 
 Privacy: the verifier uses the client IP in memory only and exports only three
 low-cardinality strings. It fetches public operator key directories and IP lists
-from an allowlist and caches public verification material. Reverse DNS is disabled;
-request IPs, raw headers, and signature data are never added to analytics by this
+from an allowlist and caches public verification material. When enabled, the key
+directories are fetched once at startup and refreshed in the background shortly
+before they expire (one request per directory about every 4.5 minutes for
+directories sent with `no-store`), so a slow directory does not delay hits; while a
+refresh runs or fails, the last valid keys stay in use for up to 24 hours. Reverse
+DNS is disabled; request IPs, raw headers, and signature data are never added to analytics by this
 feature. Existing Google delivery and geography behavior is unchanged.
 
 In GA4, register these **event-scoped custom dimensions**, using the same names

@@ -41,9 +41,10 @@ export function createApp(
     bodyLimit: 64 * 1024,
     requestTimeout: 10000,
   });
-  const label = config.agentVerification
+  const labeller = config.agentVerification
     ? createAgentLabeller(config.trackerHost, verifierOptions)
     : undefined;
+  const label = labeller?.label;
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));
   const pings = config.deniedPings !== false;
   // LOG_EVENTS=on: one line per event with its name, the answer and Google's outcome only.
@@ -90,6 +91,7 @@ export function createApp(
   timer.unref();
   app.addHook("onClose", async () => {
     clearInterval(timer);
+    labeller?.close();
     seen.clear();
     inFlight.clear();
     revoked.clear();

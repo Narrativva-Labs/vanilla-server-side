@@ -25,7 +25,15 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
     deadlineMs: DEADLINE_MS,
     fetchTimeoutMs: FETCH_TIMEOUT_MS,
   });
-  return async (req: FastifyRequest): Promise<Partial<AgentFields>> => {
+  try {
+    // Fetch the operator key directories now and refresh them shortly before they expire, so the
+    // first signed hit and hits during a refresh do not wait for a slow directory. Startup never
+    // waits for this; on failure directories still load on demand. Logs nothing.
+    void Promise.resolve(verifier.warm({ refreshAhead: true })).catch(() => {});
+  } catch {
+    // Warm-up is optional.
+  }
+  const label = async (req: FastifyRequest): Promise<Partial<AgentFields>> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       // Also bound unexpected library failures or a verifier that never settles.
@@ -57,6 +65,15 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
       clearTimeout(timer);
     }
   };
+  /** Stop the background refresh timers; call from the app's onClose hook. */
+  const close = () => {
+    try {
+      verifier.close();
+    } catch {
+      // Nothing left to stop.
+    }
+  };
+  return { label, close };
 }
 
 /** Keep server labels ahead of custom parameters, inside the existing 25-field limit. */
