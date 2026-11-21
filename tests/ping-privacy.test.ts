@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { expect, it, vi } from "vitest";
 import { configFromEnv } from "../src/server/config.js";
 import { createApp } from "../src/server/app.js";
@@ -111,46 +113,37 @@ it("default /d forwards the browser UA", async () => {
     await app.close();
   }
 });
-it("native fetch defaults to node; the neutral override sends no runtime or browser identity", async () => {
-  // Intercept native undici after it constructs defaults, without opening a socket.
-  await fetch("data:,");
-  const key = Symbol.for("undici.globalDispatcher.1");
-  const globals = globalThis as unknown as Record<symbol, unknown>;
-  const original = globals[key];
-  const agents: (string | null)[] = [];
-  globals[key] = {
-    dispatch(
-      options: { headers: HeadersInit },
-      handler: {
-        onConnect(abort: () => void): void;
-        onHeaders(status: number, headers: string[], resume: () => void, statusText: string): void;
-        onComplete(trailers: string[]): void;
-      },
-    ) {
-      agents.push(new Headers(options.headers).get("user-agent"));
-      handler.onConnect(() => {});
-      handler.onHeaders(204, [], () => {}, "No Content");
-      handler.onComplete([]);
-      return true;
-    },
-  };
+it("the neutral override reaches the wire through native fetch; without it fetch would send its runtime default", async () => {
+  // Capture the headers Vanilla hands to fetch, then replay them with native fetch to a local listener.
+  const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+  const app = createApp({ ...site, deniedPingUserAgent: false }, google);
   try {
-    await fetch("http://example.invalid");
-    const app = createApp({ ...site, deniedPingUserAgent: false });
-    try {
-      await app.inject({
-        method: "POST",
-        url: "/d",
-        headers: { origin: site.siteOrigin, "user-agent": "Browser/private" },
-        payload: ping,
-      });
-    } finally {
-      await app.close();
-    }
-    expect(agents).toEqual(["node", "unknown"]);
+    await app.inject({
+      method: "POST",
+      url: "/d",
+      headers: { origin: site.siteOrigin, "user-agent": "Browser/private" },
+      payload: ping,
+    });
   } finally {
-    globals[key] = original;
+    await app.close();
   }
+  const sent = google.mock.calls[0]![1]?.headers;
+  const seen: (string | undefined)[] = [];
+  const server = createServer((req, res) => {
+    seen.push(req.headers["user-agent"]);
+    res.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { port } = server.address() as AddressInfo;
+    await fetch(`http://127.0.0.1:${port}/`, { method: "POST", headers: sent });
+    await fetch(`http://127.0.0.1:${port}/`, { method: "POST" });
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+  expect(seen[0]).toBe("unknown");
+  expect(seen[1]).not.toBe("Browser/private");
+  expect(seen[1]).toBeTruthy();
 });
 it.each(["truncated", "off"] as const)(
   "%s retains independent rate limits for real IPs sharing a /24",
