@@ -25,7 +25,7 @@ const labels = [
 ];
 for (let stronger = 0; stronger < labels.length; stronger++) {
   for (let weaker = 0; weaker < stronger; weaker++) {
-    if (stronger === 6 && weaker === 5) continue;
+    if ((stronger === 6 && weaker === 5) || (stronger === 7 && weaker >= 5)) continue;
     it(`retains rank ${stronger} over later rank ${weaker}`, () => {
       const memory = createLabelMemory();
       memory.apply("session", labels[stronger]!);

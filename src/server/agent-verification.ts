@@ -1,12 +1,13 @@
 import {
   createVerifier,
+  MemoryNonceStore,
   defaultRegistry,
   type AgentVerdict,
   type VerifierOptions,
 } from "visitor-verdict-server";
 import type { FastifyRequest } from "fastify";
 
-export type AgentFields = AgentVerdict;
+export type AgentFields = AgentVerdict & { proofExpiresAt?: number };
 // Test dependencies are supplied in code, never from the environment or a request.
 export type AgentVerifierOptions = Pick<VerifierOptions, "fetcher" | "now">;
 // Key directories and IP lists load in the background; a slow operator endpoint (about 0.9 s
@@ -29,6 +30,7 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
   const verifier = createVerifier({
     ...options,
     registry: defaultRegistry,
+    nonceStore: new MemoryNonceStore(10000, options.now),
     authorities: [host],
     reverseDns: { enabled: false },
     fetchTimeoutMs: FETCH_TIMEOUT_MS,
@@ -57,7 +59,10 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
         },
         { cacheOnly: true },
       );
-      return verdict;
+      // Anchor IP evidence to verification time, before any wait for session delivery.
+      return verdict.verification === "ip_match"
+        ? { ...verdict, proofExpiresAt: Date.now() / 1000 + 30 * 60 }
+        : verdict;
     } catch {
       return undefined;
     }

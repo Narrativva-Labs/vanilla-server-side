@@ -31,12 +31,12 @@ for (const count of [10000, 100000])
     expect(memory.apply(`session-${count - 1}`, weak, false).vv_type).toBe("bot_automation");
     if (count > capacity) expect(memory.apply("session-0", weak, false).vv_type).toBe("human");
     now = 500;
-    memory.apply(`session-${count - 1}`, weak); // renew only the most recent session
+    memory.apply(`session-${count - 1}`, weak); // inheriting traffic cannot renew evidence
     now = 1000;
     const sweepStart = performance.now();
     memory.sweep();
     const sweepMs = performance.now() - sweepStart;
-    expect(memory.size).toBe(1);
+    expect(memory.size).toBe(0);
     now = 1500;
     memory.sweep();
     expect(memory.size).toBe(0);
@@ -242,7 +242,7 @@ it("1000 concurrent signed requests through Vanilla's real labeller use the warm
   try {
     await turn();
     expect(labeller.status().directoriesLoaded).toBe(`${directories}/${directories}`);
-    const params = `("@authority" "@method" "signature-agent");created=${clock};expires=${clock + 60};keyid="${kid}";tag="web-bot-auth"`;
+    const params = `("@authority" "@method" "signature-agent");created=${clock};expires=${clock + 60};keyid="${kid}";tag="web-bot-auth";nonce="load-test"`;
     const base = `"@authority": tracker.example\n"@method": GET\n"signature-agent": "https://chatgpt.com"\n"@signature-params": ${params}`;
     const signature = sign(null, Buffer.from(base), pair.privateKey).toString("base64");
     const request = {
@@ -279,7 +279,8 @@ it("1000 concurrent signed requests through Vanilla's real labeller use the warm
     );
     await timer;
     samples.sort((a, b) => a - b);
-    expect(results.every((result) => result?.verification === "signature_valid")).toBe(true);
+    expect(results.filter((result) => result?.verification === "signature_valid")).toHaveLength(1);
+    expect(results.filter((result) => result?.reason === "replay")).toHaveLength(999);
     expect(fetches).toBe(directories);
     expect(samples.at(-1)).toBeLessThan(1500);
     console.log(

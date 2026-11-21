@@ -1,5 +1,5 @@
 import { createAgentCounters } from "./agent-counters.js";
-import { createLabelMemory } from "./labels.js";
+import { createLabelMemories } from "./labels.js";
 import { createAgentLabeller, type AgentVerifierOptions } from "./agent-verification.js";
 import { validEventName } from "./mp-validation.js";
 import {
@@ -30,15 +30,18 @@ export function createApp(
       logEvents?: boolean;
       agentVerification?: boolean;
       trackerHost?: string;
+      trustProxy?: string[];
+      healthToken?: string;
     },
   fetcher: typeof fetch = fetch,
   verifierOptions: AgentVerifierOptions = {},
 ) {
   const app = Fastify({
     logger: false,
-    // Production uses exactly one private Caddy hop; never expose the tracker port.
+    // Caddy uses a private Compose peer. Public direct peers cannot supply forwarded identity.
     trustProxy:
-      process.env.NODE_ENV === "production" ? (_address: string, hop: number) => hop === 0 : false,
+      config.trustProxy ??
+      (process.env.NODE_ENV === "production" ? ["loopback", "uniquelocal"] : false),
     // The browser keepalive limit. Google takes at most 16 KiB per hit; see collectRequest.
     bodyLimit: 64 * 1024,
     requestTimeout: 10000,
@@ -47,7 +50,7 @@ export function createApp(
     ? createAgentLabeller(config.trackerHost, verifierOptions)
     : undefined;
   const label = labeller?.label;
-  const labelMemory = createLabelMemory();
+  const { sessions: labelMemory, pages: pageLabelMemory } = createLabelMemories();
   const agentCounters = createAgentCounters();
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));
   const pings = config.deniedPings !== false;
@@ -67,6 +70,8 @@ export function createApp(
   const isRevoked = (key: string) => (revoked.get(key) ?? 0) > Date.now();
   const seen = new Map<string, number>();
   const inFlight = new Map<string, Promise<"sent" | "retry" | "dropped">>();
+  // Bootstrap continuity for concurrent first-visit hits before the signed cookie arrives.
+  // Browser client_id alone is not an authentication capability.
   const initialIdentities = new Map<
     string,
     { expires: number; identity: ReturnType<typeof serverIdentity> }
@@ -92,12 +97,14 @@ export function createApp(
     prune();
     limiter.sweep();
     labelMemory.sweep();
+    pageLabelMemory.sweep();
   }, 60_000);
   timer.unref();
   app.addHook("onClose", async () => {
     clearInterval(timer);
     labeller?.close();
     labelMemory.clear();
+    pageLabelMemory.clear();
     seen.clear();
     inFlight.clear();
     revoked.clear();
@@ -107,17 +114,21 @@ export function createApp(
     limiter.clear();
   });
   const status = { sent: 0, errors: 0, botsFiltered: 0, lastSuccess: null as string | null };
-  app.get("/health", async () => ({
+  app.get("/health", async (req) => ({
     ok: true,
     google: status,
-    agentVerification: {
-      ...(labeller?.status() ?? {
-        enabled: false,
-        directoriesLoaded: "0/0",
-        lastRefreshOk: null,
-      }),
-      counters: agentCounters.counters,
-    },
+    ...(!config.healthToken || req.headers["x-health-token"] === config.healthToken
+      ? {
+          agentVerification: {
+            ...(labeller?.status() ?? {
+              enabled: false,
+              directoriesLoaded: "0/0",
+              lastRefreshOk: null,
+            }),
+            counters: agentCounters.counters,
+          },
+        }
+      : {}),
   }));
   // The tracker never changes while the process runs, so public requests do not touch the disk.
   const tracker = readFile(new URL("../public/s.js", import.meta.url), "utf8");
@@ -222,7 +233,7 @@ export function createApp(
           fetcher,
           req.ip,
           label?.(req),
-          labelMemory,
+          pageLabelMemory,
           agentCounters.observe("pings", req.raw.rawHeaders),
         );
         if (result === "sent") status.sent++;

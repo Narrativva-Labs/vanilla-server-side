@@ -45,7 +45,7 @@ Reserved names, as answered by the validator:
 
 ## Current parameter limits
 
-The collect serializer retains the previous validator limits: 25 parameters including automatic fields, 200 items, standard item fields plus 27 custom fields, other strings cut to their first 100 characters as Google stores them, and page text trimmed to 256 UTF-8 bytes inside event parameters. `dl` and `dr` keep 1000 bytes and `dt` 300 on every hit, so long campaign values survive. Names and engagement values are checked before serialization. The other limits are conservative local ones, not a new measurement of collect's acceptance. Browser/model fields belonged to the retired MP body; collect forwards the browser User-Agent instead. `page_engagement` remains a custom event with `_et`.
+The collect serializer retains the previous validator limits: 25 parameters including automatic fields, 200 items, standard item fields plus 27 custom fields, other strings cut to their first 100 characters as Google stores them, and page text trimmed to 256 UTF-8 bytes inside event parameters. Regular `/e` hits keep up to 1000 bytes in `dl`/`dr` and 300 in `dt`; exit `page_engagement` hits trim all three to 256 bytes in the browser. Long campaign values can survive on regular hits. Names and engagement values are checked before serialization. The other limits are conservative local ones, not a new measurement of collect's acceptance. The browser still posts legacy browser/model/category fields to `/e`, alongside language/screen. The collector ignores those legacy fields and forwards language/screen and the incoming browser User-Agent to Google. `page_engagement` remains a custom event with `_et`.
 
 ## Stored lengths
 
@@ -59,7 +59,7 @@ Tested 2026-11-10, read in the BigQuery export on 2026-11-11: one visit sent str
 | `dr` 420 characters | 420 |
 | `dt` 400 characters | 400 |
 
-So Google keeps the first 100 characters of a longer parameter, counted in characters, not bytes. Vanilla used to drop such a parameter; it now cuts it the same way. `dl`, `dr` and `dt` were kept whole at these lengths; Vanilla still sends at most 1000, 1000 and 300 bytes. Whether standard reports show the same lengths: Not verified.
+So Google keeps the first 100 characters of a longer parameter, counted in characters, not bytes. Vanilla used to drop such a parameter; it now cuts it the same way. `dl`, `dr` and `dt` were kept whole at these lengths; regular `/e` hits send at most 1000, 1000 and 300 bytes, while exit `page_engagement` hits trim all three to 256 bytes. Whether standard reports show the same lengths: Not verified.
 
 ## Geography and device reach Realtime
 
@@ -164,7 +164,7 @@ Captured 2026-11-15 with the saved `gtag.js` copy and a denied default, hits ans
 
 - A real Google Ads click: whether the session shows `google / cpc` and the campaign, and whether a conversion is credited through the link between GA4 and Ads.
 - Whether a denied ping appears in standard reports, or feeds modeling. BigQuery stores pings (export of 2026-11-15); in one Realtime check that day, 4 purchase pings did not appear, while 5 full purchases did.
-- Whether [known bot exclusion](https://support.google.com/analytics/answer/9888366) applies to Measurement Protocol events. The page does not mention them.
+- Whether [known bot exclusion](https://support.google.com/analytics/answer/9888366) applies to server-forwarded `/g/collect` hits. The page does not mention them.
 
 ## All-collect comparison
 
@@ -279,4 +279,4 @@ Vanilla encodes the whole query with URLSearchParams. Within item values, a lite
 
 Small hits from the Google tag are a POST with an empty body. Captured 2026-11-10 (`gtag.js` in Chromium, hits answered locally): a purchase stayed in the URL up to about 1850 bytes (10 items) and moved to the body from about 2080 bytes (12 items). Then the URL keeps the shared fields (`v tid _p gcs gcd npa cid sid sct seg _s dl dt ul sr cu` and session flags) and a one-line body carries `en`, `ep.*`, `epn.*`, `pr1`…`prN` and `_et`. 200 items made a 23 KiB body in one request.
 
-Google accepts at most 16,384 bytes of body; the URL does not count. Measured 2026-11-10 with a placeholder Measurement ID: a body of 16,384 bytes gave 204, 16,385 bytes 413, also with a 1,900-byte URL. The Google tag sent live to a test property: 80 and 120 items (9.3 and 14.0 KiB) 204, 160 and 200 items (18.7 and 23.5 KiB) 413, so the purchase was lost. Vanilla splits the same way above 2000 URL bytes. Above 16 KiB it leaves out the last items until the body fits and logs how many, so the purchase, its value and transaction ID still arrive. It does not split a purchase into several hits. No collect backdating or `timestamp_micros` is used.
+Google accepts at most 16,384 bytes of body; the URL does not count. Measured 2026-11-10 with a placeholder Measurement ID: a body of 16,384 bytes gave 204, 16,385 bytes 413, also with a 1,900-byte URL. The Google tag sent live to a test property: 80 and 120 items (9.3 and 14.0 KiB) 204, 160 and 200 items (18.7 and 23.5 KiB) 413, so the purchase was lost. Vanilla splits the same way above 2000 URL bytes. Above 16 KiB it leaves out the last items until the body fits and logs how many, so the purchase, its value and transaction ID still arrive. It does not split a purchase into several hits. Raw JSON payloads over 64 KiB are dropped by the browser (or rejected by the collector for direct requests) before the 16 KiB item trimmer; this does not guarantee delivery of arbitrary oversized events. No collect backdating or `timestamp_micros` is used.

@@ -43,6 +43,11 @@ export function configFromEnv(env = process.env) {
     deniedPings: deniedPings === "on",
     agentVerification: agentVerification === "on",
     trackerHost,
+    healthToken: env.HEALTH_TOKEN || undefined,
+    trustProxy: (env.TRUST_PROXY ?? "loopback,uniquelocal")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
     logEvents: logEvents === "on",
     allowedEvents,
     cookieSecret,

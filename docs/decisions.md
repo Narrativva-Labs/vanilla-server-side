@@ -122,7 +122,7 @@ Keep undecided visitors' full events in memory. A later grant releases them with
 
 ## Trim page text at the measured limit (superseded)
 
-Superseded on 2026-11-10 with the move to `/g/collect`: Vanilla sends at most 1000 bytes of `page_location` and `page_referrer` and 300 bytes of `page_title`. The BigQuery export kept a 499-character `dl`, a 420-character `dr` and a 400-character `dt` whole (Tested 2026-11-10, export read 2026-11-11, [Stored lengths](measurement-protocol-notes.md#stored-lengths)). The 256-byte limit below was measured on the Measurement Protocol validator, which is no longer used.
+Superseded on 2026-11-10 with the move to `/g/collect`: regular `/e` hits send at most 1000 bytes of `page_location` and `page_referrer` and 300 bytes of `page_title`; exit `page_engagement` hits trim all three to 256 bytes in the browser. The BigQuery export kept a 499-character `dl`, a 420-character `dr` and a 400-character `dt` whole (Tested 2026-11-10, export read 2026-11-11, [Stored lengths](measurement-protocol-notes.md#stored-lengths)). The 256-byte limit below was measured on the Measurement Protocol validator, which is no longer used.
 
 **Decision:** `page_location`, `page_referrer` and `page_title` are cut to 256 UTF-8 bytes. Other strings over 100 characters are cut to 100 with a diagnostic, as Google stores them ([Stored lengths](measurement-protocol-notes.md#stored-lengths)).
 
@@ -134,7 +134,7 @@ Superseded on 2026-11-10 with the move to `/g/collect`: Vanilla sends at most 10
 
 ## Device fields
 
-**Decision:** every collect hit carries language and screen resolution when available and the incoming browser User-Agent header. The old MP device object is no longer sent.
+**Decision:** every collect hit carries language and screen resolution when available and the incoming browser User-Agent header. The old MP device object is no longer sent to Google. The browser still sends legacy browser/model/category fields plus language/screen to `/e`; the collector forwards language, screen and the incoming User-Agent header.
 
 **Source:** [collect notes](measurement-protocol-notes.md#gcollect).
 
@@ -150,7 +150,7 @@ Superseded on 2026-11-10 with the move to `/g/collect`: Vanilla sends at most 10
 
 ## Neutral names
 
-**Decision:** a default install uses a neutral random subdomain and the neutral paths `/s.js`, `/e` and `/p`.
+**Decision:** a default install uses a neutral random subdomain and the neutral paths `/s.js`, `/e`, `/p` and `/d`.
 
 **Alternative:** a descriptive name such as an analytics subdomain, or a vendor domain.
 

@@ -152,10 +152,13 @@ it("verifies every captured POST signature on both delivery paths and reuses one
     clock = Date.parse(request.ts) / 1000;
     for (const path of ["/e", "/d"]) {
       expect((await post(path, request.headers)).statusCode).toBe(204);
-      expect(detail(hit(), 1)).toBe("signature_valid");
-      expect(detail(hit(), 0)).toBe("openai");
-      expect(detail(hit(), 2)).toBe("user_directed");
-      expect(detail(hit(), 3)).toBe("signature_agent");
+      expect(detail(hit(), 1)).toBe(path === "/e" ? "signature_valid" : "signature_invalid");
+      expect(detail(hit(), 0)).toBe(path === "/e" ? "openai" : "none");
+      expect(hit().get("ep.vv_type")).toBe(path === "/e" ? "agent_verified" : "bot_spoofed");
+      if (path === "/e") {
+        expect(detail(hit(), 2)).toBe("user_directed");
+        expect(detail(hit(), 3)).toBe("signature_agent");
+      }
       expect(String(google.mock.calls.at(-1))).not.toContain(request.headers.signature);
     }
   }
@@ -440,4 +443,40 @@ it("removes vv_detail before vv_type to fit the 16 KiB body", () => {
   expect(Buffer.byteLength(request!.body!)).toBeLessThanOrEqual(16384);
   expect(body.get("ep.vv_type")).toBe("agent_verified");
   expect(body.has("ep.vv_detail")).toBe(false);
+});
+
+it("anchors IP memory expiry to proof time before delivery waits", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(1800000000000);
+  vi.mocked(verdict.createVerifier).mockReturnValue(
+    fakeVerifier(async () => ({
+      verification: "ip_match",
+      reason: "official_ip_range_match",
+      agent_purpose: "crawler",
+      claimed: { uaTokens: [], signatureAgents: [] },
+      signatures: [],
+      verified: { operator: "openai", method: "ip" },
+    })),
+  );
+  const { createAgentLabeller } = await import("../src/server/agent-verification.js");
+  const labeller = createAgentLabeller("tracker.example", {});
+  try {
+    const proof = await labeller.label({
+      method: "GET",
+      url: "/",
+      ip: "192.0.2.1",
+      raw: { rawHeaders: [] },
+    } as unknown as import("fastify").FastifyRequest);
+    expect(proof?.proofExpiresAt).toBe(1800001800);
+    vi.setSystemTime(1800000600000);
+    const { withLabels, createLabelMemory } = await import("../src/server/labels.js");
+    const memory = createLabelMemory();
+    withLabels({}, proof, { memory, key: "s" });
+    vi.setSystemTime(1800001800000);
+    expect(withLabels({ traffic_class: "human" }, undefined, { memory, key: "s" }).vv_type).toBe(
+      "human",
+    );
+  } finally {
+    labeller.close();
+  }
 });

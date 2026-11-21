@@ -90,7 +90,7 @@ using [offline conversion import](https://support.google.com/google-ads/answer/2
 or [enhanced conversions for leads](https://support.google.com/google-ads/answer/11021502).
 GA4's UI rules are calculated client-side and do not apply to Vanilla's server-to-server
 hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)). Settled purchases
-remain eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/docs/conversion-guidance.md);
+remain eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/docs/conversion-guidance.md);
 backend payment/fraud checks still apply.
 
 ## Limits
@@ -101,7 +101,7 @@ backend payment/fraud checks still apply.
 - **Safari kept the cookie for 7 days in the one run measured.** Safari 26.6.2 stored it for 7.0 days with the tracker on a different IPv4 /16 from the website, the case [WebKit's cap](https://webkit.org/blog/15697/private-browsing-2-0/) describes. A default install runs on a different server, so expect the same. In a return after 8 days the cookie had expired, so Vanilla counted a new user while the regular Google tag counted a returning one. The server renews the cookie on each delivered event; whether that keeps the identity for a visitor who returns within 7 days: Not verified. [Details](docs/technical-overview.md#safari).
 - **Content blockers.** Getting past them is a side benefit, not the purpose of this project. A neutral random subdomain and neutral paths lower the chance of a filter list match, but guarantee nothing: first-party does not mean unblockable. In one run, uBlock Origin Lite with default lists did not stop the tracker. Consent rules stay the same: full events require consent, and a refusal stops regular measurement, apart from cookieless event pings. [Details](docs/technical-overview.md#content-blockers)
 - **Bots.** A short User-Agent filter drops obvious bots before optional [operator verification](#ai-agent-verification-optional). Non-JavaScript fetchers never run the tracker. Browser-looking automation can pass; a missing signature does not establish humanity.
-- **Google accepts at most 16 KiB of event data in one hit, about 130 items.** Like the Google tag, a long event goes in the request body. Above 16 KiB Google refuses the hit (HTTP 413), and the Google tag loses the whole purchase. Vanilla leaves out the last items instead and logs how many, so revenue, transaction ID and the conversion arrive; the item reports miss those items.
+- **Google accepts at most 16 KiB of event data in one hit, about 130 items.** Like the Google tag, a long event goes in the request body. Above 16 KiB Google refuses the hit (HTTP 413), and the Google tag loses the whole purchase. Vanilla leaves out the last items instead and logs how many, so revenue, transaction ID and the conversion arrive; the item reports miss those items. Raw JSON payloads over 64 KiB are dropped by the browser (or rejected by the collector for direct requests) before the 16 KiB item trimmer; this does not guarantee delivery of arbitrary oversized events.
 - **No cross-domain identity, durable queue or backfill.** If your server is down, its events are lost; the regular tag is unaffected.
 - **Each open tab keeps its own consent state** until it reloads, so a refusal in one tab does not stop a second open tab at once.
 - **Property settings for sessions are not read.** Vanilla ends a session after 30 idle minutes and counts it as engaged after more than 10 seconds of engagement, the defaults of the Google tag. A property with a changed session timeout or engaged-session timer differs from its regular tag. [Details](docs/decisions.md#engaged-sessions-follow-the-google-tag)
@@ -125,7 +125,10 @@ Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a securi
 
 `AGENT_VERIFICATION=on` adds verified operator evidence to `/e` and `/d`; default off.
 GA4 receives only two classification event parameters: `vv_type` and `vv_detail`,
-with available browser labels even when server verification is off.
+on every eligible event, even with verification off and no browser detector.
+Without either source they start as `pending` / `none|-|-|-|-|-`. Labels count
+toward the 25-parameter limit after automatic/ecommerce fields and before custom
+site parameters; budget limits can remove them before delivery.
 It labels traffic without routing conversions. **unverified ≠ human**.
 Only JavaScript-executing visitors that pass the obvious-bot filter reach this path;
 `bot`/`crawl`/`spider` and `HeadlessChrome` UAs are dropped first, including the full
@@ -144,7 +147,7 @@ off. See [counter definitions](INSTALL.md#anonymous-hit-counters) before compari
 
 Register both as **event-scoped custom dimensions**. `vv_type` is human, pending,
 agent_verified, agent_unverified, crawler_verified, bot_automation, bot_suspicious or
-bot_spoofed. Verified unknown purpose maps to pending; no role is inferred.
+bot_spoofed. Verified unknown purpose maps to agent_verified with unknown retained in vv_detail; no user-directed role is inferred.
 `vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`,
 maximum 100 characters, missing parts `-`, unknown operator `none`.
 Example: `openai|signature_valid|user_directed|signature_agent|human|final`.

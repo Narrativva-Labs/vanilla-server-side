@@ -67,7 +67,7 @@ These cost time once. Each looked like a measurement bug and was not.
 | Consent on a later page | A visitor who lands with a campaign, decides nothing and accepts only on the next page loses the campaign in both properties: 6 of 6 sessions `(direct)` in GTM and in Vanilla, purchases equal. The next page's address no longer has the UTM parameters, and events wait only within their page | 2026-11-12, 2026-11-15 | Demo shop, Data API, BigQuery | |
 | Time before consent | Counted as the Google tag counts it (captured `_et=8057` after 8 s); a 6 s wait shows as 6 s in the report | 2026-11-10 | Capture, Data API | Same decision |
 | Purchases | Value, currency, transaction ID and items arrive; `~` in item text escaped as `~~` like the Google tag | 2026-11-09 | Data API, capture | [Collect wire format](measurement-protocol-notes.md#collect-wire-format) |
-| Large purchases | Google refuses event data over 16 KiB (about 130 items). The Google tag lost purchases of 160 and 200 items; Vanilla's arrived with full revenue and the first 140 items | 2026-11-10, export 2026-11-11 | Direct hits, live tags, BigQuery | Same section |
+| Large purchases | Google refuses event data over 16 KiB (about 130 items). The Google tag lost purchases of 160 and 200 items; Vanilla's arrived with full revenue and the first 140 items; current raw JSON limit is 64 KiB before trimming | 2026-11-10, export 2026-11-11 | Direct hits, live tags, BigQuery | Same section |
 | Text lengths | Google stores text parameters and item fields cut to 100 characters; `dl` 499, `dr` 420 and `dt` 400 characters kept whole | Export 2026-11-11 | Direct hits, BigQuery | [Stored lengths](measurement-protocol-notes.md#stored-lengths) |
 | Vanilla's own 100-character cut | Coupon of 130, item name of 176 and item brand of 140 characters sent through the tracker: Vanilla cut each to 100 and the export stores exactly 100, on both purchases of the run, with the campaign kept | Sent 2026-11-11, export 2026-11-11 | Live site, BigQuery | [Stored lengths](measurement-protocol-notes.md#stored-lengths) |
 | Session length (Google tag) | A session started 25 or 49 hours earlier, last hit 1 minute before, kept its `sid` and `sct` and got no `_ss`; 31 idle minutes started a new one. No maximum length | 2026-11-14 | Capture, cookies set by hand | [Session length](measurement-protocol-notes.md#session-length) |
@@ -93,7 +93,7 @@ What the rows above show when the same visits are measured by both. The direct c
 
 **Better in Vanilla**
 
-- **Large purchases.** Purchases of 160 and 200 items went over Google's 16 KiB body limit: the Google tag lost them whole, Vanilla kept full revenue, transaction ID and the first 140 items.
+- **Large purchases.** Purchases of 160 and 200 items went over Google's 16 KiB body limit: the Google tag lost them whole, Vanilla kept full revenue, transaction ID and the first 140 items. Raw JSON payloads over 64 KiB are dropped by the browser (or rejected by the collector for direct requests) before the 16 KiB item trimmer; this does not guarantee delivery of arbitrary oversized events.
 - **Filter lists.** None of 12 filter lists and 5 DNS lists matched the tracker; 4 and 4 matched the Google tag. This is a side effect of the setup, not a way around consent.
 - **A second check of consent.** On the company website a broken GTM setup measured undecided visitors in full; Vanilla read the banner itself and stayed correct. A difference between the two properties is how the error was found.
 

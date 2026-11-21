@@ -68,7 +68,7 @@ The tracker waits for analytics permission for full events and cookies. With den
 
 To send through Google's [EU collection endpoint](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), set `GA4_REGION=eu` in .env after installation and rebuild as described below. Leave it empty for the default endpoint.
 
-The tracker sends page views, final engagement time and the events named in `TRACKED_EVENTS`. Without that setting it uses the list in [.env.example](.env.example): common ecommerce events plus `generate_lead`, `sign_up`, `login` and `search`. To change it, set `TRACKED_EVENTS` in .env to a comma-separated list, which replaces the default, and rebuild as described below. Other events are ignored. `page_view` is automatic and must not be listed.
+The tracker sends page views, final engagement time and the events named in `TRACKED_EVENTS`. Omit that setting to use the list in [.env.example](.env.example): common ecommerce events plus `generate_lead`, `sign_up`, `login` and `search`. To change it, set `TRACKED_EVENTS` in .env to a comma-separated list, which replaces the default, and rebuild as described below. An empty `TRACKED_EVENTS=` fails startup; omit it to use defaults. Other events are ignored. `page_view` is automatic and must not be listed.
 
 Vanilla reads events straight from `dataLayer`, not from your GTM tags. It also reads `gtag("event", …)` commands, except those with `send_to`, which are meant for one destination (plugins for Google Ads or Merchant Center send their own `page_view` and `view_item` this way). An event must already carry its final GA4 name and parameters there: if the site pushes `order_complete` and a GTM tag renames it to `purchase`, the regular property gets a purchase and Vanilla gets nothing. A working example:
 
@@ -149,7 +149,7 @@ In the **second property**, open Reports -> Realtime. Then use DebugView with a 
 dataLayer.push({ event: "generate_lead", debug_mode: true });
 ```
 
-Send that only after the required consent, remove debug flags after testing, and check development/internal traffic filters if events are missing. Use an ordinary browser for this test: headless browsers and tools such as Lighthouse identify themselves in their User-Agent and are filtered as bots. campaign_details itself does not appear in DebugView. Ordinary reports take longer than Realtime and reports can differ from the regular tag. A successful /health delivery counter proves only Google's HTTP acceptance.
+Send that only after the required consent, remove debug flags after testing, and check development/internal traffic filters if events are missing. Use an ordinary browser for this test: headless browsers and tools such as Lighthouse identify themselves in their User-Agent and are filtered as bots. Ordinary reports take longer than Realtime and reports can differ from the regular tag. A successful /health delivery counter proves only Google's HTTP acceptance.
 
 ## Optional: import conversions into Google Ads
 
@@ -170,7 +170,7 @@ using [offline conversion import](https://support.google.com/google-ads/answer/2
 or [enhanced conversions for leads](https://support.google.com/google-ads/answer/11021502).
 GA4's UI rules are calculated client-side and do not apply to Vanilla's server-to-server
 hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)). Settled purchases
-remain eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/docs/conversion-guidance.md);
+remain eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/docs/conversion-guidance.md);
 backend payment/fraud checks still apply.
 
 ## What to disclose
@@ -191,8 +191,8 @@ Use this as a factual base for your privacy text, not as legal advice.
 - No events: check the script loads, consent callback, exact SITE_ORIGIN (including www), browser network /e requests and the second property's Measurement ID. If `botsFiltered` rises on /health, the test client identifies itself as automated.
 - Console warning "No resolved analytics consent": the tracker found neither a Google consent command nor a supported banner. It stays silent while a supported banner is waiting for the visitor.
 - Cookie absent after grant: check both hosts are HTTPS and COOKIE_DOMAIN covers both; use sibling hosts under your own domain.
-- HTTP 429: the collector limits each IP to 1,200 requests/minute and 100 simultaneous deliveries, with 300 simultaneous deliveries globally. Check for repeated script installs or an event loop. Ordinary events are sent one at a time and retried up to three times; cookieless event pings and final engagement time are never retried. Several event pings can be in flight at once. Measured on the live server on 2026-11-08 with real Chromium: 10 visitors at once behind one address, 0 refusals; with the earlier limit of 10, 5 visitors at once lost 4 of 14 pings to 429. With 30 simultaneous deliveries per IP, 28 visitors at once lost the ends of their funnels (2026-11-10), so the limit was raised on 2026-11-12.
-- Google errors: run sudo docker compose logs --tail=50 tracker. Check outbound HTTPS and the Measurement ID. Logs omit visitor details. Google refuses more than 16 KiB of event data (about 130 items); the log then says how many items were left out of the purchase. To follow single events, set `LOG_EVENTS=on` in .env and rebuild: each event writes one line with its name, the HTTP answer and the outcome at Google (`sent`, `retry`, `dropped`, `duplicate`, `bot`, `withdrawn`), and nothing about the visitor. Turn it off again when done. HTTP acceptance does not prove processing: verify the event and session source in the second property.
+- HTTP 429: the collector limits each IP to 1,200 requests/minute and 100 simultaneous deliveries, with 300 simultaneous deliveries globally. Check for repeated script installs or an event loop. Ordinary events are sent one at a time with up to three attempts (one initial send and two retries); cookieless event pings and final engagement time are never retried. Several event pings can be in flight at once. Measured on the live server on 2026-11-08 with real Chromium: 10 visitors at once behind one address, 0 refusals; with the earlier limit of 10, 5 visitors at once lost 4 of 14 pings to 429. With 30 simultaneous deliveries per IP, 28 visitors at once lost the ends of their funnels (2026-11-10), so the limit was raised on 2026-11-12.
+- Google errors: run sudo docker compose logs --tail=50 tracker. Check outbound HTTPS and the Measurement ID. Logs omit visitor details. Google refuses more than 16 KiB of event data (about 130 items); the log then says how many items were left out of the purchase. Raw JSON payloads over 64 KiB are dropped by the browser (or rejected by the collector for direct requests) before the 16 KiB item trimmer; this does not guarantee delivery of arbitrary oversized events. To follow individual `/e` requests, set `LOG_EVENTS=on` in .env and rebuild: each writes one line with its name (or `?`), HTTP answer and outcome (`sent`, `retry`, `dropped`, `duplicate`, `bot`, `withdrawn`, or `-` if rejected before delivery), without visitor values. Turn it off again when done. HTTP acceptance does not prove processing: verify the event and session source in the second property.
 - Docker package conflict on an existing machine: follow the official Docker instructions for [Ubuntu](https://docs.docker.com/engine/install/ubuntu/) or [Debian](https://docs.docker.com/engine/install/debian/) before rerunning; use a fresh VPS if unsure.
 
 ## Updates and maintenance
@@ -213,10 +213,24 @@ If the VPS goes down, the original GTM measurement continues. Vanilla events dur
 
 The project does not provide a hosted service or legal compliance guarantee. Document what you collect, including IP forwarding for geography after consent, and select consent rules appropriate to your site.
 
+## Custom reverse proxy
+
+Outside Docker, set `NODE_ENV=production` to enable forwarding-header handling.
+Forwarding headers are honoured only from proxy peers allowed by `TRUST_PROXY`
+(default `loopback,uniquelocal`; see `TRUST_PROXY` under Agent verification). A public
+peer cannot set the client address. Sanitize forwarding headers at the proxy, keep the
+collector port private, and narrow `TRUST_PROXY` to your proxy's address when other
+private hosts can reach the collector. Without production mode, req.ip is the direct peer address.
+Optional Node listener settings are PORT (default 3000, integer 1–65535) and HOST
+(default 0.0.0.0). These do not update the default Compose healthcheck or Caddy upstream.
+
 ## AI agent verification (optional)
 
 With `AGENT_VERIFICATION=on`, /e and /d label verified operator evidence from
-Visitor Verdict. The default is off. This labels traffic; it does not itself
+Visitor Verdict. The default is off. Every eligible event gets vv_type/vv_detail,
+even with verification off and no browser detector: pending / none|-|-|-|-|-.
+They count toward the 25-parameter limit after automatic/ecommerce fields and before
+custom site parameters; budget limits can remove them before delivery. This labels traffic; it does not itself
 withhold anything or change consent. **unverified ≠ human**.
 
 Only JavaScript-executing visitors that pass the obvious-bot filter reach verification.
@@ -229,6 +243,12 @@ other signing configurations have no captured live request here. See the
 
 ### Operator capabilities
 
+**Kimi registry evidence (checked 2026-11-21):** Kimi publishes identical IP prefixes
+for `kimi-user`, `kimibot` and `kimi-searchbot`. An `ip_match` therefore proves
+only the operator; purpose comes from the claimed UA token selecting the feed
+and its purpose mapping. It does not independently verify that product role.
+
+
 Capabilities below describe the bundled 0.3.1 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
@@ -240,19 +260,22 @@ A published IP match is network evidence, not cryptographic request authenticati
 | Published IP/SAIL feeds | OpenAI fetchers/crawlers; Google mapped agent/fetcher/crawler tokens; Anthropic (Claude-Agent uses SAIL); Perplexity; DuckAssistBot; Apple; Microsoft; Mistral User/Index; Kimi; Common Crawl; Seznam; Naver | No additional signature captures |
 | Configured static IPs | Kagi | No |
 | rDNS only, inactive here | Baidu, Petal, Yandex, Amazon Ads | No |
-| Claim only | Amazon crawler family, You.com, Sogou, ByteDance, DeepSeek, Zhipu, Shenma, 360, Diffbot, Timpi; Mistral Training | No |
+| Claim only | Meta, Amazon crawler family, You.com, Sogou, ByteDance, DeepSeek, Zhipu, Shenma, 360, Diffbot, Timpi; Mistral Training; Microsoft AdIdxBot/BingPreview/MicrosoftPreview/BingVideoPreview | No |
 
 A recognized UA or an accessible key directory alone verifies no request. Signature
 verification needs a valid covered request and usable cached key; IP evidence needs
 a matching token and trusted source IP. [Server documentation](https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server#operator-coverage-and-sources-checked-2026-11-20)
 tracks the detailed sources and limits.
 
-`TRACKER_DOMAIN` is the trusted external host, without a scheme/path; a port is
-allowed, for example `tracker.example:8443`. Both routes use cache-only verification:
+`TRACKER_DOMAIN` is the trusted external host, without a scheme/path. Use a bare
+hostname with the default Caddy/Compose setup, which publishes only ports 80/443.
+The Node collector accepts a port (for example `tracker.example:8443`) behind a
+custom proxy; adapt Caddy and Compose port publishing if using that configuration. Both routes use cache-only verification:
 a missing, expired or unavailable cache uses the available claim/browser evidence and starts
 one background refresh. There is no wait for operator I/O or later backfill.
 Key directories warm once at startup and refresh in the background (about every
-270 seconds for no-store). Failed refreshes retain valid cached data up to the hard
+270 seconds for no-store). Background directory/IP-feed fetches use a 3000 ms
+per-fetch timeout, overriding the library default of 1000 ms. Failed refreshes retain valid cached data up to the hard
 24-hour age limit, always honouring JWK validity/removal. Reverse DNS is disabled.
 
 Startup prints `Agent verification on for <host>`. `/health` exposes
@@ -292,8 +315,8 @@ Data API names: `customEvent:vv_type` and `customEvent:vv_detail`.
 | vv_type | Meaning |
 |---|---|
 | human | Human-looking browser, without stronger evidence; masked automation can look the same |
-| pending | No browser/evidence yet, or verified operator whose product purpose is unknown |
-| agent_verified | Verified signature/IP evidence with documented user_directed purpose |
+| pending | No browser class or qualifying server evidence yet |
+| agent_verified | Verified signature/IP evidence with user_directed or unknown purpose; vv_detail distinguishes them |
 | crawler_verified | Verified signature/IP evidence with documented crawler purpose |
 | bot_automation | Hard browser automation evidence |
 | agent_unverified | Browser declared_agent or an unverified UA/signature-agent claim |
@@ -302,9 +325,9 @@ Data API names: `customEvent:vv_type` and `customEvent:vv_detail`.
 
 Derivation uses the first matching rule: invalid signature; verified user_directed /
 crawler / unknown purpose; automated browser; declared browser or server claim;
-suspicious browser; human browser; pending. Verified unknown purpose stays pending:
-identity is established, but neither agent nor crawler purpose is inferred, and it is
-never called unverified. A verified operator may still submit spam.
+suspicious browser; human browser; pending. Verified unknown purpose yields agent_verified:
+identity is established and unknown is preserved in vv_detail, without inferring
+a user-directed role. A verified operator may still submit spam.
 
 `vv_detail` is an operator-first string, at most 100 characters:
 `operator|verification|purpose|claim|browser_class|browser_phase`.
@@ -356,8 +379,8 @@ from these labels.
 ### Enable in five steps
 
 1. Edit .env: set `AGENT_VERIFICATION=on` and `TRACKER_DOMAIN=tracker.example`
-   (use your external host; it may include a port, without a scheme/path).
-2. Rebuild: `sudo docker compose up -d --build tracker`.
+   (use a bare hostname for the default Caddy/Compose setup, without a scheme/path).
+2. Rebuild: `sudo docker compose up -d --build tracker` (use `sudo docker compose up -d --build` if TRACKER_DOMAIN also changed, to recreate Caddy with its new host).
 3. Check startup output for `Agent verification on for <host>`.
 4. Check `https://<host>/health`: enabled must be true; directoriesLoaded moves from
    0/N as warm-up finishes. lastRefreshOk=false or n<N calls for checking egress and
@@ -388,9 +411,10 @@ totals; after a restart start a new measurement interval.
 `events` counts full `/e` events; `pings` counts cookieless `/d` pings separately.
 Each group contains:
 
-- `total`: hits that reached server labelling, once per delivery attempt. This includes
-  Google delivery failures; retries that reach labelling count again. Duplicate events,
-  rejected requests, disabled pings and obvious bots filtered before labelling do not count.
+- `total`: deliverable hits whose outgoing request still carries vv_type, once per
+  delivery attempt. Google delivery failures count; retries that reach this point count
+  again. Duplicate events, rejected requests, disabled pings, obvious bots filtered
+  before labelling, oversized dropped hits and hits whose vv_type was trimmed do not count.
 - `byType`: one counter for each of the eight `vv_type` values, after sticky session/page
   evidence is applied. These sum to `total`.
 - `byVerification`: signature_valid, ip_match, signature_invalid, no_signature, none,
@@ -415,3 +439,13 @@ Only the timestamp and aggregate integers are exposed under `counters`.
 Since verifier 0.3.1, refresh callbacks carry the public endpoint hostname (no URL), and
 `serverAgentTokens` exposes the claim-token list, so presence counting uses the same tokens
 as verification.
+
+Agent verification diagnostics can be restricted by setting `HEALTH_TOKEN`. When set,
+`GET /health` includes `agentVerification` only with the `X-Health-Token` header matching
+that value. Liveness and Google status remain available, so the Compose health check
+needs no token. With the variable unset, the response is unchanged.
+
+`TRUST_PROXY` accepts a comma-separated list of proxy IP addresses, CIDRs, or Fastify
+range names. The default is `loopback,uniquelocal`, including private Docker bridge
+peers used by Caddy in Compose. A public peer cannot assert the forwarded client IP.
+Set an empty value to trust no proxies, or narrow the list to your proxy network.

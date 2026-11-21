@@ -40,10 +40,14 @@ A second, independent GA4 pipeline runs next to the regular tag. It exists for c
 | Browser tracker, queue, retries | `src/client/tracker.ts` |
 | Consent observer and banner adapters | `src/client/consent.ts`, `src/client/cmp/` |
 | Collector routes and order of checks | `src/server/app.ts` |
+| Agent verification | `src/server/agent-verification.ts` |
+| Combined labels and sticky evidence | `src/server/labels.ts` |
+| Aggregate hit counters | `src/server/agent-counters.ts` |
+| Browser classification snapshot | `src/client/traffic.ts` |
 | Identity and signed cookie | `src/server/identity.ts` |
 | Every Google wire-format decision | `src/server/google.ts`, `src/server/mp-validation.ts` |
 
-The one runtime dependency is Fastify. There is no database.
+Runtime dependencies are Fastify and vendored visitor-verdict-server (which depends on structured-headers). There is no database.
 
 ## Data flow
 
@@ -247,7 +251,7 @@ Limits, stated plainly:
 - It only stops clients that say what they are. A bot with a browser User-Agent passes, and so does an empty header.
 - It runs on a list, so new names pass until added, and a rare legitimate client could match.
 - Your own headless test tools are filtered too.
-- Google [excludes known bots](https://support.google.com/analytics/answer/9888366) from its data. Whether that applies to MP events: Not verified, so this filter does not rely on it.
+- Google [excludes known bots](https://support.google.com/analytics/answer/9888366) from its data. Whether that applies to server-forwarded `/g/collect` hits: Not verified, so this filter does not rely on it.
 
 ## EU endpoint
 
