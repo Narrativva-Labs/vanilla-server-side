@@ -34,6 +34,53 @@ if (script && !win.__vanillaGA) {
     visibleTime = 0;
     return elapsed;
   }
+  // Opt-in data-vv-wait-ms: the first hits wait at most this long for the Visitor Verdict class.
+  const vvWait = Math.min(1000, Math.max(0, Math.floor(Number(script.dataset.vvWaitMs)) || 0));
+  const vvReady = () => "traffic_class" in readTraffic(window);
+  let vvWaiting = false;
+  let vvChecking = false;
+  function vvCheck() {
+    if (!vvWaiting || vvChecking) return;
+    vvChecking = true;
+    try {
+      if (vvReady()) {
+        vvWaiting = false;
+        tracker.release();
+      }
+    } finally {
+      vvChecking = false;
+    }
+  }
+  /** Listens for the detector's publication: its dataLayer event, and a bounded poll of the global. */
+  function vvHold() {
+    vvWaiting = true;
+    try {
+      const name = (window as { visitorVerdictConfig?: { dataLayerName?: unknown } })
+        .visitorVerdictConfig?.dataLayerName;
+      const other =
+        typeof name === "string" && name !== "dataLayer"
+          ? (window as unknown as Record<string, { push?: unknown } | undefined>)[name]
+          : undefined;
+      const push = other?.push;
+      if (typeof push === "function")
+        other!.push = function (this: unknown, ...items: unknown[]) {
+          try {
+            return push.apply(this, items);
+          } finally {
+            vvCheck();
+          }
+        };
+    } catch {
+      // A missing, replaced or hostile layer leaves the poll and the deadline.
+    }
+    let polls = Math.ceil(vvWait / 50);
+    const poll = () => {
+      vvCheck();
+      if (--polls <= 0) vvWaiting = false;
+      if (vvWaiting) window.setTimeout(poll, 50);
+    };
+    window.setTimeout(poll, 50);
+  }
   const tracker = createTracker(
     new URL("./e", script.src).href,
     {
@@ -47,6 +94,8 @@ if (script && !win.__vanillaGA) {
       }),
       engagement,
       traffic: () => readTraffic(window),
+      ready: vvReady,
+      hold: vvHold,
       href: () => location.href,
       referrer: () => previousPage ?? document.referrer,
       now: Date.now,
@@ -60,6 +109,7 @@ if (script && !win.__vanillaGA) {
     new Set((script.dataset.events ?? "").split(",")),
     true,
     script.dataset.pings !== "off",
+    vvWait,
   );
   const observer = createConsentObserver();
   const adapters = [
@@ -120,6 +170,8 @@ if (script && !win.__vanillaGA) {
   const push = layer.push;
   layer.push = function (...items: unknown[]) {
     try {
+      // The detector publishes its global before this push.
+      vvCheck();
       items.forEach(process);
     } finally {
       return push.apply(this, items);

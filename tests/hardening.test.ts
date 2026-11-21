@@ -164,6 +164,7 @@ it("first-visit parallel events and the issued cookie keep one analytics identit
         name,
         params: {},
         client_id: "123.456",
+        bootstrap_token: "11111111-1111-4111-8111-111111111111",
         session_id: 1,
         session_started_ms: now,
         session_expires_ms: now + 1800000,

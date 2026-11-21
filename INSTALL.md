@@ -232,6 +232,14 @@ Forwarding headers are honoured only from proxy peers allowed by `TRUST_PROXY`
 peer cannot set the client address. Sanitize forwarding headers at the proxy, keep the
 collector port private, and narrow `TRUST_PROXY` to your proxy's address when other
 private hosts can reach the collector. Without production mode, req.ip is the direct peer address.
+Fastify uses `X-Forwarded-For`; for a single host nginx proxy, set
+`proxy_set_header X-Forwarded-For $remote_addr;`. With host nginx forwarding to a
+Docker-published `127.0.0.1:PORT`, the container typically sees the Docker bridge
+gateway as its peer. That address is covered by `uniquelocal`, not `loopback`.
+When narrowing `TRUST_PROXY`, use the actual bridge gateway/subnet rather than
+`127.0.0.1`. Without production mode or an explicit `TRUST_PROXY`, forwarding
+headers are not trusted; `X-Real-IP` alone does not set `req.ip`.
+
 Optional Node listener settings are PORT (default 3000, integer 1–65535) and HOST
 (default 0.0.0.0). These do not update the default Compose healthcheck or Caddy upstream.
 
@@ -260,7 +268,7 @@ only the operator; purpose comes from the claimed UA token selecting the feed
 and its purpose mapping. It does not independently verify that product role.
 
 
-Capabilities below describe the bundled 0.3.1 registry, before
+Capabilities below describe the bundled 0.3.4 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
@@ -290,7 +298,7 @@ per-fetch timeout, overriding the library default of 1000 ms. Failed refreshes r
 24-hour age limit, always honouring JWK validity/removal. Reverse DNS is disabled.
 
 Startup prints `Agent verification on for <host>`. `/health` exposes
-`agentVerification: { enabled, directoriesLoaded: "n/N", lastRefreshOk, counters }`.
+`agentVerification: { enabled, directoriesLoaded: "n/N", lastRefreshOk, counters, replay }`.
 A loaded document is not proof of an active key. Last outcome is null before any
 refresh completes and otherwise describes the most recent directory/feed refresh.
 Directory, IP-list and SAIL refresh failures warn at most once per failing endpoint hostname per ten minutes, with only
@@ -318,6 +326,34 @@ values are dropped. The browser class works with verification off and is spoofab
 The detector uses minimal sessionStorage; disclose it before installing. Leave its
 own traffic_class event out of TRACKED_EVENTS. Early hits may lack a browser class.
 
+### Waiting for the first class
+
+By default (no attribute, or `0`) nothing waits: a hit sent before the detector has run reaches
+GA4 as `pending`, and later hits cannot change it. When the detector loads after s.js, typically
+from a GTM tag, add `data-vv-wait-ms` to the script tag:
+
+```html
+<script async src="https://kx7qpa.example.com/s.js" data-vv-wait-ms="1000"></script>
+```
+
+The first hits of the page then wait until the detector publishes its initial class
+(window.__visitorVerdict, announced by its traffic_class event on its configured dataLayer) or
+until the given time has passed, whichever comes first. Values are whole milliseconds, capped at
+1000; invalid or negative values mean 0. The detector's final phase is never awaited.
+
+The trade-off: collection of the first page view, and of events that would overtake it, starts up
+to that many milliseconds later. Page rendering, the cookie banner and the site's own tags are not
+delayed. The time counts only from the moment a hit could otherwise be sent, so a pending consent
+wait (`wait_for_update`) runs first and is not extended. Consent is read when the hits leave,
+event times stay the time of the event, and deletion requests after a refusal are never held.
+Leaving or hiding the page releases held hits at once with keepalive requests, also denied
+pings; a very short visit can still lose them if the browser ends the page first. Later pages
+of the same document (SPA navigation, back/forward cache) do not wait again.
+
+Recommended: `1000` only when the detector is loaded from GTM after the tracker. Leave it unset
+without a detector, where the first hits would always wait the full time, and when the detector
+loads before s.js with a plain script tag, where its class is already there and nothing waits.
+
 ## Analyst value dictionary
 
 Register exactly **vv_type** and **vv_detail** as **event-scoped custom dimensions**.
@@ -332,7 +368,7 @@ Data API names: `customEvent:vv_type` and `customEvent:vv_detail`.
 | bot_automation | Hard browser automation evidence |
 | agent_unverified | Browser declared_agent or an unverified UA/signature-agent claim |
 | bot_suspicious | Soft browser evidence |
-| bot_spoofed | Invalid server signature; strongest classification |
+| bot_spoofed | Invalid server signature; active verified sticky evidence can take precedence |
 
 Derivation uses the first matching rule: invalid signature; verified user_directed /
 crawler / unknown purpose; automated browser; declared browser or server claim;
@@ -373,10 +409,17 @@ an operator dimension with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`.
 
 Every later hit retains the strongest vv_type observed in that session. Ranks are
 pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4,
-crawler_verified=agent_verified=5, bot_spoofed=6; the earliest classification wins ties.
+bot_spoofed=4.5, crawler_verified=agent_verified=5; fresh equal-rank evidence replaces
+the earlier type and operator.
 The detail describes the current hit, with the last known operator carried forward.
-This is immediate memory-only state, bounded to 10,000 LRU entries with 30 minutes
-of inactivity; full events use client_id + session_id, denied pings use page_id only.
+This is immediate memory-only state with separate 10,000-entry LRU budgets for
+full events (client_id + session_id) and denied pings (page_id + client_id). Pending
+never enters memory. Fresh evidence gets at most 30 minutes, capped to proof expiry
+for verified evidence; same-type/same-operator renewal never shortens active expiry.
+A different verified operator gets only its own proof lifetime. Inherited lower-ranked
+hits do not extend expiry. A detected replay overrides active verified evidence for
+that hit without erasing it; malformed headers and other invalid signatures can
+inherit active verified evidence.
 No IP is retained in this state. State is cleared on server close/restart, and eviction
 or expiry starts fresh. Nothing waits for later evidence and no hit is backfilled.
 Missing labels after budget trimming or on historical hits are missing coverage.

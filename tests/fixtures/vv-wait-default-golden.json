@@ -1,0 +1,325 @@
+{
+  "granted, events, SPA navigation and exit": {
+    "requests": [
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"132894454741213\",\"hit_index\":1,\"event_id\":\"17156075-1715-4715-8075-171560751715\",\"name\":\"page_view\",\"client_id\":\"2654435761.1795262400\",\"bootstrap_token\":\"3c6ef362-3c6e-4c6e-8362-3c6ef3623c6e\",\"session_id\":240408329444006,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264200000,\"timestamp_ms\":1795262400000,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"engagement_time_msec\":0}}",
+        "signal": "signal"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"132894454741213\",\"hit_index\":2,\"event_id\":\"b54cda26-b54c-454c-8a26-b54cda26b54c\",\"name\":\"view_item\",\"client_id\":\"2654435761.1795262400\",\"bootstrap_token\":\"3c6ef362-3c6e-4c6e-8362-3c6ef3623c6e\",\"session_id\":240408329444006,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264201200,\"timestamp_ms\":1795262401200,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":2,\"currency\":\"EUR\",\"items\":[{\"item_id\":\"a\"}],\"engagement_time_msec\":1200}}",
+        "signal": "signal"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"132894454741213\",\"hit_index\":3,\"event_id\":\"538453d7-5384-4384-83d7-538453d75384\",\"name\":\"generate_lead\",\"client_id\":\"2654435761.1795262400\",\"bootstrap_token\":\"3c6ef362-3c6e-4c6e-8362-3c6ef3623c6e\",\"session_id\":240408329444006,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264201200,\"timestamp_ms\":1795262401200,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":0}}",
+        "signal": "signal"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"132894454741213\",\"hit_index\":4,\"event_id\":\"f1bbcd88-f1bb-41bb-8d88-f1bbcd88f1bb\",\"name\":\"page_engagement\",\"client_id\":\"2654435761.1795262400\",\"bootstrap_token\":\"3c6ef362-3c6e-4c6e-8362-3c6ef3623c6e\",\"session_id\":240408329444006,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264204200,\"timestamp_ms\":1795262404200,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"engagement_time_msec\":3000}}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"158275034779635\",\"hit_index\":1,\"event_id\":\"2e2ac0ea-2e2a-4e2a-80ea-2e2ac0ea2e2a\",\"name\":\"page_view\",\"client_id\":\"2654435761.1795262400\",\"bootstrap_token\":\"3c6ef362-3c6e-4c6e-8362-3c6ef3623c6e\",\"session_id\":240408329444006,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264204200,\"timestamp_ms\":1795262404200,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/b\",\"page_referrer\":\"https://shop.example/?utm_source=test\",\"page_title\":\"Shop\",\"engagement_time_msec\":0}}",
+        "signal": "signal"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"158275034779635\",\"hit_index\":2,\"event_id\":\"cc623a9b-cc62-4c62-8a9b-cc623a9bcc62\",\"name\":\"page_engagement\",\"client_id\":\"2654435761.1795262400\",\"bootstrap_token\":\"3c6ef362-3c6e-4c6e-8362-3c6ef3623c6e\",\"session_id\":240408329444006,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264206200,\"timestamp_ms\":1795262406200,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/b\",\"page_referrer\":\"https://shop.example/?utm_source=test\",\"page_title\":\"Shop\",\"engagement_time_msec\":2000}}"
+      }
+    ],
+    "timeouts": [2000],
+    "intervals": [500]
+  },
+  "denied default waiting for an update, then pings and exit": {
+    "requests": [
+      {
+        "url": "https://kx7qpa.example.com/d",
+        "method": "POST",
+        "credentials": "omit",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":1,\"name\":\"page_view\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/d",
+        "method": "POST",
+        "credentials": "omit",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":2,\"name\":\"generate_lead\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":0},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/d",
+        "method": "POST",
+        "credentials": "omit",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":3,\"name\":\"purchase\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"transaction_id\":\"T1\",\"value\":9,\"currency\":\"EUR\",\"engagement_time_msec\":600},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+      }
+    ],
+    "timeouts": [500, 2000],
+    "intervals": [500]
+  },
+  "refusal then grant on the same page": {
+    "requests": [
+      {
+        "url": "https://kx7qpa.example.com/p",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/d",
+        "method": "POST",
+        "credentials": "omit",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":1,\"name\":\"page_view\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"199341682111820\",\"hit_index\":1,\"event_id\":\"538453d7-5384-4384-83d7-538453d75384\",\"name\":\"page_view\",\"client_id\":\"3668339987.1795262400\",\"bootstrap_token\":\"78dde6c4-78dd-48dd-86c4-78dde6c478dd\",\"session_id\":25380580038421,\"session_started_ms\":1795262400800,\"session_expires_ms\":1795264200800,\"timestamp_ms\":1795262400800,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"engagement_time_msec\":0}}",
+        "signal": "signal"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"199341682111820\",\"hit_index\":2,\"event_id\":\"f1bbcd88-f1bb-41bb-8d88-f1bbcd88f1bb\",\"name\":\"generate_lead\",\"client_id\":\"3668339987.1795262400\",\"bootstrap_token\":\"78dde6c4-78dd-48dd-86c4-78dde6c478dd\",\"session_id\":25380580038421,\"session_started_ms\":1795262400800,\"session_expires_ms\":1795264200800,\"timestamp_ms\":1795262400800,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":0}}",
+        "signal": "signal"
+      },
+      {
+        "url": "https://kx7qpa.example.com/p",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"client_id\":\"3668339987.1795262400\"}"
+      }
+    ],
+    "timeouts": [2000],
+    "intervals": [500]
+  },
+  "back/forward cache restore": {
+    "requests": [
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"132894454741213\",\"hit_index\":1,\"event_id\":\"17156075-1715-4715-8075-171560751715\",\"name\":\"page_view\",\"client_id\":\"2654435761.1795262400\",\"bootstrap_token\":\"3c6ef362-3c6e-4c6e-8362-3c6ef3623c6e\",\"session_id\":240408329444006,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264200000,\"timestamp_ms\":1795262400000,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"engagement_time_msec\":0}}",
+        "signal": "signal"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"132894454741213\",\"hit_index\":2,\"event_id\":\"b54cda26-b54c-454c-8a26-b54cda26b54c\",\"name\":\"page_engagement\",\"client_id\":\"2654435761.1795262400\",\"bootstrap_token\":\"3c6ef362-3c6e-4c6e-8362-3c6ef3623c6e\",\"session_id\":240408329444006,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264200900,\"timestamp_ms\":1795262400900,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"engagement_time_msec\":900}}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"91827807409028\",\"hit_index\":1,\"event_id\":\"f1bbcd88-f1bb-41bb-8d88-f1bbcd88f1bb\",\"name\":\"page_view\",\"client_id\":\"2654435761.1795262400\",\"bootstrap_token\":\"3c6ef362-3c6e-4c6e-8362-3c6ef3623c6e\",\"session_id\":240408329444006,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264205900,\"timestamp_ms\":1795262405900,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"engagement_time_msec\":0}}",
+        "signal": "signal"
+      }
+    ],
+    "timeouts": [2000],
+    "intervals": [500]
+  },
+  "detector present before the tracker": {
+    "requests": [
+      {
+        "url": "https://kx7qpa.example.com/d",
+        "method": "POST",
+        "credentials": "omit",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":1,\"name\":\"page_view\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"traffic_class\":\"suspicious\",\"traffic_phase\":\"initial\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/d",
+        "method": "POST",
+        "credentials": "omit",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":2,\"name\":\"generate_lead\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":0,\"traffic_class\":\"suspicious\",\"traffic_phase\":\"initial\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"199341682111820\",\"hit_index\":1,\"event_id\":\"538453d7-5384-4384-83d7-538453d75384\",\"name\":\"page_view\",\"client_id\":\"3668339987.1795262400\",\"bootstrap_token\":\"78dde6c4-78dd-48dd-86c4-78dde6c478dd\",\"session_id\":25380580038421,\"session_started_ms\":1795262400300,\"session_expires_ms\":1795264200300,\"timestamp_ms\":1795262400300,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"engagement_time_msec\":300,\"traffic_class\":\"suspicious\",\"traffic_phase\":\"initial\"}}",
+        "signal": "signal"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"199341682111820\",\"hit_index\":2,\"event_id\":\"f1bbcd88-f1bb-41bb-8d88-f1bbcd88f1bb\",\"name\":\"generate_lead\",\"client_id\":\"3668339987.1795262400\",\"bootstrap_token\":\"78dde6c4-78dd-48dd-86c4-78dde6c478dd\",\"session_id\":25380580038421,\"session_started_ms\":1795262400000,\"session_expires_ms\":1795264200000,\"timestamp_ms\":1795262400000,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":0,\"traffic_class\":\"suspicious\",\"traffic_phase\":\"initial\"}}",
+        "signal": "signal"
+      }
+    ],
+    "timeouts": [2000],
+    "intervals": [500]
+  },
+  "detector publishing after the first hit": {
+    "requests": [
+      {
+        "url": "https://kx7qpa.example.com/d",
+        "method": "POST",
+        "credentials": "omit",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":1,\"name\":\"page_view\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/d",
+        "method": "POST",
+        "credentials": "omit",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":2,\"name\":\"generate_lead\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":150,\"traffic_class\":\"automated\",\"traffic_phase\":\"initial\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"199341682111820\",\"hit_index\":1,\"event_id\":\"538453d7-5384-4384-83d7-538453d75384\",\"name\":\"page_view\",\"client_id\":\"3668339987.1795262400\",\"bootstrap_token\":\"78dde6c4-78dd-48dd-86c4-78dde6c478dd\",\"session_id\":25380580038421,\"session_started_ms\":1795262400450,\"session_expires_ms\":1795264200450,\"timestamp_ms\":1795262400450,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"granted\",\"ad_user_data\":\"granted\",\"ad_personalization\":\"granted\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"engagement_time_msec\":300,\"traffic_class\":\"automated\",\"traffic_phase\":\"initial\"}}",
+        "signal": "signal"
+      },
+      {
+        "url": "https://kx7qpa.example.com/e",
+        "method": "POST",
+        "credentials": "include",
+        "keepalive": true,
+        "referrerPolicy": "no-referrer",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"page_id\":\"199341682111820\",\"hit_index\":2,\"event_id\":\"f1bbcd88-f1bb-41bb-8d88-f1bbcd88f1bb\",\"name\":\"generate_lead\",\"client_id\":\"3668339987.1795262400\",\"bootstrap_token\":\"78dde6c4-78dd-48dd-86c4-78dde6c478dd\",\"session_id\":25380580038421,\"session_started_ms\":1795262400150,\"session_expires_ms\":1795264200150,\"timestamp_ms\":1795262400150,\"consent\":{\"analytics_storage\":\"granted\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"device\":{\"browser\":\"Unknown\",\"model\":\"Desktop\",\"category\":\"desktop\",\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":150,\"traffic_class\":\"automated\",\"traffic_phase\":\"initial\"}}",
+        "signal": "signal"
+      }
+    ],
+    "timeouts": [2000],
+    "intervals": [500]
+  }
+}

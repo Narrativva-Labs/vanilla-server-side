@@ -19,6 +19,8 @@ export function shortenBytes(value: string, limit: number) {
   return output.replace(/%[0-9a-f]?$/i, "");
 }
 export interface TrackingEvent {
+  /** Independent bearer secret for consented, pre-cookie continuity; never sent to Google. */
+  bootstrap_token?: string;
   page_id?: string;
   hit_index?: number;
   event_id: string;

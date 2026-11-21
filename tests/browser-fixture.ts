@@ -9,14 +9,22 @@ const bundle = buildSync({
   format: "iife",
   target: "es2022",
 }).outputFiles[0]!.text;
-export function page(history: unknown[] = []) {
+export interface PageOptions {
+  /** Extra script tag attributes, as `dataset` keys. */
+  dataset?: Record<string, string>;
+  /** Runs before the tracker, for example to publish a detector snapshot first. */
+  setup?(host: Record<string, unknown>): void;
+  /** Replaces globals of the page, for example a deterministic `crypto`. */
+  context?: Record<string, unknown>;
+}
+export function page(history: unknown[] = [], options: PageOptions = {}) {
   let cookieReads = 0;
   const doc = Object.assign(new EventTarget(), {
     title: "Shop",
     visibilityState: "visible",
     currentScript: {
       src: "https://kx7qpa.example.com/s.js",
-      dataset: { measurementId: "G-TEST", events: DEFAULT_EVENTS },
+      dataset: { measurementId: "G-TEST", events: DEFAULT_EVENTS, ...options.dataset },
     },
     referrer: "",
   });
@@ -51,6 +59,7 @@ export function page(history: unknown[] = []) {
       },
     });
   const warnings = vi.fn();
+  options.setup?.(host as unknown as Record<string, unknown>);
   runInNewContext(bundle, {
     window: host,
     document: doc,
@@ -62,6 +71,7 @@ export function page(history: unknown[] = []) {
     TextEncoder,
     AbortController,
     AbortSignal,
+    ...options.context,
   });
   // Real gtag passes an Arguments object, rather than an array.
   function command(..._args: unknown[]) {

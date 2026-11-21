@@ -53,6 +53,28 @@ export function configFromEnv(env = process.env) {
   const proxies = env.TRUST_PROXY?.split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  return {
+    region: region as "eu" | undefined,
+    deniedPings: deniedPings === "on",
+    deniedPingIp: deniedPingIp as "full" | "truncated" | "off",
+    deniedPingUserAgent: deniedPingUserAgent === "on",
+    agentVerification: agentVerification === "on",
+    trackerHost,
+    healthToken: env.HEALTH_TOKEN,
+    trustProxy: validateTrustProxy(proxies),
+    logEvents: logEvents === "on",
+    allowedEvents,
+    cookieSecret,
+    cookieDomain,
+    siteOrigin,
+    measurementId,
+    port,
+    host: env.HOST ?? "0.0.0.0",
+  };
+}
+
+export function validateTrustProxy(proxies: string[] | false | undefined) {
+  if (proxies === false || proxies === undefined) return proxies;
   for (const proxy of proxies ?? []) {
     if (["loopback", "linklocal", "uniquelocal"].includes(proxy)) continue;
     const [address, prefix, extra] = proxy.split("/");
@@ -65,22 +87,5 @@ export function configFromEnv(env = process.env) {
     )
       throw new Error("Invalid TRUST_PROXY entry: " + proxy);
   }
-  return {
-    region: region as "eu" | undefined,
-    deniedPings: deniedPings === "on",
-    deniedPingIp: deniedPingIp as "full" | "truncated" | "off",
-    deniedPingUserAgent: deniedPingUserAgent === "on",
-    agentVerification: agentVerification === "on",
-    trackerHost,
-    healthToken: env.HEALTH_TOKEN,
-    trustProxy: proxies === undefined ? undefined : proxies.length ? proxies : (false as const),
-    logEvents: logEvents === "on",
-    allowedEvents,
-    cookieSecret,
-    cookieDomain,
-    siteOrigin,
-    measurementId,
-    port,
-    host: env.HOST ?? "0.0.0.0",
-  };
+  return proxies.length ? proxies : (false as const);
 }

@@ -311,3 +311,28 @@ it("ignores disabled denied pings", async () => {
   expect(google).not.toHaveBeenCalled();
   expect((await app.inject("/health")).json().agentVerification.counters.pings.total).toBe(0);
 });
+
+it("public client ID cannot recover bootstrap identity or inherit verified agent evidence", async () => {
+  const { app, google, set } = setup();
+  const secret = "11111111-1111-4111-8111-111111111111";
+  const post = (token?: string) => {
+    const request = hit("/e", "human");
+    return app.inject({
+      ...request,
+      payload: { ...request.payload, client_id: "123.456", bootstrap_token: token },
+    });
+  };
+  set(verdict("signature_valid"));
+  expect((await post(secret)).statusCode).toBe(204);
+  set();
+  expect((await post()).statusCode).toBe(204);
+  expect((await post(secret)).statusCode).toBe(204);
+  const hits = google.mock.calls.map(([url]) => new URL(String(url)).searchParams);
+  expect(hits.map((h) => h.get("ep.vv_type"))).toEqual([
+    "agent_verified",
+    "human",
+    "agent_verified",
+  ]);
+  expect(hits[1]!.get("cid")).not.toBe(hits[0]!.get("cid"));
+  expect(hits[2]!.get("cid")).toBe(hits[0]!.get("cid"));
+});

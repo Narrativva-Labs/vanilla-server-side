@@ -128,6 +128,8 @@ backend payment/fraud checks still apply.
 
 ## Links
 
+Related: [Visitor Verdict](https://github.com/Narrativva-Labs/visitor-verdict) — browser traffic classification and optional server verification.
+
 - [INSTALL.md](INSTALL.md): step-by-step setup, consent, verification, updates
 - [Technical overview](docs/technical-overview.md): architecture, identity, consent state machine, prior art
 - [Measurement Protocol notes](docs/measurement-protocol-notes.md): what the docs say against what the validator and Realtime showed
@@ -182,6 +184,11 @@ later hits in a bounded memory-only session (denied pings: page only); no delays
 | none / missing | pending |
 
 GTM-only sites keep traffic_class for now.
+
+A detector loaded after Vanilla (for example from GTM) can miss the first hit, which then stays
+`pending`. Opt in with `data-vv-wait-ms="1000"` on the script tag to hold the first hits until the
+detector's initial class or at most that many milliseconds; default 0, no wait
+([trade-off](INSTALL.md#waiting-for-the-first-class)).
 
 In GA4 use **begins with** `agent_` or `bot_` on vv_type; use **begins with** `openai|`
 on vv_detail for OpenAI. Looker Studio operator dimension:

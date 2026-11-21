@@ -25,6 +25,10 @@ export interface Runtime {
   engagement?(): number;
   /** Optional browser class parameters, read again for every request. */
   traffic?(): Record<string, string>;
+  /** With a readiness wait: whether the browser class is available now. */
+  ready?(): boolean;
+  /** With a readiness wait: called once when the first hit starts waiting. Must not release. */
+  hold?(): void;
   href(): string;
   referrer(): string;
   warn(message: string): void;
@@ -39,6 +43,7 @@ export function createTracker(
   allowed: ReadonlySet<string>,
   deferDelivery = false,
   pings = true,
+  holdMs = 0,
 ) {
   let consent = consentSnapshot(null);
   const purchases = new Set<string>();
@@ -68,7 +73,9 @@ export function createTracker(
     consent: Consent;
     clicks?: Record<string, string>;
   }[] = [];
-  let memory: { clientId: string; sessionId: number; started: number; last: number } | undefined;
+  let memory:
+    | { clientId: string; bootstrapToken: string; sessionId: number; started: number; last: number }
+    | undefined;
   // Survives a denial: a later refusal must still name the requests already on their way.
   let lastClient: string | undefined;
   let flushing = false;
@@ -76,6 +83,39 @@ export function createTracker(
   let generation = 0;
   const queue: { event: TrackingEvent; attempts: number; next: number }[] = [];
   const active = new Set<AbortController>();
+  // Opt-in readiness wait, once per document: hits that may leave wait at most holdMs for the
+  // browser class. One state for the deadline, the publication and leaving the page.
+  let released = !(holdMs > 0);
+  let holding = false;
+  // The page as it was when its held automatic page view could have been sent.
+  let heldPage: Record<string, unknown> | undefined;
+  function held() {
+    if (released) return false;
+    if (!holding) {
+      // Without a timer there could be no deadline, so nothing waits.
+      if (!runtime.defer || runtime.ready?.()) {
+        released = true;
+        return false;
+      }
+      holding = true;
+      runtime.defer?.(release, holdMs);
+      runtime.hold?.();
+    }
+    // Also after subscribing, so a class published in between is not missed.
+    if (runtime.ready?.()) released = true;
+    return !released;
+  }
+  /** Marked before sending, so a reentrant release, timer or publication sends nothing twice. */
+  function release() {
+    if (released || !holding) return;
+    released = true;
+    void flush();
+  }
+  const pageFields = () => ({
+    page_location: shortenBytes(sanitizeUrl(runtime.href()), PING_URL_BYTES),
+    page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PING_URL_BYTES),
+    page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
+  });
   function update(
     value: unknown,
     waitMs = 0,
@@ -211,6 +251,7 @@ export function createTracker(
     }
     const id = (memory ??= {
       clientId: `${parseInt(runtime.uuid().replace(/-/g, "").slice(0, 8), 16)}.${Math.floor(now / 1000)}`,
+      bootstrapToken: runtime.uuid(),
       sessionId: parseInt(runtime.uuid().replace(/-/g, "").slice(0, 12), 16),
       started: now,
       last: timestamp,
@@ -233,6 +274,7 @@ export function createTracker(
       event_id: runtime.uuid(),
       name,
       client_id: id.clientId,
+      bootstrap_token: id.bootstrapToken,
       session_id: id.sessionId,
       session_started_ms: Math.min(id.started, timestamp),
       session_expires_ms: timestamp + SESSION_MS,
@@ -294,15 +336,21 @@ export function createTracker(
     if (!deliveryReady || !pings) return;
     if (canTrack(consent) || pageSent || pingSuppressed) {
       pingQueue.length = 0;
+      heldPage = undefined;
       return;
     }
     if (consent.analytics_storage !== "denied" && !bannerKnown) return;
     if (!bannerKnown && runtime.now() < waitUntil) return;
+    if ((!pagePinged || pingQueue.length) && held()) {
+      heldPage ??= pageFields();
+      return;
+    }
     const device = runtime.device?.();
     const pingConsent = normalizeConsent(consent);
     pingConsent.analytics_storage = "denied";
     const events = pingQueue.splice(0);
-    if (!pagePinged) events.unshift({ name: "page_view", params: {} });
+    if (!pagePinged) events.unshift({ name: "page_view", params: heldPage ?? {} });
+    heldPage = undefined;
     for (const item of events) {
       const transaction =
         item.name === "purchase" && typeof item.params.transaction_id === "string"
@@ -322,9 +370,7 @@ export function createTracker(
       const params = cleanUrls(
         redactAds(
           jsonSnapshot({
-            page_location: shortenBytes(sanitizeUrl(runtime.href()), PING_URL_BYTES),
-            page_referrer: shortenBytes(sanitizeUrl(runtime.referrer()), PING_URL_BYTES),
-            page_title: shortenBytes(runtime.title?.() ?? "", PAGE_TEXT_BYTES),
+            ...pageFields(),
             ...item.params,
             ...runtime.traffic?.(),
           }),
@@ -389,6 +435,7 @@ export function createTracker(
       resolving = false;
     }
     if (flushing || !canTrack(consent)) return;
+    if (queue.length && held()) return;
     flushing = true;
     // Set while events wait behind a page view; the periodic flush picks them up.
     let waitingForPage = false;
@@ -478,6 +525,8 @@ export function createTracker(
       this.exit(undefined, page);
     },
     exit(elapsed = runtime.engagement?.() ?? 0, page = runtime.href()) {
+      // Leaving: held hits go first, also denied pings, which have no exit hit of their own.
+      release();
       if (!deliveryReady || !canTrack(consent) || runtime.now() < waitUntil || elapsed <= 0) return;
       // Fixed automatic fields only: custom ecommerce data cannot inflate the exit request.
       enqueue(
@@ -496,6 +545,9 @@ export function createTracker(
     },
     /** `refresh` reads the current consent first, for a page that was frozen for a while. */
     page(refresh?: () => void) {
+      // Held hits of the page being left go before its page identity is reset.
+      release();
+      heldPage = undefined;
       pageSent = false;
       pagePinged = false;
       pingSuppressed = false;
@@ -516,6 +568,7 @@ export function createTracker(
       deliveryReady = true;
       void flush();
     },
+    release,
     pending: () => queue.length + waiting.length,
   };
 }

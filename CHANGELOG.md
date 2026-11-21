@@ -2,20 +2,16 @@
 
 ## Unreleased
 
+- Use event-scoped vv_type/vv_detail from Visitor Verdict server 0.3.x (bundled 0.3.4); reserve old and new client label names and retain automatic/ecommerce fields within the 16 KiB limit.
+- Retain bounded session/page evidence with proof-capped expiry, monotonic renewal for the same type/operator, latest equal-rank attribution and separate admission budgets; reclaim expiry via a bounded heap before LRU eviction.
+- Join parallel first hits before the server cookie exists only by browser client ID plus a random in-memory bootstrap token created after consent; a known client ID alone no longer attaches to another visitor's first visit. Deploy the server before the tracker cache (300 s) refreshes.
+- Add opt-in `data-vv-wait-ms` (0–1000, default 0): the first hits of a page wait for the Visitor Verdict initial class or the deadline, whichever comes first; leaving the page releases them at once.
 - Add DENIED_PING_IP (full/truncated/off) and DENIED_PING_USER_AGENT (on/off) for `/d`, retaining full IP and browser UA by default; UA off sends the fixed neutral value `unknown`.
 - Clarify default cookieless delivery while denied or a supported banner is undecided, transmitted fields, page-local IDs, first-ping session time, labels and ping text limits.
-
-- Replace six GA4 classification fields with event-scoped vv_type/vv_detail labels from Visitor Verdict server 0.3.x (bundled 0.3.1).
-- Carry the strongest type and known operator across later session hits (denied pings: page only), with a bounded 30-minute LRU memory and no waits or backfill.
-- Reserve old and new client label names; preserve automatic/ecommerce fields before labels, dropping detail then type at the 16 KiB limit.
+- Add optional HEALTH_TOKEN protection for detailed health status, validate TRUST_PROXY for environment and programmatic configuration, and document proxy deployment.
+- Expose aggregate verification counters and bounded per-operator replay budgets/status; preserve typed replay exhaustion across package copies.
 - Verified operators with unknown purpose map to agent_verified with unknown retained in vv_detail; neither a crawler nor user-directed role is inferred.
-
-- Vendor Visitor Verdict server 0.2.1: reject Google customer cloud DNS, scope purpose to verified rules and record registry evidence.
-- Assert the actual 16 KiB posted body limit, preserved purchase value/currency and exact retained item prefix; cover the refresh warning host cap.
-
-- Optional agent verification labels and cache health, including agent_purpose.
-- Optional Visitor Verdict browser class/phase on events and pings.
-- Reserve agent_verification, agent_operator, agent_purpose and agent_claim; client values never pass through.
+- Cover posted body limits, purchase fields and item prefixes, refresh hostname caps and collector delivery boundaries.
 
 ## 0.1.0 - 2026-11-17
 

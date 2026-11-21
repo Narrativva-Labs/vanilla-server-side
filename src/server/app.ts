@@ -1,3 +1,4 @@
+import { validateTrustProxy } from "./config.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createAgentCounters } from "./agent-counters.js";
 import { createLabelMemories } from "./labels.js";
@@ -52,7 +53,7 @@ export function createApp(
     logger: false,
     // Caddy uses a private Compose peer. Public direct peers cannot supply forwarded identity.
     trustProxy:
-      config.trustProxy ??
+      validateTrustProxy(config.trustProxy) ??
       (process.env.NODE_ENV === "production" ? ["loopback", "uniquelocal"] : false),
     // The browser keepalive limit. Google takes at most 16 KiB per hit; see collectRequest.
     bodyLimit: 64 * 1024,
@@ -83,7 +84,7 @@ export function createApp(
   const seen = new Map<string, number>();
   const inFlight = new Map<string, Promise<"sent" | "retry" | "dropped">>();
   // Bootstrap continuity for concurrent first-visit hits before the signed cookie arrives.
-  // Browser client_id alone is not an authentication capability.
+  // Only possession of a separate random secret permits joining, never client_id alone.
   const initialIdentities = new Map<
     string,
     { expires: number; identity: ReturnType<typeof serverIdentity> }
@@ -285,6 +286,10 @@ export function createApp(
             "params",
           ],
           properties: {
+            bootstrap_token: {
+              type: "string",
+              pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            },
             page_id: { type: "string", pattern: "^[0-9]{1,16}$" },
             hit_index: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER },
             event_id: { type: "string", format: "uuid" },
@@ -365,12 +370,16 @@ export function createApp(
         const answered = duplicate();
         if (answered) return await answered;
         const hasCookie = req.headers.cookie?.includes(`${COOKIE_NAME}=`) ?? false;
-        const bootstrap = hasCookie ? undefined : initialIdentities.get(browserKey);
+        const bootstrapKey = event.bootstrap_token
+          ? JSON.stringify([event.client_id, event.bootstrap_token])
+          : undefined;
+        const bootstrap =
+          hasCookie || !bootstrapKey ? undefined : initialIdentities.get(bootstrapKey);
         const remembered =
           bootstrap && bootstrap.expires > Date.now() ? bootstrap.identity : undefined;
         let identity = remembered ?? serverIdentity(config, req.headers.cookie);
-        if (!hasCookie && !remembered)
-          remember(initialIdentities, browserKey, { identity, expires: Date.now() + 60_000 });
+        if (!hasCookie && bootstrapKey && !remembered)
+          remember(initialIdentities, bootstrapKey, { identity, expires: Date.now() + 60_000 });
         if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey)) {
           outcomes.set(req, "withdrawn");
           return reply.code(204).send();

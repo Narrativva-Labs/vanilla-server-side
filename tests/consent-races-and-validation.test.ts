@@ -221,7 +221,7 @@ it("tracker rejects an oversized keepalive body before fetch with a diagnostic",
   expect(p.warnings).toHaveBeenCalledWith(expect.stringContaining("64 KiB"));
 });
 
-it("concurrent first requests reuse the transient browser identity", async () => {
+it("concurrent first requests with a shared secret reuse the transient browser identity", async () => {
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
   const app = createApp(config, google);
   try {
@@ -231,7 +231,7 @@ it("concurrent first requests reuse the transient browser identity", async () =>
           method: "POST",
           url: "/e",
           headers: { origin: config.siteOrigin },
-          payload: event(),
+          payload: { ...event(), bootstrap_token: "11111111-1111-4111-8111-111111111111" },
         }),
       ),
     );

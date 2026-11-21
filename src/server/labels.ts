@@ -26,10 +26,49 @@ const rank: Record<Labels["vv_type"], number> = {
 };
 /** Bounded, memory-only evidence per session (or denied page), never per IP. */
 export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now = Date.now) {
-  const sessions = new Map<
-    string,
-    { type: Labels["vv_type"]; operator: string; expires: number }
-  >();
+  type Entry = {
+    key: string;
+    type: Labels["vv_type"];
+    operator: string;
+    expires: number;
+    index: number;
+  };
+  const sessions = new Map<string, Entry>();
+  // One heap node per retained entry, including renewals and LRU evictions.
+  const heap: Entry[] = [];
+  const swap = (a: number, b: number) => {
+    [heap[a], heap[b]] = [heap[b]!, heap[a]!];
+    heap[a]!.index = a;
+    heap[b]!.index = b;
+  };
+  const up = (index: number) => {
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (heap[parent]!.expires <= heap[index]!.expires) break;
+      swap(parent, index);
+      index = parent;
+    }
+    return index;
+  };
+  const remove = (entry: Entry) => {
+    const index = entry.index;
+    const last = heap.pop()!;
+    sessions.delete(entry.key);
+    if (index >= heap.length) return;
+    heap[index] = last;
+    last.index = index;
+    let i = up(index);
+    while (i * 2 + 1 < heap.length) {
+      let child = i * 2 + 1;
+      if (child + 1 < heap.length && heap[child + 1]!.expires < heap[child]!.expires) child++;
+      if (heap[i]!.expires <= heap[child]!.expires) break;
+      swap(i, child);
+      i = child;
+    }
+  };
+  const sweep = (time: number) => {
+    while (heap.length && !(heap[0]!.expires > time)) remove(heap[0]!);
+  };
   return {
     /** With commit=false, preview the label without changing sticky evidence or its expiry. */
     apply(
@@ -40,6 +79,7 @@ export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now 
       isReplay = false,
     ): Labels {
       const time = now();
+      if (!Number.isFinite(time)) return labels;
       const saved = sessions.get(key);
       const previous = saved && time < saved.expires ? saved : undefined;
       if (isReplay && previous && rank[previous.type] === 5) return labels;
@@ -50,37 +90,39 @@ export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now 
       const inherited = previous && rank[previous.type] > rank[labels.vv_type];
       const type = inherited ? previous.type : labels.vv_type;
       const isVerified = type === "agent_verified" || type === "crawler_verified";
-      const expires = inherited
+      let expires = inherited
         ? previous.expires
         : Math.min(time + ttlMs, isVerified ? (proofExpiresMs ?? time + ttlMs) : time + ttlMs);
       // Proof can still verify within skew, but cannot be retained beyond signed expiry.
-      if (isVerified && !(expires > time)) return labels;
+      if (!(expires > time)) return labels;
       const detail = labels.vv_detail.split("|");
       const operator = inherited ? previous.operator : detail[0]!;
+      if (previous && previous.type === type && previous.operator === operator)
+        expires = Math.max(previous.expires, expires);
       detail[0] = operator;
       // Operator segments validated by visitorLabels; replacing none cannot exceed its limit.
       const vv_detail = detail.join("|");
       if (vv_detail.length > 100) throw new RangeError("vv_detail exceeds 100 characters");
       if (type === "pending") return labels;
       if (commit) {
-        if (sessions.size >= capacity && !sessions.has(key)) {
-          for (const [savedKey, value] of sessions)
-            if (!(value.expires > time)) sessions.delete(savedKey);
-        }
-        sessions.delete(key);
-        sessions.set(key, { type, operator, expires });
-        while (sessions.size > capacity) sessions.delete(sessions.keys().next().value!);
+        sweep(time);
+        const existing = sessions.get(key);
+        if (existing) remove(existing);
+        const entry = { key, type, operator, expires, index: heap.length };
+        sessions.set(key, entry);
+        heap.push(entry);
+        up(entry.index);
+        while (sessions.size > capacity) remove(sessions.values().next().value!);
       }
       return { vv_type: type, vv_detail };
     },
     sweep() {
       const time = now();
-      for (const [key, value] of sessions) {
-        if (!(value.expires > time)) sessions.delete(key);
-      }
+      if (Number.isFinite(time)) sweep(time);
     },
     clear() {
       sessions.clear();
+      heap.length = 0;
     },
     get size() {
       return sessions.size;
