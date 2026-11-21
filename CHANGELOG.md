@@ -37,7 +37,8 @@ First release. Tested on the demo shop, the author's website and two small live 
 - Caddy compresses responses, so `s.js` goes out at about 6 KB instead of 16 KB.
 - `LOG_EVENTS=on` writes one line per event: name, answer and outcome, nothing about the visitor.
 - The consent logic is one pure function with a table of rules; behavior is unchanged.
-- One `/g/collect` hit now opens each session, which gives GA4 session source, New users and `session_start`. Measurement Protocol carries everything else. `campaign_details` is gone, because no report used it.
+- All events use `/g/collect`; Measurement Protocol and `GA4_API_SECRET` are no longer used (the secret is ignored with a startup warning).
+- One `/g/collect` hit now opens each session, which gives GA4 session source, New users and `session_start`. `campaign_details` is gone, because no report used it.
 - `gclid`, `gbraid` and `wbraid` reach Google in that hit when `ad_storage` and `ad_user_data` are granted, so conversions can be imported into Google Ads through GA4.
 - A withdrawal is no longer rate limited, and it stops a request that is waiting for session opening.
 - Engagement time survives a `/g/collect` hit.
@@ -53,4 +54,4 @@ First release. Tested on the demo shop, the author's website and two small live 
 - A session no longer ends after 24 hours of steady activity, only after 30 idle minutes, as the Google tag does (captured 2026-11-14). The 24 hours came from a Measurement Protocol rule.
 - `seg` follows the session like the Google tag's (captured 2026-11-14): the signed cookie sums engagement time, more than 10 seconds or a later page view engages the session, and it stays engaged until it ends. Before, three hits 6 s apart on one page sent `seg=0` every time.
 
-No release is tagged yet. Install and update follow the default branch.
+Install and update follow the default branch; releases are tagged (latest v0.1.0).
