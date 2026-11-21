@@ -1,6 +1,7 @@
 import type { AgentFields } from "./agent-verification.js";
 import { withLabels, type LabelMemory, type LabelObserver } from "./labels.js";
 /** All events use the Google tag wire format; see the protocol notes. */
+import { deniedPingAddress, type DeniedPingPrivacy } from "./ping-privacy.js";
 import { randomInt } from "node:crypto";
 import { validateParams, validEventName } from "./mp-validation.js";
 import {
@@ -374,6 +375,7 @@ export async function sendDeniedPing(
   verification?: Promise<AgentFields | undefined>,
   labelMemory?: LabelMemory,
   observeLabels?: LabelObserver,
+  privacy: DeniedPingPrivacy = {},
 ) {
   const agentFields = verification ? await verification : undefined;
   const staged = stageLabels(labelMemory, observeLabels);
@@ -411,7 +413,7 @@ export async function sendDeniedPing(
     title: cleaned.page_title,
     language: ping.language,
     screen: ping.screen_resolution,
-    ip,
+    ip: deniedPingAddress(ip, privacy.deniedPingIp),
     engagement: params.engagement_time_msec,
     sessionStart: first,
     firstVisit: first,
@@ -423,7 +425,10 @@ export async function sendDeniedPing(
   staged.commit(request);
   return post(
     request.url,
-    { headers: browser(userAgent), body: request.body },
+    {
+      headers: browser(privacy.deniedPingUserAgent === false ? "unknown" : userAgent),
+      body: request.body,
+    },
     new AbortController().signal,
     fetcher,
   );

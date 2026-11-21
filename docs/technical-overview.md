@@ -89,7 +89,7 @@ The server renews the cookie on each delivered event (Tested 2026-11-05, `tests/
 
 A same-origin path proxy, or a tracker in the same network as the website, may avoid this cap. Not verified.
 
-Denied pings use page-local random client/session IDs and a rising hit index, the same parameter sanitization and ecommerce encoding as full events, and full visitor IP for geography. No cookie, click ID, `user_data` or retry is used. Purchase transaction IDs are deduplicated. `page_engagement` pings are excluded; the Google tag sends a denied `user_engagement` on exit (captured 2026-11-15). Tests: `tests/denied-events.test.ts` and `tests/collect.test.ts`.
+Denied pings use page-local client/page IDs with random components and a rising hit index; session_id is the Unix second of the first ping, not random. They use the same parameter sanitization and ecommerce encoding as full events, and by default forward the full visitor IP and browser User-Agent to Google. `DENIED_PING_IP=full` (default) forwards the full visitor IP as `_uip`; `truncated` zeros the last IPv4 octet (/24) or keeps only the first 48 IPv6 bits (/48), treating IPv4-mapped IPv6 as IPv4; `off` omits `_uip`, so Google geolocates the collector server. Truncation reduces geographic precision. `DENIED_PING_USER_AGENT=on` (default) forwards the browser User-Agent; `off` sends the fixed neutral `User-Agent: unknown` instead, with no browser/device dimensions from that header. An explicit neutral value prevents native fetch from sending its default `node` User-Agent and reveals no runtime version or server identity. These options affect only `/d`; verification still uses the incoming IP and headers, rate limiting retains the real IP, and labels and deduplication are unchanged. `DENIED_PINGS=off` disables all pings. No cookie, click ID, `user_data` or retry is used. Purchase transaction IDs are deduplicated. `page_engagement` pings are excluded; the Google tag sends a denied `user_engagement` on exit (captured 2026-11-15). Tests: `tests/denied-events.test.ts` and `tests/collect.test.ts`.
 
 A later grant releases the undecided full-event queue even after pings have left; refusal drops it. In BigQuery use `WHERE privacy_info.analytics_storage = 'Yes'` for full events and `= 'No'` for pings; counting both intentionally counts an event twice. `DENIED_PINGS=off` disables all pings.
 
@@ -177,7 +177,7 @@ Whether the tracker asks the server to delete the cookie:
 
 `npm run test:e2e` starts `scripts/demo.mjs` and drives it in headless Chromium and WebKit through Playwright, on every push. Tested 2026-11-05, `tests/e2e/consent.spec.ts`:
 
-- Without a decision no request reaches `/e` or `/p`, nothing goes to the stub and no cookie exists.
+- Without a decision no request reaches `/e` or `/p` and no cookie exists; the readable undecided demo banner can send `/d` pings to the stub.
 - Accepting sends the page view and creates a cookie marked `HttpOnly` that page scripts cannot read.
 - Rejecting sends a deletion request and keeps cookieless event pings enabled, with no full event or cookie.
 - Withdrawing deletes the cookie and stops later events.
@@ -187,11 +187,11 @@ Limits: the demo runs on plain `http://localhost`, so it drops the `Secure` and 
 
 ### Why unknown is not denied
 
-`denied` in a default says nothing about a person. Collection stops all the same, but treating it as a refusal would fire withdrawal logic for people who never chose. `unknown` is the state with no signal at all.
+`denied` in a default says nothing about a person. Full-event collection stops all the same, but treating it as a refusal would fire withdrawal logic for people who never chose. `unknown` is the state with no signal at all.
 
 - `default` denied is a state, and only an explicit update or a banner's decision triggers a cookie deletion request. Tested: `tests/browser.test.ts`.
 - A `default` with `region` stays `unknown` until an update or a decided banner: the script cannot know which region the visitor is in. Tested: `tests/consent-and-collector.test.ts`, `tests/cmp-adapters.test.ts`.
-- Some banners send `update` denied at load before the visitor sees anything. Collection stays off, but with an undecided supported banner it is not treated as a refusal and nothing is deleted. Tested: `tests/cmp-adapters.test.ts`. Details: [cookie banners](cookie-banners.md).
+- Some banners send `update` denied at load before the visitor sees anything. Full-event collection stays off, but with an undecided supported banner it is not treated as a refusal and nothing is deleted. Tested: `tests/cmp-adapters.test.ts`. Details: [cookie banners](cookie-banners.md).
 - `wait_for_update` is honored for up to 2 seconds.
 
 The regular tag has its own consent handling and is not affected.
@@ -263,7 +263,7 @@ A default install uses a neutral random subdomain such as `kx7qpa.example.com` a
 
 Tested 2026-11-05, one run: with uBlock Origin Lite and default lists in Chromium, the regular tag was stopped and the tracker was not ([notes](measurement-protocol-notes.md#browser-checks)). Other blockers, stricter lists and other browsers: Not verified.
 
-Consent works the same with or without a blocker. No event leaves without consent, and a refusal stops regular measurement, as described in the [consent state machine](#consent-state-machine).
+Consent works the same with or without a blocker. Full `/e` events require consent; with DENIED_PINGS=on (default), cookieless page_view and allowed-event pings can leave while denied or a supported banner is undecided, and a refusal stops regular measurement, as described in the [consent state machine](#consent-state-machine).
 
 Simo Ahava [disagrees with this approach](https://www.simoahava.com/analytics/agency-transparency-control-unsolved-problems-server-side-tagging/). He argues that a first-party subdomain hides the vendor domain that blockers match, which erodes the visitor's control, and that what happens on the server cannot be audited from the browser. Both points apply to a default install, and this project does not refute them.
 

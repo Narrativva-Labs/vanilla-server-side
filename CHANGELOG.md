@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add DENIED_PING_IP (full/truncated/off) and DENIED_PING_USER_AGENT (on/off) for `/d`, retaining full IP and browser UA by default; UA off sends the fixed neutral value `unknown`.
+- Clarify default cookieless delivery while denied or a supported banner is undecided, transmitted fields, page-local IDs, first-ping session time, labels and ping text limits.
+
 - Replace six GA4 classification fields with event-scoped vv_type/vv_detail labels from Visitor Verdict server 0.3.x (bundled 0.3.1).
 - Carry the strongest type and known operator across later session hits (denied pings: page only), with a bounded 30-minute LRU memory and no waits or backfill.
 - Reserve old and new client label names; preserve automatic/ecommerce fields before labels, dropping detail then type at the 16 KiB limit.

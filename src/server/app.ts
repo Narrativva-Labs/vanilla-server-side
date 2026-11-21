@@ -27,6 +27,8 @@ export function createApp(
     CookieConfig & {
       allowedEvents?: string[];
       deniedPings?: boolean;
+      deniedPingIp?: "full" | "truncated" | "off";
+      deniedPingUserAgent?: boolean;
       logEvents?: boolean;
       agentVerification?: boolean;
       trackerHost?: string;
@@ -235,6 +237,7 @@ export function createApp(
           label?.(req),
           pageLabelMemory,
           agentCounters.observe("pings", req.raw.rawHeaders),
+          config,
         );
         if (result === "sent") status.sent++;
         else status.errors++;

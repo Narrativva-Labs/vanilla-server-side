@@ -61,9 +61,13 @@ afterEach(async () => {
   vi.clearAllMocks();
   vi.useRealTimers();
 });
-function setup(enabled = true, options: Parameters<typeof createApp>[2] = {}) {
+function setup(
+  enabled = true,
+  options: Parameters<typeof createApp>[2] = {},
+  privacy: { deniedPingIp?: "full" | "truncated" | "off"; deniedPingUserAgent?: boolean } = {},
+) {
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-  const app = createApp({ ...config, agentVerification: enabled }, google, options);
+  const app = createApp({ ...config, agentVerification: enabled, ...privacy }, google, options);
   apps.push(app);
   const post = (path: string, headers: Record<string, string> = {}, params: object = {}) => {
     const now = Date.now();
@@ -136,38 +140,45 @@ it("off constructs no verifier, makes no verification fetch and adds no labels o
   expect(google).toHaveBeenCalledTimes(2);
 });
 
-it("verifies every captured POST signature on both delivery paths and reuses one verifier/cache", async () => {
-  const construct = vi.spyOn(verdict, "createVerifier");
-  const warm = spyOnWarm();
-  const fetcher = vi.fn(async (url: string) =>
-    url === chatgpt
-      ? new Response(directory, { headers: { "cache-control": "max-age=3600" } })
-      : new Response(null, { status: 404 }),
-  );
-  let clock = Date.parse(signed[0]!.ts) / 1000;
-  const { post, hit, google } = setup(true, { fetcher, now: () => clock });
-  const directories = verdict.defaultRegistry.filter((operator) => operator.directoryUrl).length;
-  expect(await warm.mock.results[0]!.value).toMatchObject({ ok: [chatgpt] });
-  for (const request of signed) {
-    clock = Date.parse(request.ts) / 1000;
-    for (const path of ["/e", "/d"]) {
-      expect((await post(path, request.headers)).statusCode).toBe(204);
-      expect(detail(hit(), 1)).toBe(path === "/e" ? "signature_valid" : "signature_invalid");
-      expect(detail(hit(), 0)).toBe(path === "/e" ? "openai" : "none");
-      expect(hit().get("ep.vv_type")).toBe(path === "/e" ? "agent_verified" : "bot_spoofed");
-      if (path === "/e") {
-        expect(detail(hit(), 2)).toBe("user_directed");
-        expect(detail(hit(), 3)).toBe("signature_agent");
+it.each([
+  {},
+  { deniedPingIp: "truncated" as const, deniedPingUserAgent: false },
+  { deniedPingIp: "off" as const, deniedPingUserAgent: false },
+])(
+  "verifies every captured POST signature on both delivery paths independently of ping privacy %j",
+  async (privacy) => {
+    const construct = vi.spyOn(verdict, "createVerifier");
+    const warm = spyOnWarm();
+    const fetcher = vi.fn(async (url: string) =>
+      url === chatgpt
+        ? new Response(directory, { headers: { "cache-control": "max-age=3600" } })
+        : new Response(null, { status: 404 }),
+    );
+    let clock = Date.parse(signed[0]!.ts) / 1000;
+    const { post, hit, google } = setup(true, { fetcher, now: () => clock }, privacy);
+    const directories = verdict.defaultRegistry.filter((operator) => operator.directoryUrl).length;
+    expect(await warm.mock.results[0]!.value).toMatchObject({ ok: [chatgpt] });
+    for (const request of signed) {
+      clock = Date.parse(request.ts) / 1000;
+      for (const path of ["/e", "/d"]) {
+        expect((await post(path, request.headers)).statusCode).toBe(204);
+        expect(detail(hit(), 1)).toBe(path === "/e" ? "signature_valid" : "signature_invalid");
+        expect(detail(hit(), 0)).toBe(path === "/e" ? "openai" : "none");
+        expect(hit().get("ep.vv_type")).toBe(path === "/e" ? "agent_verified" : "bot_spoofed");
+        if (path === "/e") {
+          expect(detail(hit(), 2)).toBe("user_directed");
+          expect(detail(hit(), 3)).toBe("signature_agent");
+        }
+        expect(String(google.mock.calls.at(-1))).not.toContain(request.headers.signature);
       }
-      expect(String(google.mock.calls.at(-1))).not.toContain(request.headers.signature);
     }
-  }
-  expect(construct).toHaveBeenCalledTimes(1);
-  expect(construct.mock.calls[0]![0].reverseDns).toEqual({ enabled: false });
-  // Only the startup warm-up fetched: one request per registry directory, none per hit.
-  expect(fetcher).toHaveBeenCalledTimes(directories);
-  expect(fetcher.mock.calls.filter(([url]) => url === chatgpt)).toHaveLength(1);
-});
+    expect(construct).toHaveBeenCalledTimes(1);
+    expect(construct.mock.calls[0]![0].reverseDns).toEqual({ enabled: false });
+    // Only the startup warm-up fetched: one request per registry directory, none per hit.
+    expect(fetcher).toHaveBeenCalledTimes(directories);
+    expect(fetcher.mock.calls.filter(([url]) => url === chatgpt)).toHaveLength(1);
+  },
+);
 
 it("labels unsigned visitors without network access and preserves the parameter limit", async () => {
   const warm = spyOnWarm();

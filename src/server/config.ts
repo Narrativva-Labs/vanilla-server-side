@@ -13,6 +13,12 @@ export function configFromEnv(env = process.env) {
   const deniedPings = env.DENIED_PINGS || "on";
   if (deniedPings !== "on" && deniedPings !== "off")
     throw new Error("DENIED_PINGS must be on or off");
+  const deniedPingIp = env.DENIED_PING_IP || "full";
+  if (!["full", "truncated", "off"].includes(deniedPingIp))
+    throw new Error("DENIED_PING_IP must be full, truncated or off");
+  const deniedPingUserAgent = env.DENIED_PING_USER_AGENT || "on";
+  if (deniedPingUserAgent !== "on" && deniedPingUserAgent !== "off")
+    throw new Error("DENIED_PING_USER_AGENT must be on or off");
   const logEvents = env.LOG_EVENTS || "off";
   if (logEvents !== "on" && logEvents !== "off") throw new Error("LOG_EVENTS must be on or off");
   const agentVerification = env.AGENT_VERIFICATION || "off";
@@ -41,6 +47,8 @@ export function configFromEnv(env = process.env) {
   return {
     region: region as "eu" | undefined,
     deniedPings: deniedPings === "on",
+    deniedPingIp: deniedPingIp as "full" | "truncated" | "off",
+    deniedPingUserAgent: deniedPingUserAgent === "on",
     agentVerification: agentVerification === "on",
     trackerHost,
     healthToken: env.HEALTH_TOKEN || undefined,
