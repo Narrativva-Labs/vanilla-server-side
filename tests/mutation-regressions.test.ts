@@ -31,7 +31,7 @@ it("non-verified sticky evidence expires at the exact TTL boundary", () => {
 });
 
 it("an explicit empty proxy list disables forwarding trust", () => {
-  expect(configFromEnv({ ...env, TRUST_PROXY: "" }).trustProxy).toEqual([]);
+  expect(configFromEnv({ ...env, TRUST_PROXY: "" }).trustProxy).toBe(false);
 });
 it("proxy entries are trimmed and empty comma fields are ignored", () => {
   expect(configFromEnv({ ...env, TRUST_PROXY: " 10.2.0.0/16 , , loopback, " }).trustProxy).toEqual([
@@ -39,9 +39,9 @@ it("proxy entries are trimmed and empty comma fields are ignored", () => {
     "loopback",
   ]);
 });
-it("health tokens retain significant whitespace and empty tokens are unset", () => {
-  expect(configFromEnv({ ...env, HEALTH_TOKEN: " secret " }).healthToken).toBe(" secret ");
-  expect(configFromEnv({ ...env, HEALTH_TOKEN: "" }).healthToken).toBeUndefined();
+it("health tokens reject surrounding whitespace and empty values", () => {
+  expect(() => configFromEnv({ ...env, HEALTH_TOKEN: " secret " })).toThrow(/HEALTH_TOKEN/);
+  expect(() => configFromEnv({ ...env, HEALTH_TOKEN: "" })).toThrow(/HEALTH_TOKEN/);
 });
 
 it("the labeller replay store uses the verifier's supplied seconds clock", async () => {
@@ -54,6 +54,7 @@ it("the labeller replay store uses the verifier's supplied seconds clock", async
   });
   try {
     const options = vi.mocked(library.createVerifier).mock.calls.at(-1)![0];
+    expect(options.maxLifetimeSeconds).toBe(7200);
     expect(options.nonceStore).toBeInstanceOf(library.MemoryNonceStore);
     const store = options.nonceStore!;
     expect(await store.insertIfAbsent("clock-check", 10)).toBe(true);

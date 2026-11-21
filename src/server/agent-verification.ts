@@ -27,10 +27,15 @@ function warnRefresh(host: string, reason: string) {
 
 export function createAgentLabeller(host: string | undefined, options: AgentVerifierOptions) {
   if (!host) throw new Error("Set TRACKER_DOMAIN to the external tracker host");
+  const now = options.now ?? (() => Date.now() / 1000);
+  const nonceStore = new MemoryNonceStore(10000, now, 2500);
   const verifier = createVerifier({
     ...options,
     registry: defaultRegistry,
-    nonceStore: new MemoryNonceStore(10000, options.now),
+    now,
+    nonceStore,
+    // ChatGPT agent signatures observed at exactly 3600 s (2026-11-20); keep headroom.
+    maxLifetimeSeconds: 7200,
     authorities: [host],
     reverseDns: { enabled: false },
     fetchTimeoutMs: FETCH_TIMEOUT_MS,
@@ -61,7 +66,7 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
       );
       // Anchor IP evidence to verification time, before any wait for session delivery.
       return verdict.verification === "ip_match"
-        ? { ...verdict, proofExpiresAt: Date.now() / 1000 + 30 * 60 }
+        ? { ...verdict, proofExpiresAt: now() + 30 * 60 }
         : verdict;
     } catch {
       return undefined;
@@ -79,6 +84,7 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
     const state = verifier.status();
     return {
       enabled: true,
+      replay: nonceStore.status(),
       directoriesLoaded: `${state.directories.loaded}/${state.directories.total}`,
       lastRefreshOk: state.lastRefreshOk,
     };

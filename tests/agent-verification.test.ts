@@ -470,7 +470,7 @@ it("anchors IP memory expiry to proof time before delivery waits", async () => {
     })),
   );
   const { createAgentLabeller } = await import("../src/server/agent-verification.js");
-  const labeller = createAgentLabeller("tracker.example", {});
+  const labeller = createAgentLabeller("tracker.example", { now: () => 1800000010 });
   try {
     const proof = await labeller.label({
       method: "GET",
@@ -478,12 +478,12 @@ it("anchors IP memory expiry to proof time before delivery waits", async () => {
       ip: "192.0.2.1",
       raw: { rawHeaders: [] },
     } as unknown as import("fastify").FastifyRequest);
-    expect(proof?.proofExpiresAt).toBe(1800001800);
+    expect(proof?.proofExpiresAt).toBe(1800001810);
     vi.setSystemTime(1800000600000);
     const { withLabels, createLabelMemory } = await import("../src/server/labels.js");
     const memory = createLabelMemory();
     withLabels({}, proof, { memory, key: "s" });
-    vi.setSystemTime(1800001800000);
+    vi.setSystemTime(1800001810000);
     expect(withLabels({ traffic_class: "human" }, undefined, { memory, key: "s" }).vv_type).toBe(
       "human",
     );

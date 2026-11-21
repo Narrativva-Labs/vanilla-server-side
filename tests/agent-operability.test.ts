@@ -76,6 +76,7 @@ it("startup is logged once and /health shows cache progress and failures without
   );
   expect(Object.keys(health)).toEqual([
     "enabled",
+    "replay",
     "directoriesLoaded",
     "lastRefreshOk",
     "counters",

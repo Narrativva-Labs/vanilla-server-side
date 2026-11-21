@@ -54,6 +54,7 @@ it("trusts private proxy peers but ignores forwarded IP from public peers", asyn
     GA4_MEASUREMENT_ID: "G-TEST",
     COOKIE_SECRET: "s".repeat(64),
     SITE_ORIGIN: "https://example.com",
+    TRUST_PROXY: "loopback,uniquelocal",
   });
   const ips: string[] = [];
   const app = createApp(config, async (url) => {

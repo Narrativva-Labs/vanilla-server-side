@@ -311,13 +311,21 @@ const browser = (userAgent?: string) => (userAgent ? { "user-agent": userAgent }
 /** Preview sticky labels while encoding; commit only labels present in a deliverable hit. */
 function stageLabels(memory?: LabelMemory, observe?: LabelObserver) {
   let pending: Parameters<LabelObserver> | undefined;
-  let saved: { key: string; labels: Parameters<LabelObserver>[0]; expires?: number } | undefined;
+  let saved:
+    | { key: string; labels: Parameters<LabelObserver>[0]; expires?: number; replay?: boolean }
+    | undefined;
   return {
     memory: memory && {
       ...memory,
-      apply(key: string, labels: Parameters<LabelObserver>[0], _commit = true, expires?: number) {
-        saved = { key, labels, expires };
-        return memory.apply(key, labels, false, expires);
+      apply(
+        key: string,
+        labels: Parameters<LabelObserver>[0],
+        _commit = true,
+        expires?: number,
+        replay = false,
+      ) {
+        saved = { key, labels, expires, replay };
+        return memory.apply(key, labels, false, expires, replay);
       },
     },
     observe: (...args: Parameters<LabelObserver>) => {
@@ -326,7 +334,7 @@ function stageLabels(memory?: LabelMemory, observe?: LabelObserver) {
     commit(request: { url: URL; body?: string }) {
       const fields = new URLSearchParams(request.body ?? request.url.search);
       if (!fields.has("ep.vv_type") || !pending) return;
-      if (saved) memory?.apply(saved.key, saved.labels, true, saved.expires);
+      if (saved) memory?.apply(saved.key, saved.labels, true, saved.expires, saved.replay);
       observe?.(...pending);
     },
   };

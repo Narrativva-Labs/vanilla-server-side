@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createAgentCounters } from "./agent-counters.js";
 import { createLabelMemories } from "./labels.js";
 import { createAgentLabeller, type AgentVerifierOptions } from "./agent-verification.js";
@@ -32,12 +33,21 @@ export function createApp(
       logEvents?: boolean;
       agentVerification?: boolean;
       trackerHost?: string;
-      trustProxy?: string[];
+      trustProxy?: string[] | false;
       healthToken?: string;
     },
   fetcher: typeof fetch = fetch,
   verifierOptions: AgentVerifierOptions = {},
 ) {
+  if (
+    config.healthToken !== undefined &&
+    (!config.healthToken || config.healthToken.trim() !== config.healthToken)
+  )
+    throw new Error("Invalid HEALTH_TOKEN");
+  const healthDigest =
+    config.healthToken === undefined
+      ? undefined
+      : createHash("sha256").update(config.healthToken).digest();
   const app = Fastify({
     logger: false,
     // Caddy uses a private Compose peer. Public direct peers cannot supply forwarded identity.
@@ -116,22 +126,31 @@ export function createApp(
     limiter.clear();
   });
   const status = { sent: 0, errors: 0, botsFiltered: 0, lastSuccess: null as string | null };
-  app.get("/health", async (req) => ({
-    ok: true,
-    google: status,
-    ...(!config.healthToken || req.headers["x-health-token"] === config.healthToken
-      ? {
-          agentVerification: {
-            ...(labeller?.status() ?? {
-              enabled: false,
-              directoriesLoaded: "0/0",
-              lastRefreshOk: null,
-            }),
-            counters: agentCounters.counters,
-          },
-        }
-      : {}),
-  }));
+  app.get("/health", async (req, reply) => {
+    reply.header("Cache-Control", "no-store");
+    if (healthDigest) reply.header("Vary", "X-Health-Token");
+    const supplied = req.headers["x-health-token"];
+    const authorized =
+      !healthDigest ||
+      (typeof supplied === "string" &&
+        timingSafeEqual(createHash("sha256").update(supplied).digest(), healthDigest));
+    return {
+      ok: true,
+      google: status,
+      ...(authorized
+        ? {
+            agentVerification: {
+              ...(labeller?.status() ?? {
+                enabled: false,
+                directoriesLoaded: "0/0",
+                lastRefreshOk: null,
+              }),
+              counters: agentCounters.counters,
+            },
+          }
+        : {}),
+    };
+  });
   // The tracker never changes while the process runs, so public requests do not touch the disk.
   const tracker = readFile(new URL("../public/s.js", import.meta.url), "utf8");
   tracker.catch(() => {});
@@ -346,9 +365,11 @@ export function createApp(
         const answered = duplicate();
         if (answered) return await answered;
         const hasCookie = req.headers.cookie?.includes(`${COOKIE_NAME}=`) ?? false;
-        const remembered = hasCookie ? undefined : initialIdentities.get(browserKey)?.identity;
+        const bootstrap = hasCookie ? undefined : initialIdentities.get(browserKey);
+        const remembered =
+          bootstrap && bootstrap.expires > Date.now() ? bootstrap.identity : undefined;
         let identity = remembered ?? serverIdentity(config, req.headers.cookie);
-        if (!hasCookie)
+        if (!hasCookie && !remembered)
           remember(initialIdentities, browserKey, { identity, expires: Date.now() + 60_000 });
         if (isRevoked("server:" + identity.clientId) || isRevoked(browserKey)) {
           outcomes.set(req, "withdrawn");

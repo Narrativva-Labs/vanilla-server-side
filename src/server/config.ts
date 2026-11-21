@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { DEFAULT_EVENTS } from "../shared/settings.js";
 export function configFromEnv(env = process.env) {
   const siteOrigin = new URL(env.SITE_ORIGIN ?? "http://localhost:3000").origin;
@@ -44,6 +45,26 @@ export function configFromEnv(env = process.env) {
     allowedEvents.some((s) => !/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(s) || s === "page_view")
   )
     throw new Error("Invalid TRACKED_EVENTS (page_view is managed automatically)");
+  if (
+    env.HEALTH_TOKEN !== undefined &&
+    (!env.HEALTH_TOKEN || env.HEALTH_TOKEN.trim() !== env.HEALTH_TOKEN)
+  )
+    throw new Error("Invalid HEALTH_TOKEN: use a nonempty token without surrounding whitespace");
+  const proxies = env.TRUST_PROXY?.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const proxy of proxies ?? []) {
+    if (["loopback", "linklocal", "uniquelocal"].includes(proxy)) continue;
+    const [address, prefix, extra] = proxy.split("/");
+    const version = isIP(address!);
+    if (
+      !version ||
+      extra !== undefined ||
+      (prefix !== undefined &&
+        (!/^\d+$/.test(prefix) || Number(prefix) > (version === 4 ? 32 : 128)))
+    )
+      throw new Error("Invalid TRUST_PROXY entry: " + proxy);
+  }
   return {
     region: region as "eu" | undefined,
     deniedPings: deniedPings === "on",
@@ -51,11 +72,8 @@ export function configFromEnv(env = process.env) {
     deniedPingUserAgent: deniedPingUserAgent === "on",
     agentVerification: agentVerification === "on",
     trackerHost,
-    healthToken: env.HEALTH_TOKEN || undefined,
-    trustProxy: (env.TRUST_PROXY ?? "loopback,uniquelocal")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
+    healthToken: env.HEALTH_TOKEN,
+    trustProxy: proxies === undefined ? undefined : proxies.length ? proxies : (false as const),
     logEvents: logEvents === "on",
     allowedEvents,
     cookieSecret,

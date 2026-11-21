@@ -587,17 +587,17 @@ it("an event waits for an opening only once", async () => {
   }
 });
 
-it("a browser without cookies keeps one session with steady activity past 24 hours", async () => {
+it("a browser without cookies opens a new identity after each bootstrap window", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   const { app, post, urls } = setup();
   try {
     await post("/e", event());
-    for (let minutes = 0; minutes < 25 * 60; minutes += 0.5) {
+    for (let minutes = 0; minutes < 3; minutes += 0.5) {
       vi.setSystemTime(Date.now() + 30_000);
       await post("/e", event());
     }
-    expect(urls().filter((url) => url.searchParams.get("_ss") === "1")).toHaveLength(1);
-    expect(new Set(urls().map((url) => url.searchParams.get("sid"))).size).toBe(1);
+    expect(urls().filter((url) => url.searchParams.get("_ss") === "1")).toHaveLength(4);
+    expect(new Set(urls().map((url) => url.searchParams.get("cid"))).size).toBe(4);
   } finally {
     await app.close();
   }

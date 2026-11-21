@@ -32,26 +32,41 @@ export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now 
   >();
   return {
     /** With commit=false, preview the label without changing sticky evidence or its expiry. */
-    apply(key: string, labels: Labels, commit = true, proofExpiresMs?: number): Labels {
+    apply(
+      key: string,
+      labels: Labels,
+      commit = true,
+      proofExpiresMs?: number,
+      isReplay = false,
+    ): Labels {
       const time = now();
       const saved = sessions.get(key);
       const previous = saved && time < saved.expires ? saved : undefined;
+      if (isReplay && previous && rank[previous.type] === 5) return labels;
+      const incomingVerified = rank[labels.vv_type] === 5;
+      if (incomingVerified && proofExpiresMs !== undefined && !Number.isFinite(proofExpiresMs))
+        return labels;
       // Active verified proof wins over malformed signatures; a later proof can repair spoofed state.
-      const inherited = previous && rank[previous.type] >= rank[labels.vv_type];
+      const inherited = previous && rank[previous.type] > rank[labels.vv_type];
       const type = inherited ? previous.type : labels.vv_type;
       const isVerified = type === "agent_verified" || type === "crawler_verified";
       const expires = inherited
         ? previous.expires
         : Math.min(time + ttlMs, isVerified ? (proofExpiresMs ?? time + ttlMs) : time + ttlMs);
       // Proof can still verify within skew, but cannot be retained beyond signed expiry.
-      if (isVerified && expires <= time) return labels;
+      if (isVerified && !(expires > time)) return labels;
       const detail = labels.vv_detail.split("|");
       const operator = inherited ? previous.operator : detail[0]!;
       detail[0] = operator;
       // Operator segments validated by visitorLabels; replacing none cannot exceed its limit.
       const vv_detail = detail.join("|");
       if (vv_detail.length > 100) throw new RangeError("vv_detail exceeds 100 characters");
+      if (type === "pending") return labels;
       if (commit) {
+        if (sessions.size >= capacity && !sessions.has(key)) {
+          for (const [savedKey, value] of sessions)
+            if (!(value.expires > time)) sessions.delete(savedKey);
+        }
         sessions.delete(key);
         sessions.set(key, { type, operator, expires });
         while (sessions.size > capacity) sessions.delete(sessions.keys().next().value!);
@@ -61,7 +76,7 @@ export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now 
     sweep() {
       const time = now();
       for (const [key, value] of sessions) {
-        if (value.expires <= time) sessions.delete(key);
+        if (!(value.expires > time)) sessions.delete(key);
       }
     },
     clear() {
@@ -87,12 +102,17 @@ export function withLabels(
     browserPhase: browser.traffic_phase,
   });
   const proofExpires = verdict?.proofExpiresAt ?? verdict?.verified?.expiresAt;
-  if (sticky && verdict?.reason !== "replay")
+  const isReplay =
+    verdict?.verification !== "signature_valid" &&
+    (verdict?.reason === "replay" ||
+      verdict?.signatures.some((s) => s.reason === "replay") === true);
+  if (sticky)
     labels = sticky.memory.apply(
       sticky.key,
       labels,
       true,
       proofExpires === undefined ? undefined : proofExpires * 1000,
+      isReplay,
     );
   observe?.(labels, verdict, browser.traffic_class);
   return {

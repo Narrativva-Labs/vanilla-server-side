@@ -33,18 +33,18 @@ for (let stronger = 0; stronger < labels.length; stronger++) {
     });
   }
 }
-it("uses current evidence, known operator and earliest equal-rank type", () => {
+it("uses current evidence, known operator and fresh equal-rank type", () => {
   const memory = createLabelMemory();
   memory.apply("s", labels[5]!);
-  expect(memory.apply("s", labels[6]!).vv_type).toBe("crawler_verified");
+  expect(memory.apply("s", labels[6]!).vv_type).toBe("agent_verified");
   expect(
     memory.apply("s", visitorLabels({ browserClass: "human", browserPhase: "final" })),
   ).toEqual({
-    vv_type: "crawler_verified",
+    vv_type: "agent_verified",
     vv_detail: "openai|-|-|-|human|final",
   });
 });
-it("bounds the LRU, refreshes inactivity expiry, sweeps and clears", () => {
+it("bounds the LRU, preserves proof expiry, sweeps and clears", () => {
   let now = 0;
   const memory = createLabelMemory(2, 100, () => now);
   memory.apply("a", labels[7]!);
@@ -151,8 +151,8 @@ it("keeps denied pings sticky only within a page, ignoring shared session IDs", 
   ).toEqual(["bot_automation", "human", "bot_automation"]);
 });
 
-it("retains agent_verified when crawler_verified arrives later at equal rank", () => {
+it("uses fresh crawler_verified evidence at equal rank", () => {
   const memory = createLabelMemory();
   memory.apply("s", labels[6]!);
-  expect(memory.apply("s", labels[5]!).vv_type).toBe("agent_verified");
+  expect(memory.apply("s", labels[5]!).vv_type).toBe("crawler_verified");
 });

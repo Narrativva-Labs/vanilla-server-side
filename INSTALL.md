@@ -228,7 +228,7 @@ The project does not provide a hosted service or legal compliance guarantee. Doc
 
 Outside Docker, set `NODE_ENV=production` to enable forwarding-header handling.
 Forwarding headers are honoured only from proxy peers allowed by `TRUST_PROXY`
-(default `loopback,uniquelocal`; see `TRUST_PROXY` under Agent verification). A public
+(production default `loopback,uniquelocal`; see `TRUST_PROXY` under Agent verification). A public
 peer cannot set the client address. Sanitize forwarding headers at the proxy, keep the
 collector port private, and narrow `TRUST_PROXY` to your proxy's address when other
 private hosts can reach the collector. Without production mode, req.ip is the direct peer address.
@@ -454,9 +454,17 @@ as verification.
 Agent verification diagnostics can be restricted by setting `HEALTH_TOKEN`. When set,
 `GET /health` includes `agentVerification` only with the `X-Health-Token` header matching
 that value. Liveness and Google status remain available, so the Compose health check
-needs no token. With the variable unset, the response is unchanged.
+needs no token. Tokens must be nonempty and have no surrounding whitespace.
+All health responses use `Cache-Control: no-store`; configured tokens also set
+`Vary: X-Health-Token`. Token digests are compared in constant time.
+
+`agentVerification.replay` reports entries, total capacity (10000), per-operator
+capacity (2500), saturation and exhaustion count. Signature lifetime is limited to
+7200 seconds (ChatGPT agent signatures were observed at exactly 3600 seconds). An operator at its budget returns `none/replay_capacity_exhausted`;
+live replay records are retained through signed expiry plus skew.
 
 `TRUST_PROXY` accepts a comma-separated list of proxy IP addresses, CIDRs, or Fastify
-range names. The default is `loopback,uniquelocal`, including private Docker bridge
+range names. In production the default is `loopback,uniquelocal`; outside production
+forwarding is disabled by default. The production ranges include private Docker bridge
 peers used by Caddy in Compose. A public peer cannot assert the forwarded client IP.
 Set an empty value to trust no proxies, or narrow the list to your proxy network.
