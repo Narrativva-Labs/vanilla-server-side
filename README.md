@@ -65,6 +65,24 @@ Pings share a random client/page identity within the page, with a rising hit ind
 
 For an undecided visitor, full events still wait in memory even after their pings leave. A grant on the same page releases them with identity and the campaign; refusal drops them. Consent given only on a later page does not bring back the landing page's campaign, for the Google tag either. This intentional duplication in raw BigQuery data can be separated with `WHERE privacy_info.analytics_storage = 'Yes'` for full events or `= 'No'` for pings. Tests: `tests/denied-events.test.ts`, `tests/collect.test.ts`. On the live demo on 2026-11-15, Realtime showed only the 5 purchases sent with consent, not the 4 denied purchase pings, so pings did not add to that report. In BigQuery the pings were stored without a visitor ID, with `privacy_info.analytics_storage = 'No'` and the visitor's country (2026-11-15). Standard reports and modeling: **Not verified**.
 
+### Compared with the Google tag
+
+**Denied pings send nothing that the Google tag itself would not send in Advanced Consent Mode, with one exception: the two traffic labels below.** Compared field by field with captured `gtag.js` denied pings (2026-11-15, [Denied event sequence](docs/measurement-protocol-notes.md#denied-event-sequence)):
+
+| Data | Google tag, consent denied (Advanced Consent Mode) | Vanilla denied ping |
+| --- | --- | --- |
+| page_view and events, incl. items, value, currency, transaction ID | Sent | Same |
+| Page URL, title, language, screen size | Sent, URL including `gclid` | Same, but click IDs are removed from URLs |
+| Browser User-Agent | Sent by the browser | Same (or `unknown` with `DENIED_PING_USER_AGENT=off`) |
+| Visitor IP | Google sees it from the browser connection | Forwarded as `_uip` so geography is the visitor's (or truncated/omitted, see `DENIED_PING_IP`) |
+| Page-only random client/session IDs, consent state `gcs`/`gcd` | Sent | Same |
+| Exit engagement | Denied `user_engagement` | Not sent |
+| `vv_type`, `vv_detail` | Not sent | **Sent** (see below) |
+
+The two labels classify the hit, not the person: `vv_type` is one of `pending`, `human`, `bot_suspicious`, `agent_unverified`, `bot_automation`, `crawler_verified`, `agent_verified`, `bot_spoofed`; `vv_detail` is `operator|verification|purpose|claim|browser_class|phase`, for example `openai|signature_valid|user_directed|signature_agent|human|initial` or `none|no_signature|unknown|none|-|-`. They contain no identifier, IP, cookie or URL. The other difference is the route: the hits pass through your collector, so your server (and whoever operates it for you) also processes the IP and the hit data.
+
+**Basic Consent Mode:** if the site blocks the Google tag until consent, Google normally receives nothing before a decision. Vanilla's default pings would then send more than your Google tag does. Set `DENIED_PINGS=off` on such sites.
+
 URL paths, UTM values, titles and custom event parameters can contain personal data. Disclose the event parameters and visitor IP sent in pings in your privacy notice. "Cookieless" does not mean anonymous.
 
 Supported out of the box:
