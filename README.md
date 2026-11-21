@@ -111,6 +111,20 @@ hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)). Settl
 remain eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/docs/conversion-guidance.md);
 backend payment/fraud checks still apply.
 
+## History
+
+Vanilla is the second generation of a server-side GA4 collector that has been in development and in use since May 2026.
+
+- **First generation, May to October 2026.** A private multi-client collector (Fastify, a database with an admin panel, VPS or Cloudflare Worker deployment). It sent GA4 data through a mix of a helper `/g/collect` hit and Measurement Protocol, and also forwarded conversions to ad platforms.
+- **What it taught us.** Mixed transport could send the first `page_view` twice and lost session attribution on some MP events ([comparison](docs/measurement-protocol-notes.md#all-collect-comparison)). Consent depended on how each site loaded the script, so the collector could not enforce it itself. Many channels in one service made it hard to maintain and to explain.
+- **Second generation, Vanilla, since 2026-11-05.** It was rebuilt from those lessons and is public:
+  - The collector enforces consent itself, and identity is a signed cookie set only after consent.
+  - Every event goes through one transport, `/g/collect`.
+  - It handles GA4 only, with no database.
+  - It is [verified](docs/verification.md) against a regular property in BigQuery.
+
+Earlier transport experiments are recorded in the [technical overview](docs/technical-overview.md#historical-measurement-protocol-findings).
+
 ## Limits
 
 - **Tested on small sites.** Real traffic so far comes from two small sites. On the online store, both properties recorded 15 consented visitors, 17 sessions and 37 page views in BigQuery on 2026-11-14, with small differences in some other slices; on the company website a difference between the two exposed a broken GTM consent setup. A busy site: Not verified. What is better, the same and worse than the Google tag: [verification](docs/verification.md#better-same-and-worse-than-the-google-tag).
