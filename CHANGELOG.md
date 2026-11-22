@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The tracker no longer forwards GTM's own `gtm.*` keys (such as `gtm.uniqueEventId`) as event parameters. They appeared when the tracker loaded after GTM and replayed objects GTM had already processed; the collector dropped them, so GA4 data was not affected.
+
 ## 0.1.0 - 2026-11-17
 
 First release. Tested on the demo shop, the author's website and two small live sites with real visitors; what is verified and what is not is in [docs/verification.md](docs/verification.md).

@@ -35,5 +35,8 @@ export function normalizeEventItem(item: unknown) {
     ...params,
     ...(isObject(ecommerce) ? ecommerce : {}),
   };
+  // GTM writes its own keys (gtm.uniqueEventId and others) into objects it has processed. When the
+  // tracker loads after GTM and replays the queue, those keys would otherwise reach the collector.
+  for (const key of Object.keys(clean)) if (key.startsWith("gtm.")) delete clean[key];
   return { name: event, params: clean };
 }
