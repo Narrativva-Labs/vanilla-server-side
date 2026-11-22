@@ -161,7 +161,13 @@ for (const choice of ["Accept", "Reject"]) {
     await expect.poll(() => updates.length).toBe(1);
     expect(updates[0]).toEqual({
       path: choice === "Accept" ? "/e" : "/d",
-      params: { traffic_class: "suspicious", traffic_phase: "final" },
+      params: {
+        traffic_class: "suspicious",
+        traffic_phase: "final",
+        page_location: expect.stringMatching(/^http:\/\/localhost:\d+\/$/),
+        page_referrer: "",
+        page_title: "Vanilla Server-Side demo",
+      },
     });
     if (choice === "Accept") await expect.poll(() => demo.toGoogle("traffic_class")).toBe(1);
     else expect(await demo.session()).toBeUndefined();
