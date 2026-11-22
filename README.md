@@ -199,9 +199,7 @@ always supplies the operator, also when a marker names another one.
 plugin); `anthropic` only from older Claude in Chrome versions. The current extension
 (1.0.107, checked 22 November 2026) keeps its UI in a closed shadow root and is not
 detected, so those visits stay `human` unless other evidence exists.
-A marker that appears later qualifies for the dedicated class update if no final/agent update
-has been sent yet. After that one document update, a later marker reaches the collector with
-the next ordinary hit or the detector's one-page carry-over.
+A marker that appears later has its own agent update slot, even after a final update.
 Update the collector before the tracker ([order](INSTALL.md#updates-and-maintenance)).
 The [complete dictionary](INSTALL.md#analyst-value-dictionary) explains every segment,
 priority and session rank. Strongest type and known operator stick immediately to
@@ -215,17 +213,24 @@ later hits in a bounded memory-only session (denied pings: page only); no delays
 | declared_agent | agent_unverified |
 | none / missing | pending |
 
-With the optional browser detector, Vanilla automatically sends the first valid `final` or
-`agent` publication as one `traffic_class` event per document, with a keepalive fetch (also on tab
-hide). No `TRACKED_EVENTS` entry is needed. Only validated traffic_class/traffic_phase/traffic_agent
-parameters are copied, beside the server-derived vv_type/vv_detail; ordinary events keep the vv
-labels. The update refreshes session label memory (denied pings: page memory), without backfill.
-Consent and `DENIED_PINGS` apply exactly as for other events. Initial and legacy unphased detector
-events send no dedicated update. Later publications use no additional update slot; ordinary hits
-still read the latest snapshot. This best-effort update is never retried. Set a custom detector
-layer before s.js; see the [installation contract](INSTALL.md#visitor-verdict-browser-class-optional).
-Upgrade the collector before the tracker. Visitor Verdict 1.2.0 finalizes on first hide by default
-and carries suspicious for one following document; a brief tab switch ends behaviour observation.
+With the optional browser detector, Vanilla sends up to two `traffic_class` updates per document:
+one `final` when its class differs from the first ordinary hit's class or is not `human`, and
+one `agent` whenever the detector publishes that phase. A plain human → human page sends no
+extra event. Both updates use keepalive fetch, wait behind the first ordinary request and its
+session bootstrap, and are never retried. No `TRACKED_EVENTS` entry is needed. Only validated
+traffic_class/traffic_phase/traffic_agent and the usual sanitized page location, title and referrer
+are forwarded beside server-derived vv_type/vv_detail. Ordinary events keep the vv labels.
+Updates refresh session label memory (denied pings: page memory), without backfill.
+Consent and `DENIED_PINGS` apply as for other events: an undecided banner can send `/d`,
+then send its full `/e` copy after grant. These copies use separate transport limits.
+Initial and legacy unphased publications send no dedicated update. SPA routes and BFCache
+restores do not reset the document limits. Configure a custom detector layer before s.js,
+or set `data-vv-layer` on s.js before loading a detector through GTM; see the
+[installation contract](INSTALL.md#visitor-verdict-browser-class-optional).
+Upgrade the collector before the tracker and remove any old manual `traffic_class` entry from
+`TRACKED_EVENTS`. Visitor Verdict 1.2.0 finalizes on first hide by default and carries suspicious
+for one following document; a brief tab switch ends behaviour observation. Use
+`finalOnHidden: false` when async probes or resumed SPA behaviour must remain observable.
 
 GTM-only sites keep traffic_class for now.
 

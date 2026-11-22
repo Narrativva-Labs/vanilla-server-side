@@ -55,8 +55,10 @@ if (script && !win.__vanillaGA) {
   function vvHold() {
     vvWaiting = true;
     try {
-      const name = (window as { visitorVerdictConfig?: { dataLayerName?: unknown } })
-        .visitorVerdictConfig?.dataLayerName;
+      const name =
+        script?.dataset.vvLayer ||
+        (window as { visitorVerdictConfig?: { dataLayerName?: unknown } }).visitorVerdictConfig
+          ?.dataLayerName;
       const other =
         typeof name === "string" && name !== "dataLayer"
           ? (window as unknown as Record<string, { push?: unknown } | undefined>)[name]
@@ -180,8 +182,10 @@ if (script && !win.__vanillaGA) {
   // Subscribe even when the optional initial-class wait is disabled. The detector's
   // configured layer can differ from the consent/ecommerce dataLayer.
   try {
-    const name = (window as { visitorVerdictConfig?: { dataLayerName?: unknown } })
-      .visitorVerdictConfig?.dataLayerName;
+    const name =
+      script.dataset.vvLayer ||
+      (window as { visitorVerdictConfig?: { dataLayerName?: unknown } }).visitorVerdictConfig
+        ?.dataLayerName;
     if (
       typeof name === "string" &&
       name !== "dataLayer" &&
@@ -190,13 +194,23 @@ if (script && !win.__vanillaGA) {
       !["__proto__", "prototype", "constructor"].includes(name)
     ) {
       const host = window as unknown as Record<string, unknown>;
-      const other = (host[name] ??= []) as unknown[];
+      const other = (host[name] ??= []) as {
+        length: number;
+        [key: number]: unknown;
+        push: (...items: unknown[]) => unknown;
+      };
       const publish = (item: unknown) => {
         const event = normalizeEventItem(item);
         if (event?.name === "traffic_class") tracker.track(event.name, event.params);
       };
-      if (Array.isArray(other) && typeof other.push === "function") {
-        [...other].forEach(publish);
+      if (
+        typeof other.length === "number" &&
+        Number.isFinite(other.length) &&
+        other.length >= 0 &&
+        Number.isInteger(other.length) &&
+        typeof other.push === "function"
+      ) {
+        Array.prototype.forEach.call(other, publish);
         const original = other.push;
         other.push = function (...items: unknown[]) {
           try {

@@ -19,13 +19,17 @@ export function trafficFields(trafficClass: unknown, phase: unknown, agent?: unk
 }
 
 /** Dedicated publications require a current phase; legacy detector events remain passive. */
-export function trafficUpdateFields(params: Record<string, unknown>) {
-  const fields = trafficFields(params.traffic_class, params.traffic_phase, params.traffic_agent);
+export function trafficUpdateFields(params: unknown) {
+  if (!params || typeof params !== "object" || Array.isArray(params)) return;
+  const input = params as Record<string, unknown>;
+  const fields = trafficFields(input.traffic_class, input.traffic_phase, input.traffic_agent);
   if (!fields.traffic_class || !["final", "agent"].includes(fields.traffic_phase ?? "")) return;
   if (
     fields.traffic_phase === "agent" &&
     (fields.traffic_class !== "declared_agent" || !fields.traffic_agent)
   )
     return;
+  for (const key of ["page_location", "page_title", "page_referrer"])
+    if (typeof input[key] === "string") fields[key] = input[key];
   return fields;
 }

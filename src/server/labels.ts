@@ -1,4 +1,4 @@
-import { trafficFields } from "../shared/traffic.js";
+import { trafficFields, trafficUpdateFields } from "../shared/traffic.js";
 import { visitorLabels } from "visitor-verdict-server";
 import type { AgentFields } from "./agent-verification.js";
 
@@ -188,7 +188,7 @@ export function withLabels(
   return {
     ...labels,
     ...(trafficUpdate
-      ? browser
+      ? trafficUpdateFields(params)
       : Object.fromEntries(Object.entries(params).filter(([key]) => !reserved.has(key)))),
   };
 }

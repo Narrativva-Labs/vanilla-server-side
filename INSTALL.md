@@ -76,7 +76,7 @@ Set these in .env and rebuild the tracker. Invalid values stop startup. Agent ve
 
 To send through Google's [EU collection endpoint](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), set `GA4_REGION=eu` in .env after installation and rebuild as described below. Leave it empty for the default endpoint.
 
-The tracker sends page views, final engagement time, one optional Visitor Verdict class update per document, and the events named in `TRACKED_EVENTS`. Omit that setting to use the list in [.env.example](.env.example): common ecommerce events plus `generate_lead`, `sign_up`, `login` and `search`. To change it, set `TRACKED_EVENTS` in .env to a comma-separated list, which replaces the default, and rebuild as described below. An empty `TRACKED_EVENTS=` fails startup; omit it to use defaults. Other events are ignored. `page_view` is automatic and must not be listed.
+The tracker sends page views, final engagement time, up to two optional Visitor Verdict class updates per document, and the events named in `TRACKED_EVENTS`. Omit that setting to use the list in [.env.example](.env.example): common ecommerce events plus `generate_lead`, `sign_up`, `login` and `search`. To change it, set `TRACKED_EVENTS` in .env to a comma-separated list, which replaces the default, and rebuild as described below. An empty `TRACKED_EVENTS=` fails startup; omit it to use defaults. Other events are ignored. `page_view` is automatic and must not be listed.
 
 Vanilla reads events straight from `dataLayer`, not from your GTM tags. It also reads `gtag("event", …)` commands, except those with `send_to`, which are meant for one destination (plugins for Google Ads or Merchant Center send their own `page_view` and `view_item` this way). An event must already carry its final GA4 name and parameters there: if the site pushes `order_complete` and a GTM tag renames it to `purchase`, the regular property gets a purchase and Vanilla gets nothing. A working example:
 
@@ -341,34 +341,70 @@ declared_agent. `openai` comes from OpenAI's agent overlay (confirmed in the Cha
 plugin); `anthropic` only from older Claude in Chrome versions. The current extension
 (1.0.107, checked 22 November 2026) keeps its UI in a closed shadow root and is not
 detected, so those visits stay `human` unless other evidence exists.
-Vanilla also subscribes to the detector's traffic_class pushes. The first valid `final` or
-`agent` publication sends one lightweight `traffic_class` update per document, automatically,
-independently of `TRACKED_EVENTS`; there is no need to list it. `initial`, unphased legacy
-publications and later duplicates do not generate updates, even if listed. First publication
-wins: agent before final uses the slot, and agent after final reaches GA4 only with a later
-ordinary event. SPA routes and BFCache restores do not reset this document limit.
+Vanilla also subscribes to the detector's traffic_class pushes. It sends up to two lightweight
+updates per document: one `final` if the final class differs from the class on the first ordinary
+hit, or if final is not `human`; and one `agent` whenever the detector publishes that phase.
+Human → human sends no extra event. The phase slots are independent in either order, with no
+priority filter. Duplicate phases do not send again. SPA routes and BFCache restores retain the
+limits. `initial` and unphased legacy publications remain passive, even if manually listed.
 
-The update parameters contain only traffic_class, traffic_phase and the optional whitelisted
-traffic_agent. Score, version, signal codes, arbitrary event payload and page content are not
-copied. Standard request identity/consent metadata remains. A keepalive fetch sends it at once,
-including during a tab hide, without waiting behind normal events or retrying. Browser shutdown,
-network failure or a collector error can still lose it; this is not a delivery guarantee.
+Parameters are limited to traffic_class, traffic_phase, optional whitelisted traffic_agent, and
+page_location/page_title/page_referrer using the same URL sanitation and consent/redaction
+rules as ordinary events. Score, version, signal codes, arbitrary payload, ecommerce, user_data
+and agent_* fields are excluded. Standard request identity/consent metadata remains.
+A consented keepalive request waits behind the first ordinary event response/session bootstrap,
+including startup replay and hidden-page updates. Cookieless pings start after their page ping
+and share its transient page identity, without a cookie bootstrap. A slow or retrying first page view can therefore delay
+an update until after exit; this avoids a cookie/session split and reversed hit order. Updates
+are best effort and never retried once attempted. Browser shutdown, network or collector errors
+can lose them. Concurrent engagement/analytics requests share the browser's 64 KiB in-flight
+keepalive budget. Browsers without fetch keepalive support can cancel on exit. Queued events
+expire (ordinary delivery queue: 30 seconds; collector timestamp window: 72 hours); a full
+update waiting for consent beyond the timestamp window is dropped, without using its phase slot.
 
-Consent follows ordinary event rules: no signal sends nothing, pending decisions keep a full
-copy in memory, a grant allows `/e`, and denied/banner pings use `/d` only when enabled, with no
-cookies, click IDs or user_data. An undecided banner can send a cookieless copy and a later grant
-can send the full copy, as for other events. Withdrawal retains the existing suppression rules.
-The collector validates these fields again, forwards the GA4 traffic_class event plus vv labels,
-and retains the strongest session label (denied pings: page memory). Earlier hits are not backfilled.
-Deploy the collector before refreshing s.js; older collectors may reject automatic updates.
+Consent follows ordinary rules: no signal sends nothing, pending decisions keep a full copy
+in memory, a grant allows `/e`, and denied/banner pings use `/d` only when enabled, without
+cookies, click IDs or user_data. An undecided banner can send `/d` and later `/e` after grant,
+as for other events; each transport permits one update per phase. A refusal with pings off,
+withdrawal, expired waiting entry or queue eviction does not consume an unsent phase slot.
+There is no automatic resurrection of discarded publications: a later valid publication may
+use the free slot. Withdrawal retains existing suppression rules. The collector validates fields
+again and retains the strongest session label (denied pings: page memory). No backfill.
 
-Set a custom detector dataLayerName before s.js loads. The default dataLayer needs no extra
-configuration. The frozen snapshot still supplies the latest class on ordinary events. A detector
-without phases creates no dedicated update. The browser class works with verification off and is
-spoofable. The detector uses minimal sessionStorage; disclose it before installing. Visitor Verdict
-1.2.0 finalizes on the first tab hide by default; `finalOnHidden: false` retains pause-on-hidden.
-Its suspicious carry (`CS`) labels one following document without promoting or renewing itself.
-Early hits may lack a browser class.
+For a custom layer configured before s.js, set `visitorVerdictConfig.dataLayerName` in the head.
+If GTM configures the detector later, select that same name on s.js itself:
+
+```html
+<script async src="https://kx7qpa.example.com/s.js" data-vv-layer="verdicts"></script>
+```
+
+The default dataLayer needs no attribute. A custom layer must have a finite nonnegative integer
+length and a callable push, as in the detector. The attribute selects the subscription at load;
+a later different config or replacement layer is not dynamically intercepted. Ordinary events
+still read the frozen snapshot regardless of layer.
+
+Upgrade order and compatibility:
+
+- Deploy the collector first, then refresh s.js, then the optional detector. A new tracker with
+  an old collector can receive `400 event_not_allowed`; manually allowing traffic_class on that
+  old collector forwards only vv labels, without the dedicated browser fields.
+- Remove any previous manual `traffic_class` entry from `TRACKED_EVENTS` before upgrading an old
+  tracker: its initial/unphased custom events are rejected by the new collector with
+  `400 invalid_traffic_update`. The dedicated event is now automatic and independently allowed.
+- A 1.1 detector works with the new tracker/collector, but final waits for its visible timer or
+  pagehide. An unphased legacy detector supplies passive labels only.
+- A 1.2 detector with an old tracker supplies passive labels; hidden final and one-document
+  carry help later ordinary hits. No dedicated update is added by the old tracker unless the
+  site explicitly configured it as a custom event.
+
+The browser class works with verification off and is spoofable. The detector uses minimal
+sessionStorage. Version 1.2.0 finalizes on the first visible-to-hidden transition by default;
+`finalOnHidden: false` retains pause-on-hidden. Early final cancels unfinished Worker/Permissions
+probes, ends TP/SY/NI observation for the rest of the document (including SPA routes), and can
+leave TP history undecayed when trusted input comes only after return. Use false for sites that
+need those observations; delaying the default would weaken the exit-time snapshot. Agent marker
+watching survives hidden final until a match or pagehide. Suspicious carry (`CS`) labels one
+following document without promoting or renewing itself. Early hits may lack a browser class.
 
 ### Waiting for the first class
 

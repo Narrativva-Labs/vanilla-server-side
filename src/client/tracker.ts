@@ -11,6 +11,7 @@ import {
   type Consent,
 } from "../shared/consent.js";
 import {
+  MAX_EVENT_AGE_MS,
   PAGE_TEXT_BYTES,
   SESSION_MS,
   shortenBytes,
@@ -91,7 +92,35 @@ export function createTracker(
   // The page as it was when its held automatic page view could have been sent.
   let heldPage: Record<string, unknown> | undefined;
   // Document scope: SPA routes and BFCache restores do not restart the detector.
-  let trafficUpdated = false;
+  const trafficSent = new Set<string>();
+  let ordinaryClass: string | undefined;
+  let ordinaryStarted = false;
+  function redundant(params: Record<string, unknown>) {
+    return (
+      params.traffic_phase === "final" &&
+      params.traffic_class === "human" &&
+      ordinaryStarted &&
+      ordinaryClass === "human"
+    );
+  }
+  function phasePending(phase: unknown) {
+    return (
+      waiting.some(
+        (item) =>
+          item.name === "traffic_class" &&
+          item.timestamp <= runtime.now() + 5000 &&
+          runtime.now() - item.timestamp <= MAX_EVENT_AGE_MS &&
+          item.params.traffic_phase === phase,
+      ) ||
+      queue.some(
+        (item) =>
+          item.event.name === "traffic_class" &&
+          timely(item.event, runtime.now()) &&
+          item.event.params.traffic_phase === phase,
+      ) ||
+      pingQueue.some((item) => item.name === "traffic_class" && item.params.traffic_phase === phase)
+    );
+  }
   function held() {
     if (released) return false;
     if (!holding) {
@@ -193,8 +222,13 @@ export function createTracker(
     const trafficUpdate = name === "traffic_class";
     if (trafficUpdate) {
       const fields = trafficUpdateFields(params);
-      if (trafficUpdated || !fields) return;
-      trafficUpdated = true;
+      if (
+        !fields ||
+        phasePending(fields.traffic_phase) ||
+        (trafficSent.has(`e:${fields.traffic_phase}`) && canTrack(consent)) ||
+        (trafficSent.has(`d:${fields.traffic_phase}`) && !canTrack(consent))
+      )
+        return;
       params = fields;
     }
     const automaticPage = name === "page_view" && automatic;
@@ -210,7 +244,7 @@ export function createTracker(
     const pageLocation = sanitizeUrl(runtime.href());
     const pageReferrer = sanitizeUrl(runtime.referrer());
     params = trafficUpdate
-      ? params
+      ? { ...pageFields(), ...params }
       : jsonSnapshot({
           page_title: runtime.title?.() ?? "",
           page_location: pageLocation,
@@ -219,9 +253,11 @@ export function createTracker(
           engagement_time_msec: Math.max(0, Math.round(runtime.engagement?.() ?? 0)),
         });
     if (!canTrack(consent) && name !== "page_engagement") {
-      if (pingQueue.length >= 50) pingQueue.shift();
-      pingQueue.push({ name, params });
-      ping();
+      if (pings) {
+        if (pingQueue.length >= 50) pingQueue.shift();
+        pingQueue.push({ name, params });
+        ping();
+      }
     }
     if (consent.analytics_storage === "denied" && settled) return;
     const clicks = name === "page_view" ? clickIds(runtime.href()) : undefined;
@@ -314,8 +350,8 @@ export function createTracker(
       if (purchases.size >= 1000) purchases.delete(purchases.values().next().value!);
       purchases.add(transaction);
     }
-    if (immediate || (name === "traffic_class" && deliveryReady)) {
-      // One small best-effort request; never wait for or retry the ordinary event queue.
+    if (immediate) {
+      // Exit engagement retains its existing best-effort transport.
       sendImmediate(snapshot);
       return;
     }
@@ -325,7 +361,8 @@ export function createTracker(
   }
   function sendImmediate(event: TrackingEvent) {
     const body = requestBody(event);
-    if (body)
+    if (body) {
+      if (event.name === "traffic_class") trafficSent.add(`e:${event.params.traffic_phase}`);
       void runtime
         .fetch(endpoint, {
           method: "POST",
@@ -336,6 +373,7 @@ export function createTracker(
           body,
         })
         .catch(() => {});
+    }
   }
   function requestBody(queued: TrackingEvent) {
     // The latest browser class when the request leaves, not when the event was queued.
@@ -355,6 +393,10 @@ export function createTracker(
         "[Vanilla Server-Side] Event skipped: UTF-8 payload exceeds the collector's 64 KiB limit. Reduce the event payload or number of items.",
       );
       return undefined;
+    }
+    if (queued.name !== "traffic_class" && !ordinaryStarted) {
+      ordinaryStarted = true;
+      ordinaryClass = event.params.traffic_class as string | undefined;
     }
     return body;
   }
@@ -383,6 +425,11 @@ export function createTracker(
         item.name === "purchase" && typeof item.params.transaction_id === "string"
           ? item.params.transaction_id
           : undefined;
+      if (
+        item.name === "traffic_class" &&
+        (redundant(item.params) || trafficSent.has(`d:${item.params.traffic_phase}`))
+      )
+        continue;
       if (transaction && pingPurchases.has(transaction)) continue;
       if (transaction) {
         if (pingPurchases.size >= 1000) pingPurchases.delete(pingPurchases.values().next().value!);
@@ -396,7 +443,7 @@ export function createTracker(
       };
       const params =
         item.name === "traffic_class"
-          ? item.params
+          ? (cleanUrls(redactAds(jsonSnapshot(item.params))) as Record<string, unknown>)
           : (cleanUrls(
               redactAds(
                 jsonSnapshot({
@@ -427,6 +474,11 @@ export function createTracker(
         screen_resolution: device?.screen_resolution,
       });
       if (new TextEncoder().encode(body).byteLength > 64 * 1024) continue;
+      if (item.name !== "traffic_class" && !ordinaryStarted) {
+        ordinaryStarted = true;
+        ordinaryClass = params.traffic_class as string | undefined;
+      }
+      if (item.name === "traffic_class") trafficSent.add(`d:${item.params.traffic_phase}`);
       void runtime
         .fetch(new URL("./d", endpoint).href, {
           method: "POST",
@@ -442,14 +494,6 @@ export function createTracker(
   async function flush() {
     if (!deliveryReady) return;
     ping();
-    // Startup replay can queue an update before delivery starts. It has the same
-    // immediate, no-retry transport as a live publication, even behind a slow page view.
-    for (const item of [...queue]) {
-      if (item.event.name !== "traffic_class") continue;
-      queue.splice(queue.indexOf(item), 1);
-      const effective = intersect(item.event.consent, consent);
-      if (canTrack(effective)) sendImmediate({ ...item.event, consent: effective });
-    }
     if (resolving) return;
     resolving = true;
     try {
@@ -461,6 +505,14 @@ export function createTracker(
         const mayResolve = known && runtime.now() >= waitUntil;
         if (!expired && !mayResolve) continue;
         waiting.splice(waiting.indexOf(item), 1);
+        if (
+          item.name === "traffic_class" &&
+          !(
+            item.timestamp <= runtime.now() + 5000 &&
+            runtime.now() - item.timestamp <= MAX_EVENT_AGE_MS
+          )
+        )
+          continue;
         if (canTrack(consent)) {
           // The choice resolves analytics permission; advertising never expands.
           const original = item.unresolved
@@ -500,6 +552,14 @@ export function createTracker(
         const effective = intersect(item.event.consent, consent);
         if (!canTrack(effective)) {
           queue.splice(queue.indexOf(item), 1);
+          continue;
+        }
+        if (item.event.name === "traffic_class") {
+          queue.splice(queue.indexOf(item), 1);
+          const key = `e:${item.event.params.traffic_phase}`;
+          if (!trafficSent.has(key) && !redundant(item.event.params)) {
+            sendImmediate({ ...item.event, consent: effective });
+          }
           continue;
         }
         const body = requestBody({ ...item.event, consent: effective });
