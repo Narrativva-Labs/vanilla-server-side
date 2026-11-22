@@ -225,7 +225,10 @@ detector's initial class or at most that many milliseconds; default 0, no wait
 ([trade-off](INSTALL.md#waiting-for-the-first-class)).
 
 In GA4 use **begins with** `agent_` or `bot_` on vv_type; use **begins with** `openai|`
-on vv_detail for OpenAI, and add vv_type `agent_verified` to count only verified operators. Looker Studio operator dimension:
+on vv_detail for OpenAI, and require vv_type `agent_verified` or `crawler_verified` to count only verified operators
+(an operator with `agent_unverified` comes from a page marker; a UA token never names one). Purpose
+`intermediary` (for example `browserbase|signature_valid|intermediary|…`) marks verified signing
+infrastructure, not the agent. Looker Studio operator dimension:
 `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Data API names are `customEvent:vv_type`
 and `customEvent:vv_detail`. The old six field names are no longer forwarded.
 

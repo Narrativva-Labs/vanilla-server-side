@@ -276,18 +276,21 @@ only the operator; purpose comes from the claimed UA token selecting the feed
 and its purpose mapping. It does not independently verify that product role.
 
 
-Capabilities below describe the bundled 0.3.5 registry, before
+Capabilities below describe the bundled 0.4.0 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
 | Evidence available | Operators / routes | Local live signature capture |
 |---|---|---|
 | HTTP signature | OpenAI ChatGPT cloud browser | Yes, one header-capture run (32 requests) |
-| HTTP signature configuration, not captured here | Google hosted agent, DuckDuckGo, Browserbase, Manus; some identities are provisional | No |
+| HTTP signature configuration, not captured here | Google hosted agent (experimental, label `g`, only some requests signed), DuckDuckGo, Manus, Meta Muse (`muse.ai`, signs only part of its requests); some identities are provisional | No |
+| HTTP signature of an intermediary (signing infrastructure, not the agent) | Browserbase: reported as operator `browserbase` with purpose `intermediary` | No |
 | Published IP/SAIL feeds | OpenAI fetchers/crawlers; Google mapped agent/fetcher/crawler tokens; Anthropic (Claude-Agent uses SAIL); Perplexity; DuckAssistBot; Apple; Microsoft; Mistral User/Index; Kimi; Common Crawl; Seznam; Naver | No additional signature captures |
 | Configured static IPs | Kagi | No |
 | rDNS only, inactive here | Baidu, Petal, Yandex, Amazon Ads | No |
-| Claim only | Meta, Amazon crawler family, You.com, Sogou, ByteDance, DeepSeek, Zhipu, Shenma, 360, Diffbot, Timpi; Mistral Training; Microsoft AdIdxBot/BingPreview/MicrosoftPreview/BingVideoPreview | No |
+| Claim only | Meta crawlers (meta-externalagent and others), Amazon crawler family, You.com, Sogou, ByteDance, DeepSeek, Zhipu, Shenma, 360, Diffbot, Timpi; Mistral Training; Microsoft AdIdxBot/BingPreview/MicrosoftPreview/BingVideoPreview | No |
+
+Amazon Bedrock AgentCore Browser is not supported yet: it signs only when a customer enables it and AWS documents no public key directory.
 
 A recognized UA or an accessible key directory alone verifies no request. Signature
 verification needs a valid covered request and usable cached key; IP evidence needs
@@ -386,7 +389,7 @@ Data API names: `customEvent:vv_type` and `customEvent:vv_detail`.
 |---|---|
 | human | Human-looking browser, without stronger evidence; masked automation can look the same |
 | pending | No browser class or qualifying server evidence yet |
-| agent_verified | Verified signature/IP evidence with user_directed or unknown purpose; vv_detail distinguishes them |
+| agent_verified | Verified signature/IP evidence with user_directed, intermediary or unknown purpose; vv_detail distinguishes them |
 | crawler_verified | Verified signature/IP evidence with documented crawler purpose |
 | bot_automation | Hard browser automation evidence |
 | agent_unverified | Browser declared_agent (also with a page-marker operator) or an unverified UA/signature-agent claim |
@@ -406,9 +409,9 @@ There is no version segment. Missing segments are `-`; unknown operator is `none
 
 | Segment | Values |
 |---|---|
-| operator | Registry operator ID (see capabilities) from verified evidence, else the browser page-marker operator (openai, anthropic) with declared_agent, or none; known operator retained within session |
+| operator | Registry operator ID (see capabilities) from verified evidence, else the browser page-marker operator (openai, anthropic) with declared_agent, or none; known operator retained within session together with the type that established it. A UA token or unverified Signature-Agent never names an operator |
 | verification | signature_valid, ip_match, signature_invalid, no_signature, none, or - without server evidence |
-| purpose | user_directed, crawler, unknown, or - without server evidence |
+| purpose | user_directed, crawler, intermediary (verified signing infrastructure such as Browserbase; the agent itself is not identified), unknown, or - without server evidence |
 | claim | signature_agent, ua_token, none, or - without server evidence; dom_marker when the operator comes from a browser page marker; claims are untrusted |
 | browser_class | human, suspicious, automated, declared_agent, or - |
 | browser_phase | initial, final, agent (detector update after a page marker), or - |
@@ -438,7 +441,10 @@ names the source of the operator) and stays `agent_unverified`, for example
 `openai|no_signature|unknown|dom_marker|declared_agent|agent`. When stronger session
 evidence supplies the type and operator, the hit's claim reverts to its own server claim, so
 `dom_marker` only ever names the operator of that hit's marker. To count only verified
-operators, also require vv_type `agent_verified`. In Looker Studio create
+operators, require vv_type `agent_verified` or `crawler_verified` (per hit: verification
+`signature_valid` or `ip_match`); a carried operator keeps the type that established it, so
+`agent_unverified` with an operator always means a page marker. Leave out purpose
+`intermediary` when counting the agents themselves. In Looker Studio create
 an operator dimension with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`.
 
 Every later hit retains the strongest vv_type observed in that session. Ranks are
