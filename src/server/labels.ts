@@ -11,6 +11,7 @@ const reserved = new Set([
   "agent_claim",
   "traffic_class",
   "traffic_phase",
+  "traffic_agent",
 ]);
 type Labels = ReturnType<typeof visitorLabels>;
 export type LabelObserver = (labels: Labels, verdict?: AgentFields, browserClass?: string) => void;
@@ -137,11 +138,12 @@ export function withLabels(
   sticky?: { memory: LabelMemory; key: string },
   observe?: LabelObserver,
 ): Record<string, unknown> {
-  const browser = trafficFields(params.traffic_class, params.traffic_phase);
+  const browser = trafficFields(params.traffic_class, params.traffic_phase, params.traffic_agent);
   let labels = visitorLabels({
     verdict,
     browserClass: browser.traffic_class,
     browserPhase: browser.traffic_phase,
+    browserAgent: browser.traffic_agent,
   });
   const proofExpires = verdict?.proofExpiresAt ?? verdict?.verified?.expiresAt;
   const isReplay =

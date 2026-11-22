@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Use event-scoped vv_type/vv_detail from Visitor Verdict server 0.3.x (bundled 0.3.4); reserve old and new client label names and retain automatic/ecommerce fields within the 16 KiB limit.
+- Read the optional page-marker operator `agent` (only `openai` or `anthropic`) and the phase `agent` from Visitor Verdict 1.1 and send it as `traffic_agent`; unknown values are dropped and older detectors send exactly what they sent before. The collector validates it the same way, reserves the name and passes it to Visitor Verdict server 0.3.5: without verified identity, a declared_agent hit names that operator in vv_detail with claim `dom_marker` and stays agent_unverified; a verified operator always wins.
+- Documentation: Vanilla only labels traffic. Nothing is held or excluded by default, including leads imported into Google Ads; filtering conversions is an optional choice.
+- Use event-scoped vv_type/vv_detail from Visitor Verdict server 0.3.x (bundled 0.3.5); reserve old and new client label names and retain automatic/ecommerce fields within the 16 KiB limit.
 - Retain bounded session/page evidence with proof-capped expiry, monotonic renewal for the same type/operator, latest equal-rank attribution and separate admission budgets; reclaim expiry via a bounded heap before LRU eviction.
 - Join parallel first hits before the server cookie exists only by browser client ID plus a random in-memory bootstrap token created after consent; a known client ID alone no longer attaches to another visitor's first visit. Deploy the server before the tracker cache (300 s) refreshes.
 - Add opt-in `data-vv-wait-ms` (0–1000, default 0): the first hits of a page wait for the Visitor Verdict initial class or the deadline, whichever comes first; leaving the page releases them at once.

@@ -1,14 +1,14 @@
 # Visitor Verdict server package
 
 - Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server
-- Source commit: `a51b3b5` (branch phase2-verifier).
-- Version: 0.3.4; archive: visitor-verdict-server-0.3.4.tgz.
-- SHA-512 (hex): `ef47a121e3e7625c2ef8482d9cf9ffa3fa8b7a015bbef64aa2f87d69383b28cb5f12a6a973551a64a349e55616b45ac2a4291abd5afaa5c60e1fa14fb766c565`
-- npm integrity: `sha512-70ehIePnYlwu+EgtnPn/o/qLegFbvvZKovh9aTg7KMtfEqapc1UaZKNJ5VYWtFrCpCkavVr6pcYOH6FPt2bFZQ==`
+- Source commit: `33ec562` (branch phase2-verifier).
+- Version: 0.3.5; archive: visitor-verdict-server-0.3.5.tgz.
+- SHA-512 (hex): `75d4526f1103e0c0b98612b85f172fc925f23f706a00f1361d338e3f107fcff3707e424b3b35b142243def880fe96e74a097f5a0c66cfb524ad31f65e1cca96a`
+- npm integrity: `sha512-ddRSbxED4MC5hhK4XxcvySXyP3BqAPE2HTOOPxB/z/NwfkJLOzWxQiQ974gP6W50oJf1oMZs+1JK0x9l4cypag==`
 
 Rebuild: `cd server && npm run build && npm pack`.
-Copy the archive into vendor/, then run `npm install --offline ./vendor/visitor-verdict-server-0.3.4.tgz`.
-Verify bytes using `shasum -a 512 vendor/visitor-verdict-server-0.3.4.tgz`.
+Copy the archive into vendor/, then run `npm install --offline ./vendor/visitor-verdict-server-0.3.5.tgz`.
+Verify bytes using `shasum -a 512 vendor/visitor-verdict-server-0.3.5.tgz`.
 
 Version 0.3.0 replaces toAnalyticsFields with pure visitorLabels. Vanilla sends only
 vv_type and vv_detail to GA4; browser traffic_class/traffic_phase remain collector
@@ -19,3 +19,8 @@ and status, and retains replay evidence through an absolute skew deadline.
 
 Version 0.3.4 preserves typed failures across independent package copies and
 reclaims expired replay occupancy when status is read using the shared clock.
+
+Version 0.3.5 accepts an optional browser page-marker operator (`browserAgent`, only
+openai or anthropic) and the browser phase `agent`. Without a verified identity or an
+invalid signature, a marker with class declared_agent names the operator in vv_detail
+with claim `dom_marker`; the type stays agent_unverified. Verified identity always wins.

@@ -163,7 +163,7 @@ Send that only after the required consent, remove debug flags after testing, and
 
 This needs a Google Ads account and an ad click with both `ad_storage` and `ad_user_data` granted, so your banner must send them. A conversion credited to a real ad click: Not verified yet.
 
-1. In the **second property**, open Admin -> Events and mark an approved purchase event as a key event. Do not import lead events from this property.
+1. In the **second property**, open Admin -> Events and mark the event to import as a key event. Vanilla filters nothing out of it; see the note below on agents and automation.
 2. In Google Ads, keep auto-tagging on, so that clicks carry `gclid`.
 3. In the **second property**, open Admin -> Product links -> Google Ads links and link your Ads account. Do not link the regular property for this.
 4. After the event has been collected, import it in Google Ads under Goals -> Conversions -> New conversion action -> Import -> Google Analytics.
@@ -172,14 +172,16 @@ This needs a Google Ads account and an ad click with both `ad_storage` and `ad_u
 Update your privacy text first: Google's role differs between Analytics and Ads, as Google's [list of services](https://business.safety.google/adsservices/) shows.
 
 
-Do not import leads from the second property into Google Ads: importing key events
-also imports leads from agents and automation. Send qualified leads from the backend/CRM
+Vanilla only labels traffic: nothing is held or excluded by default. An imported key
+event, a lead or a purchase, includes conversions made by agents and automation, with
+their vv_type and vv_detail in GA4 but not filtered from the import. Filtering them for
+Ads is an optional choice: for example, send only qualified leads from the backend/CRM
 using [offline conversion import](https://support.google.com/google-ads/answer/2998031)
 or [enhanced conversions for leads](https://support.google.com/google-ads/answer/11021502).
 GA4's UI rules are calculated client-side and do not apply to Vanilla's server-to-server
-hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)). Settled purchases
-remain eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/docs/conversion-guidance.md);
-backend payment/fraud checks still apply.
+hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)).
+The [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/docs/conversion-guidance.md)
+describes optional routing rules.
 
 ## What to disclose
 
@@ -189,7 +191,7 @@ Use this as a factual base for your privacy text, not as legal advice.
 - **With ad consent too:** Google also receives `gclid`, `gbraid` or `wbraid` from the landing page.
 - **Without consent:** with `DENIED_PINGS=on` (default), the automatic page view and each allowed event send a cookieless ping. A readable banner, including an undecided one, sends immediately; a Google denied default alone waits only `wait_for_update` (0 when omitted, capped at 2 seconds). With no signal nothing is sent. Google receives the full visitor IP (`_uip`, unless DENIED_PING_IP changes it), browser `User-Agent` (unless DENIED_PING_USER_AGENT=off), sanitized event parameters including items, value and currency, cleaned page URL/path, referrer/UTM values, title, language and screen size. No persistent identifiers are used; client/page IDs have random components and last only for the page. session_id is the Unix second of the first ping (not random) and can collide across visitors. Group pings by batch_page_id, never ga_session_id. No cookie, click ID or `user_data` is sent. Pings never retry; `page_engagement` is excluded. Disclose IP and event parameters in your privacy notice. Tests: `tests/denied-events.test.ts`.
 - **Compared with the Google tag:** in Advanced Consent Mode the Google tag's own denied pings carry the same data; Vanilla adds only the two labels vv_type/vv_detail (traffic type and verification evidence, no identifiers), removes click IDs and sends no exit engagement hit. With Basic Consent Mode (Google tag blocked until consent) set `DENIED_PINGS=off`, otherwise Vanilla sends more than the Google tag. See [Compared with the Google tag](README.md#compared-with-the-google-tag).
-- **Labels on pings and full events:** the server derives vv_type/vv_detail, even with verification off and no browser detector, subject to outgoing parameter/body budgets. Browser traffic_class/traffic_phase are optional inputs to Vanilla; those and the four old agent_* fields are stripped before Google delivery. The optional browser detector uses minimal sessionStorage. Disclose the combined labels as traffic and operator evidence, distinct from a visitor identity.
+- **Labels on pings and full events:** the server derives vv_type/vv_detail, even with verification off and no browser detector, subject to outgoing parameter/body budgets. Browser traffic_class/traffic_phase/traffic_agent are optional inputs to Vanilla; those and the four old agent_* fields are stripped before Google delivery. The optional browser detector uses minimal sessionStorage. Disclose the combined labels as traffic and operator evidence, distinct from a visitor identity.
 - **IP address on your server:** the collector keeps it in memory for the rate limit, removes it within two minutes and does not log it. The default Caddy setup has no access log. With your own proxy, check its logs and how long it keeps them.
 - **What cleaning does not do:** it removes credentials, fragments and query parameters other than `utm_*`. It does not touch URL paths, UTM values or page titles, so check that yours hold no personal data, for example an email in a path. Avoid calling the ping anonymous in your privacy text unless you checked this.
 
@@ -268,7 +270,7 @@ only the operator; purpose comes from the claimed UA token selecting the feed
 and its purpose mapping. It does not independently verify that product role.
 
 
-Capabilities below describe the bundled 0.3.4 registry, before
+Capabilities below describe the bundled 0.3.5 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
@@ -308,9 +310,9 @@ without its path or query. lastRefreshOk describes
 the latest completed refresh of any document, not whether all feeds are healthy.
 
 Client-supplied vv_type, vv_detail and the old agent_verification, agent_operator,
-agent_purpose, agent_claim, traffic_class and traffic_phase names are reserved and
-stripped from outgoing GA4 parameters. Browser class/phase remain tracker inputs to
-Vanilla. Priority within 25 parameters: GA4 automatic fields; ecommerce
+agent_purpose, agent_claim, traffic_class, traffic_phase and traffic_agent names are
+reserved and stripped from outgoing GA4 parameters. Browser class/phase/operator remain
+tracker inputs to Vanilla. Priority within 25 parameters: GA4 automatic fields; ecommerce
 fields (transaction_id, value, currency, items, tax, shipping, coupon and the other
 ecommerce fields); vv_type; vv_detail; other site parameters. At the 16 KiB body
 limit, remove vv_detail first, then vv_type, then the last items, preserving revenue.
@@ -320,9 +322,14 @@ limit, remove vv_detail first, then vv_type, then the last items, preserving rev
 Load the [Visitor Verdict detector](https://github.com/Narrativva-Labs/visitor-verdict#pinned-direct-script-build)
 with a plain script tag before s.js (or self-host its pinned build). Vanilla never
 loads it. It reads the frozen window.__visitorVerdict snapshot when sending a hit:
-only class and phase are sent to Vanilla, on both full events and denied pings; the server
-uses them in vv_type/vv_detail and does not forward the old fields to GA4. Unknown
-values are dropped. The browser class works with verification off and is spoofable.
+only class, phase and the optional page-marker operator are sent to Vanilla, as
+traffic_class, traffic_phase and traffic_agent, on both full events and denied pings; the
+server uses them in vv_type/vv_detail and does not forward these fields to GA4. Values
+must match exactly: classes human, suspicious, automated, declared_agent; phases initial,
+final, agent; operators openai, anthropic (Visitor Verdict 1.1 and later, only when its page
+marker identified an in-browser agent). Unknown values are dropped in the browser and
+again on the server; phase and operator only count with a valid class. A detector
+without the operator field sends exactly class and phase. The browser class works with verification off and is spoofable.
 The detector uses minimal sessionStorage; disclose it before installing. Leave its
 own traffic_class event out of TRACKED_EVENTS. Early hits may lack a browser class.
 
@@ -366,7 +373,7 @@ Data API names: `customEvent:vv_type` and `customEvent:vv_detail`.
 | agent_verified | Verified signature/IP evidence with user_directed or unknown purpose; vv_detail distinguishes them |
 | crawler_verified | Verified signature/IP evidence with documented crawler purpose |
 | bot_automation | Hard browser automation evidence |
-| agent_unverified | Browser declared_agent or an unverified UA/signature-agent claim |
+| agent_unverified | Browser declared_agent (also with a page-marker operator) or an unverified UA/signature-agent claim |
 | bot_suspicious | Soft browser evidence |
 | bot_spoofed | Invalid server signature; active verified sticky evidence can take precedence |
 
@@ -383,12 +390,12 @@ There is no version segment. Missing segments are `-`; unknown operator is `none
 
 | Segment | Values |
 |---|---|
-| operator | Registry operator ID (see capabilities), or none; known operator retained within session |
+| operator | Registry operator ID (see capabilities) from verified evidence, else the browser page-marker operator (openai, anthropic) with declared_agent, or none; known operator retained within session |
 | verification | signature_valid, ip_match, signature_invalid, no_signature, none, or - without server evidence |
 | purpose | user_directed, crawler, unknown, or - without server evidence |
-| claim | signature_agent, ua_token, none, or - without server evidence; claims are untrusted |
+| claim | signature_agent, ua_token, none, or - without server evidence; dom_marker when the operator comes from a browser page marker; claims are untrusted |
 | browser_class | human, suspicious, automated, declared_agent, or - |
-| browser_phase | initial, final, or - |
+| browser_phase | initial, final, agent (detector update after a page marker), or - |
 
 Without stronger server evidence, browser classes map as follows:
 
@@ -404,7 +411,16 @@ GTM-only sites keep traffic_class for now.
 
 Filter GA4 by vv_type **begins with** `agent_` for agents, or `bot_` for automation,
 suspicion and spoofed signatures. Include `crawler_verified` separately when needed.
-Filter vv_detail **begins with** `openai|` for OpenAI evidence. In Looker Studio create
+Filter vv_detail **begins with** `openai|` for OpenAI evidence.
+
+Operator precedence: a verified signature or IP match (`signature_valid`, `ip_match`)
+always supplies the operator; a page marker naming another operator is ignored, and the
+marker never makes a hit verified. An invalid signature stays `bot_spoofed` with operator
+`none`. Otherwise a declared_agent hit with a valid traffic_agent names that operator with
+claim `dom_marker` (it replaces an unverified UA or Signature-Agent claim, so the claim
+names the source of the operator) and stays `agent_unverified`, for example
+`anthropic|no_signature|unknown|dom_marker|declared_agent|agent`. To count only verified
+operators, also require vv_type `agent_verified`. In Looker Studio create
 an operator dimension with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`.
 
 Every later hit retains the strongest vv_type observed in that session. Ranks are

@@ -79,7 +79,7 @@ For an undecided visitor, full events still wait in memory even after their ping
 | Exit engagement | Denied `user_engagement` | Not sent |
 | `vv_type`, `vv_detail` | Not sent | **Sent** (see below) |
 
-The two labels classify the hit, not the person: `vv_type` is one of `pending`, `human`, `bot_suspicious`, `agent_unverified`, `bot_automation`, `crawler_verified`, `agent_verified`, `bot_spoofed`; `vv_detail` is `operator|verification|purpose|claim|browser_class|phase`, for example `openai|signature_valid|user_directed|signature_agent|human|initial` or `none|no_signature|unknown|none|-|-`. They contain no identifier, IP, cookie or URL. The other difference is the route: the hits pass through your collector, so your server (and whoever operates it for you) also processes the IP and the hit data.
+The two labels classify the hit, not the person: `vv_type` is one of `pending`, `human`, `bot_suspicious`, `agent_unverified`, `bot_automation`, `crawler_verified`, `agent_verified`, `bot_spoofed`; `vv_detail` is `operator|verification|purpose|claim|browser_class|phase`, for example `openai|signature_valid|user_directed|signature_agent|human|initial`, `none|no_signature|unknown|none|-|-` or, for an in-browser agent recognised by its page marker, `anthropic|no_signature|unknown|dom_marker|declared_agent|agent`. They contain no identifier, IP, cookie or URL. The other difference is the route: the hits pass through your collector, so your server (and whoever operates it for you) also processes the IP and the hit data.
 
 **Basic Consent Mode:** if the site blocks the Google tag until consent, Google normally receives nothing before a decision. Vanilla's default pings would then send more than your Google tag does. Set `DENIED_PINGS=off` on such sites.
 
@@ -97,19 +97,21 @@ The tracker reads these banners by itself, without integration code, and a decid
 
 ## Google Ads
 
-The server talks only to Google Analytics. Google Ads reaches the data the usual way: link the second property to Ads and import its approved purchase key events as conversions. For that, the landing page's `gclid`, `gbraid` or `wbraid` goes to Google in the first hit, and only when `ad_storage` and `ad_user_data` are both granted. Without them the click ID stays in the browser.
+The server talks only to Google Analytics. Google Ads reaches the data the usual way: link the second property to Ads and import its key events as conversions. For that, the landing page's `gclid`, `gbraid` or `wbraid` goes to Google in the first hit, and only when `ad_storage` and `ad_user_data` are both granted. Without them the click ID stays in the browser.
 
 If the regular property already imports the same conversion, set this one as secondary, or it counts twice. A conversion credited to a real ad click: Not verified yet. Steps are in [INSTALL.md](INSTALL.md#optional-import-conversions-into-google-ads).
 
 
-Do not import leads from the second property into Google Ads: importing key events
-also imports leads from agents and automation. Send qualified leads from the backend/CRM
+Vanilla only labels traffic: nothing is held or excluded by default. An imported key
+event, a lead or a purchase, includes conversions made by agents and automation, with
+their vv_type and vv_detail in GA4 but not filtered from the import. Filtering them for
+Ads is an optional choice: for example, send only qualified leads from the backend/CRM
 using [offline conversion import](https://support.google.com/google-ads/answer/2998031)
 or [enhanced conversions for leads](https://support.google.com/google-ads/answer/11021502).
 GA4's UI rules are calculated client-side and do not apply to Vanilla's server-to-server
-hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)). Settled purchases
-remain eligible under the [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/docs/conversion-guidance.md);
-backend payment/fraud checks still apply.
+hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)).
+The [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/docs/conversion-guidance.md)
+describes optional routing rules.
 
 ## History
 
@@ -186,6 +188,13 @@ bot_spoofed. Verified unknown purpose maps to agent_verified with unknown retain
 `vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`,
 maximum 100 characters, missing parts `-`, unknown operator `none`.
 Example: `openai|signature_valid|user_directed|signature_agent|human|final`.
+Browser phases are `initial`, `final` and `agent`. When the Visitor Verdict detector (1.1 and
+later) recognises an in-browser agent by its page marker, it also reports the operator
+(`openai` or `anthropic`); Vanilla sends it to the collector as `traffic_agent`. Without a
+verified identity that operator appears in vv_detail with claim `dom_marker`, for example
+`anthropic|no_signature|unknown|dom_marker|declared_agent|agent`, and vv_type stays
+`agent_unverified`: a marker is observed, not verified. A verified signature or IP match
+always supplies the operator, also when a marker names another one.
 The [complete dictionary](INSTALL.md#analyst-value-dictionary) explains every segment,
 priority and session rank. Strongest type and known operator stick immediately to
 later hits in a bounded memory-only session (denied pings: page only); no delays.
@@ -206,7 +215,7 @@ detector's initial class or at most that many milliseconds; default 0, no wait
 ([trade-off](INSTALL.md#waiting-for-the-first-class)).
 
 In GA4 use **begins with** `agent_` or `bot_` on vv_type; use **begins with** `openai|`
-on vv_detail for OpenAI. Looker Studio operator dimension:
+on vv_detail for OpenAI, and add vv_type `agent_verified` to count only verified operators. Looker Studio operator dimension:
 `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Data API names are `customEvent:vv_type`
 and `customEvent:vv_detail`. The old six field names are no longer forwarded.
 
