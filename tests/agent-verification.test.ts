@@ -536,3 +536,36 @@ it("keeps weak Chromium header mismatch local and preserves labels", async () =>
     labeller.close();
   }
 });
+
+it("collector never forwards local evidence or raw verification headers to GA4", async () => {
+  const proof: verdict.AgentVerdict = {
+    verification: "no_signature",
+    reason: "signature_headers_absent",
+    agent_purpose: "unknown",
+    claimed: { uaTokens: [], signatureAgents: [] },
+    signatures: [],
+    evidence: ["header_mismatch"],
+  };
+  vi.mocked(verdict.createVerifier).mockReturnValue(fakeVerifier(async () => proof));
+  const { post, hit, google } = setup();
+  expect(
+    (
+      await post(
+        "/e",
+        { "x-private-diagnostic": "private-canary", "sec-ch-ua-platform": '"Linux"' },
+        { traffic_class: "human", traffic_phase: "final" },
+      )
+    ).statusCode,
+  ).toBe(204);
+  expect(google).toHaveBeenCalledTimes(1);
+  const payload = hit().toString();
+  for (const secret of [
+    "header_mismatch",
+    "evidence",
+    "private-canary",
+    "sec-ch-ua",
+    "x-private-diagnostic",
+  ])
+    expect(payload).not.toContain(secret);
+  expect(hit().get("ep.vv_type")).toBe("human");
+});

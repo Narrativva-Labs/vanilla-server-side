@@ -276,7 +276,7 @@ only the operator; purpose comes from the claimed UA token selecting the feed
 and its purpose mapping. It does not independently verify that product role.
 
 
-Capabilities below describe the bundled 0.5.0 registry, before
+Capabilities below describe the bundled 0.5.1 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
@@ -527,6 +527,27 @@ the example above can pass. Missing data from that filter cannot be reconstructe
 from these labels.
 
 ### Enable in five steps
+**Verifier 0.5.1:** optional local verdict evidence `header_mismatch` is a weak
+Chromium header-consistency diagnostic. It is not a verification value and is not
+sent in `vv_type` or `vv_detail`; it cannot create `bot_suspicious` or identify an
+operator. Headers may be stripped by proxies/CDNs or altered by privacy policy.
+Raw headers already reach verification; TRUST_PROXY continues to control the IP
+boundary and unchecked forwarded headers never select the verification authority.
+Kernel Agent (`kernel`), Cloudflare Browser Run (`cloudflare_browser_run`) and
+Shopify Cloudsurf (`shopify_cloudsurf`) are verified signing infrastructure with
+purpose `intermediary`, like Browserbase; they do not identify the customer's agent.
+Example detail: `kernel|signature_valid|intermediary|signature_agent|human|final`.
+No signed visitor requests have been captured locally for these three operators.
+All five directory authority-binding proofs verify in owner-supplied live fixtures;
+proofs do not cover the body, and runtime trust remains configured HTTPS URLs.
+Startup expects **nine directories**, six before this version. Add HTTPS egress to
+`www.kernel.sh`, `web-bot-auth.cloudflare-browser-rendering-085.workers.dev` and
+`cloudsurf.shopify.io`; each uses `/.well-known/http-message-signatures-directory`.
+One blocked directory can leave health at 8/9; no hits are held or excluded. Earlier
+5/6 examples describe version 0.4.1. Kernel keys are short-lived; cached expired keys
+are never accepted. Both fresh/stale cache and per-hit validity limits still apply.
+
+
 
 1. Edit .env: set `AGENT_VERIFICATION=on` and `TRACKER_DOMAIN=tracker.example`
    (use a bare hostname for the default Caddy/Compose setup, without a scheme/path).
@@ -625,22 +646,16 @@ peers used by Caddy in Compose. A public peer cannot assert the forwarded client
 Set an empty value to trust no proxies, or narrow the list to your proxy network.
 
 
-**Verifier 0.5.0:** optional local verdict evidence `header_mismatch` is a weak
-Chromium header-consistency diagnostic. It is not a verification value and is not
-sent in `vv_type` or `vv_detail`; it cannot create `bot_suspicious` or identify an
-operator. Headers may be stripped by proxies/CDNs or altered by privacy policy.
-Raw headers already reach verification; TRUST_PROXY continues to control the IP
-boundary and unchecked forwarded headers never select the verification authority.
-Kernel Agent (`kernel`), Cloudflare Browser Run (`cloudflare_browser_run`) and
-Shopify Cloudsurf (`shopify_cloudsurf`) are verified signing infrastructure with
-purpose `intermediary`, like Browserbase; they do not identify the customer's agent.
-Example detail: `kernel|signature_valid|intermediary|signature_agent|human|final`.
-No signed visitor requests have been captured locally for these three operators.
-All five directory authority-binding proofs verify in owner-supplied live fixtures;
-proofs do not cover the body, and runtime trust remains configured HTTPS URLs.
-Startup expects **nine directories**, six before this version. Add HTTPS egress to
-`www.kernel.sh`, `web-bot-auth.cloudflare-browser-rendering-085.workers.dev` and
-`cloudsurf.shopify.io`; each uses `/.well-known/http-message-signatures-directory`.
-One blocked directory can leave health at 8/9; no hits are held or excluded. Earlier
-5/6 examples describe version 0.4.1. Kernel keys are short-lived; cached expired keys
-are never accepted. Both fresh/stale cache and per-hit validity limits still apply.
+
+Verifier 0.5.1 refreshes inactive Kernel keys asynchronously; missing/expired keys
+are indeterminate, never proof of spoofing. The API verification is `none`; the
+existing analytics label is `agent_unverified` (no `unavailable` vv_type exists).
+Vanilla does not log or count `evidence`; collector POST requests skip header
+consistency diagnostics. Neither evidence nor raw headers are sent to GA4.
+
+Cloudflare Browser Run uses an exact workers.dev preview hostname. Corporate
+firewalls may block it; a moved/released hostname needs a reviewed registry update.
+HTTPS domain control, not authority-only directory proofs, protects directory bodies.
+No actual signed visitor captures exist for the three added intermediaries.
+Segment `agent_verified` by the third `vv_detail` segment: `intermediary` identifies
+infrastructure (including QA/scrapers), and must be excluded from direct-agent totals.

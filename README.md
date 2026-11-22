@@ -259,7 +259,7 @@ The [field observations](https://github.com/Narrativva-Labs/visitor-verdict/blob
 include five badge runs across personal and business accounts, an unsigned masked-headless
 negative control and two unsigned Grok runs; these are separate samples.
 
-The bundled verifier is 0.5.0. Upgrading from 0.3.5 adds provisional Meta Muse at
+The bundled verifier is 0.5.1. Upgrading from 0.3.5 adds provisional Meta Muse at
 muse.ai: allow outbound HTTPS for its key directory; startup health now expects nine
 directories (six before 0.5.0). A blocked Muse fetch can leave 8/9 loaded and a failed
 refresh. Muse's signing identity is third-party-observed, not confirmed by Meta or a
@@ -275,9 +275,7 @@ and the [analyst value dictionary](INSTALL.md#analyst-value-dictionary).
 Runtime dependencies are Fastify and the vendored `visitor-verdict-server` package;
 the latter depends on `structured-headers`. There is no database.
 
-Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).
-
-Verifier 0.5.0 records optional local `header_mismatch` evidence for scoped Chromium
+Verifier 0.5.1 records optional local `header_mismatch` evidence for scoped Chromium
 navigation/resource claims. It never changes analytics labels or operator identity;
 proxy stripping and privacy policies can cause it. The collector supplies original
 raw headers and retains existing TRUST_PROXY rules. Kernel Agent (`kernel`), Cloudflare Browser
@@ -287,3 +285,20 @@ owner-supplied live fixtures; no signed visitor requests were captured. Add outb
 HTTPS access to www.kernel.sh, web-bot-auth.cloudflare-browser-rendering-085.workers.dev
 and cloudsurf.shopify.io. Startup now expects nine directories; verified signatures
 identify infrastructure, never the customer's agent.
+
+
+Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).
+
+
+Verifier 0.5.1 refreshes inactive Kernel keys asynchronously; missing/expired keys
+are indeterminate, never proof of spoofing. The API verification is `none`; the
+existing analytics label is `agent_unverified` (no `unavailable` vv_type exists).
+Vanilla does not log or count `evidence`; collector POST requests skip header
+consistency diagnostics. Neither evidence nor raw headers are sent to GA4.
+
+Cloudflare Browser Run uses an exact workers.dev preview hostname. Corporate
+firewalls may block it; a moved/released hostname needs a reviewed registry update.
+HTTPS domain control, not authority-only directory proofs, protects directory bodies.
+No actual signed visitor captures exist for the three added intermediaries.
+Segment `agent_verified` by the third `vv_detail` segment: `intermediary` identifies
+infrastructure (including QA/scrapers), and must be excluded from direct-agent totals.
