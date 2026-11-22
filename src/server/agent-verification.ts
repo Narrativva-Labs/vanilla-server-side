@@ -58,6 +58,7 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
         {
           method: req.method,
           host,
+          // Preserve original client hints/fetch metadata as well as signed fields.
           headers: req.raw.rawHeaders,
           clientIp: req.ip,
           target: req.url,

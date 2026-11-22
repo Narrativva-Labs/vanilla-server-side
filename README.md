@@ -259,9 +259,9 @@ The [field observations](https://github.com/Narrativva-Labs/visitor-verdict/blob
 include five badge runs across personal and business accounts, an unsigned masked-headless
 negative control and two unsigned Grok runs; these are separate samples.
 
-The bundled verifier is 0.4.1. Upgrading from 0.3.5 adds provisional Meta Muse at
-muse.ai: allow outbound HTTPS for its key directory; startup health now expects six
-directories instead of five. A blocked Muse fetch can leave 5/6 loaded and a failed
+The bundled verifier is 0.5.0. Upgrading from 0.3.5 adds provisional Meta Muse at
+muse.ai: allow outbound HTTPS for its key directory; startup health now expects nine
+directories (six before 0.5.0). A blocked Muse fetch can leave 8/9 loaded and a failed
 refresh. Muse's signing identity is third-party-observed, not confirmed by Meta or a
 local request capture. See [upgrade and egress details](INSTALL.md#enable-in-five-steps).
 
@@ -276,3 +276,14 @@ Runtime dependencies are Fastify and the vendored `visitor-verdict-server` packa
 the latter depends on `structured-headers`. There is no database.
 
 Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).
+
+Verifier 0.5.0 records optional local `header_mismatch` evidence for scoped Chromium
+navigation/resource claims. It never changes analytics labels or operator identity;
+proxy stripping and privacy policies can cause it. The collector supplies original
+raw headers and retains existing TRUST_PROXY rules. Kernel Agent (`kernel`), Cloudflare Browser
+Run (`cloudflare_browser_run`) and Shopify Cloudsurf (`shopify_cloudsurf`) are
+intermediary signers, like Browserbase. All five directory proofs verify from
+owner-supplied live fixtures; no signed visitor requests were captured. Add outbound
+HTTPS access to www.kernel.sh, web-bot-auth.cloudflare-browser-rendering-085.workers.dev
+and cloudsurf.shopify.io. Startup now expects nine directories; verified signatures
+identify infrastructure, never the customer's agent.

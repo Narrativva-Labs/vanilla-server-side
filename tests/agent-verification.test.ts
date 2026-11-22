@@ -406,7 +406,7 @@ it("omits fields after a failed directory fetch without failing either hit", asy
 });
 
 it("passes raw headers, trusted client IP and the unchanged target to verification", async () => {
-  const verify = vi.fn(async (): Promise<verdict.AgentVerdict> => ({
+  const verify = vi.fn(async (_input: verdict.AgentRequest): Promise<verdict.AgentVerdict> => ({
     agent_purpose: "unknown",
     claimed: { uaTokens: [], signatureAgents: [] },
     verification: "no_signature",
@@ -415,7 +415,15 @@ it("passes raw headers, trusted client IP and the unchanged target to verificati
   }));
   vi.spyOn(verdict, "createVerifier").mockReturnValue(fakeVerifier(verify));
   const { post } = setup();
-  expect((await post("/e?raw=%2f&x=1")).statusCode).toBe(204);
+  const consistency = {
+    "sec-ch-ua": '\"Chromium\";v=\"142\"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '\"Windows\"',
+    "sec-fetch-site": "same-origin",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-dest": "empty",
+  };
+  expect((await post("/e?raw=%2f&x=1", consistency)).statusCode).toBe(204);
   expect(verify).toHaveBeenCalledWith(
     {
       method: "POST",
@@ -426,6 +434,11 @@ it("passes raw headers, trusted client IP and the unchanged target to verificati
     },
     { cacheOnly: true },
   );
+  const original = verify.mock.calls[0]![0] as unknown as { headers: string[] };
+  const values = new Map<string, string>();
+  for (let i = 0; i < original.headers.length; i += 2)
+    values.set(original.headers[i]!.toLowerCase(), original.headers[i + 1]!);
+  for (const [name, value] of Object.entries(consistency)) expect(values.get(name)).toBe(value);
 });
 
 it("labels an invalid signature and still sends the hit; obvious bots stay filtered", async () => {
@@ -487,6 +500,38 @@ it("anchors IP memory expiry to proof time before delivery waits", async () => {
     expect(withLabels({ traffic_class: "human" }, undefined, { memory, key: "s" }).vv_type).toBe(
       "human",
     );
+  } finally {
+    labeller.close();
+  }
+});
+
+it("keeps weak Chromium header mismatch local and preserves labels", async () => {
+  const { createAgentLabeller } = await import("../src/server/agent-verification.js");
+  const labeller = createAgentLabeller("tracker.example", {
+    fetcher: async () => new Response(null, { status: 404 }),
+  });
+  try {
+    const proof = await labeller.label({
+      method: "GET",
+      url: "/",
+      ip: "127.0.0.1",
+      raw: {
+        rawHeaders: [
+          "User-Agent",
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/142.0.0.0 Safari/537.36",
+          "Accept",
+          "text/html",
+        ],
+      },
+    } as unknown as import("fastify").FastifyRequest);
+    expect(proof?.evidence).toEqual(["header_mismatch"]);
+    expect(proof?.verified).toBeUndefined();
+    expect(
+      verdict.visitorLabels({ verdict: proof, browserClass: "human", browserPhase: "final" }),
+    ).toEqual({
+      vv_type: "human",
+      vv_detail: "none|no_signature|unknown|none|human|final",
+    });
   } finally {
     labeller.close();
   }

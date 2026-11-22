@@ -63,12 +63,12 @@ it("startup is logged once and /health shows cache progress and failures without
   });
   apps.push(app);
   const health = (await app.inject("/health")).json().agentVerification;
-  expect(health).toMatchObject({ enabled: true, directoriesLoaded: "0/6", lastRefreshOk: null });
+  expect(health).toMatchObject({ enabled: true, directoriesLoaded: "0/9", lastRefreshOk: null });
   finish();
   await warming;
   expect((await app.inject("/health")).json().agentVerification).toMatchObject({
     enabled: true,
-    directoriesLoaded: "0/6",
+    directoriesLoaded: "0/9",
     lastRefreshOk: false,
   });
   expect(info).toHaveBeenCalledExactlyOnceWith(

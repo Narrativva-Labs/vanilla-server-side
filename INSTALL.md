@@ -276,7 +276,7 @@ only the operator; purpose comes from the claimed UA token selecting the feed
 and its purpose mapping. It does not independently verify that product role.
 
 
-Capabilities below describe the bundled 0.4.1 registry, before
+Capabilities below describe the bundled 0.5.0 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
@@ -284,7 +284,7 @@ A published IP match is network evidence, not cryptographic request authenticati
 |---|---|---|
 | HTTP signature | OpenAI ChatGPT cloud browser | Yes, one header-capture run (32 requests) |
 | HTTP signature configuration, not captured here | Google hosted agent (experimental, label `g`, only some requests signed), DuckDuckGo, Manus, Meta Muse (`muse.ai`, signs only part of its requests); some identities are provisional | No |
-| HTTP signature of an intermediary (signing infrastructure, not the agent) | Browserbase: reported as operator `browserbase` with purpose `intermediary` | No |
+| HTTP signature of an intermediary (signing infrastructure, not the agent) | Browserbase (`browserbase`), Kernel (`kernel`), Cloudflare Browser Run (`cloudflare_browser_run`), Shopify Cloudsurf (`shopify_cloudsurf`): purpose `intermediary` | No |
 | Published IP/SAIL feeds | OpenAI fetchers/crawlers; Google mapped agent/fetcher/crawler tokens; Anthropic (Claude-Agent uses SAIL); Perplexity; DuckAssistBot; Apple; Microsoft; Mistral User/Index; Kimi; Common Crawl; Seznam; Naver | No additional signature captures |
 | Configured static IPs | Kagi | No |
 | rDNS only, inactive here | Baidu, Petal, Yandex, Amazon Ads | No |
@@ -623,3 +623,24 @@ range names. In production the default is `loopback,uniquelocal`; outside produc
 forwarding is disabled by default. The production ranges include private Docker bridge
 peers used by Caddy in Compose. A public peer cannot assert the forwarded client IP.
 Set an empty value to trust no proxies, or narrow the list to your proxy network.
+
+
+**Verifier 0.5.0:** optional local verdict evidence `header_mismatch` is a weak
+Chromium header-consistency diagnostic. It is not a verification value and is not
+sent in `vv_type` or `vv_detail`; it cannot create `bot_suspicious` or identify an
+operator. Headers may be stripped by proxies/CDNs or altered by privacy policy.
+Raw headers already reach verification; TRUST_PROXY continues to control the IP
+boundary and unchecked forwarded headers never select the verification authority.
+Kernel Agent (`kernel`), Cloudflare Browser Run (`cloudflare_browser_run`) and
+Shopify Cloudsurf (`shopify_cloudsurf`) are verified signing infrastructure with
+purpose `intermediary`, like Browserbase; they do not identify the customer's agent.
+Example detail: `kernel|signature_valid|intermediary|signature_agent|human|final`.
+No signed visitor requests have been captured locally for these three operators.
+All five directory authority-binding proofs verify in owner-supplied live fixtures;
+proofs do not cover the body, and runtime trust remains configured HTTPS URLs.
+Startup expects **nine directories**, six before this version. Add HTTPS egress to
+`www.kernel.sh`, `web-bot-auth.cloudflare-browser-rendering-085.workers.dev` and
+`cloudsurf.shopify.io`; each uses `/.well-known/http-message-signatures-directory`.
+One blocked directory can leave health at 8/9; no hits are held or excluded. Earlier
+5/6 examples describe version 0.4.1. Kernel keys are short-lived; cached expired keys
+are never accepted. Both fresh/stale cache and per-hit validity limits still apply.
