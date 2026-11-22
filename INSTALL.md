@@ -76,7 +76,7 @@ Set these in .env and rebuild the tracker. Invalid values stop startup. Agent ve
 
 To send through Google's [EU collection endpoint](https://developers.google.com/analytics/devguides/collection/protocol/ga4/reference), set `GA4_REGION=eu` in .env after installation and rebuild as described below. Leave it empty for the default endpoint.
 
-The tracker sends page views, final engagement time and the events named in `TRACKED_EVENTS`. Omit that setting to use the list in [.env.example](.env.example): common ecommerce events plus `generate_lead`, `sign_up`, `login` and `search`. To change it, set `TRACKED_EVENTS` in .env to a comma-separated list, which replaces the default, and rebuild as described below. An empty `TRACKED_EVENTS=` fails startup; omit it to use defaults. Other events are ignored. `page_view` is automatic and must not be listed.
+The tracker sends page views, final engagement time, one optional Visitor Verdict class update per document, and the events named in `TRACKED_EVENTS`. Omit that setting to use the list in [.env.example](.env.example): common ecommerce events plus `generate_lead`, `sign_up`, `login` and `search`. To change it, set `TRACKED_EVENTS` in .env to a comma-separated list, which replaces the default, and rebuild as described below. An empty `TRACKED_EVENTS=` fails startup; omit it to use defaults. Other events are ignored. `page_view` is automatic and must not be listed.
 
 Vanilla reads events straight from `dataLayer`, not from your GTM tags. It also reads `gtag("event", …)` commands, except those with `send_to`, which are meant for one destination (plugins for Google Ads or Merchant Center send their own `page_view` and `view_item` this way). An event must already carry its final GA4 name and parameters there: if the site pushes `order_complete` and a GTM tag renames it to `purchase`, the regular property gets a purchase and Vanilla gets nothing. A working example:
 
@@ -190,8 +190,8 @@ Use this as a factual base for your privacy text, not as legal advice.
 - **With analytics consent:** your server stores the `vanilla_session` cookie and receives the events. Google receives them with the visitor's IP address and `User-Agent`.
 - **With ad consent too:** Google also receives `gclid`, `gbraid` or `wbraid` from the landing page.
 - **Without consent:** with `DENIED_PINGS=on` (default), the automatic page view and each allowed event send a cookieless ping. A readable banner, including an undecided one, sends immediately; a Google denied default alone waits only `wait_for_update` (0 when omitted, capped at 2 seconds). With no signal nothing is sent. Google receives the full visitor IP (`_uip`, unless DENIED_PING_IP changes it), browser `User-Agent` (unless DENIED_PING_USER_AGENT=off), sanitized event parameters including items, value and currency, cleaned page URL/path, referrer/UTM values, title, language and screen size. No persistent identifiers are used; client/page IDs have random components and last only for the page. session_id is the Unix second of the first ping (not random) and can collide across visitors. Group pings by batch_page_id, never ga_session_id. No cookie, click ID or `user_data` is sent. Pings never retry; `page_engagement` is excluded. Disclose IP and event parameters in your privacy notice. Tests: `tests/denied-events.test.ts`.
-- **Compared with the Google tag:** in Advanced Consent Mode the Google tag's own denied pings carry the same data; Vanilla adds only the two labels vv_type/vv_detail (traffic type and verification evidence, no identifiers), removes click IDs and sends no exit engagement hit. With Basic Consent Mode (Google tag blocked until consent) set `DENIED_PINGS=off`, otherwise Vanilla sends more than the Google tag. See [Compared with the Google tag](README.md#compared-with-the-google-tag).
-- **Labels on pings and full events:** the server derives vv_type/vv_detail, even with verification off and no browser detector, subject to outgoing parameter/body budgets. Browser traffic_class/traffic_phase/traffic_agent are optional inputs to Vanilla; those and the four old agent_* fields are stripped before Google delivery. The optional browser detector uses minimal sessionStorage. Disclose the combined labels as traffic and operator evidence, distinct from a visitor identity.
+- **Compared with the Google tag:** in Advanced Consent Mode the Google tag's own denied pings carry the same data; Vanilla adds vv_type/vv_detail (traffic type and verification evidence, no identifiers) and an optional dedicated traffic_class update, removes click IDs and sends no exit engagement hit. With Basic Consent Mode (Google tag blocked until consent) set `DENIED_PINGS=off`, otherwise Vanilla sends more than the Google tag. See [Compared with the Google tag](README.md#compared-with-the-google-tag).
+- **Labels on pings and full events:** the server derives vv_type/vv_detail, even with verification off and no browser detector, subject to outgoing parameter/body budgets. Browser traffic_class/traffic_phase/traffic_agent are optional inputs to Vanilla; those and the four old agent_* fields are stripped from ordinary Google events. The dedicated traffic_class update forwards the three validated browser fields beside the vv labels. The optional browser detector uses minimal sessionStorage. Disclose the combined labels as traffic and operator evidence, distinct from a visitor identity.
 - **IP address on your server:** the collector keeps it in memory for the rate limit, removes it within two minutes and does not log it. The default Caddy setup has no access log. With your own proxy, check its logs and how long it keeps them.
 - **What cleaning does not do:** it removes credentials, fragments and query parameters other than `utm_*`. It does not touch URL paths, UTM values or page titles, so check that yours hold no personal data, for example an email in a path. Avoid calling the ping anonymous in your privacy text unless you checked this.
 
@@ -204,7 +204,7 @@ Use this as a factual base for your privacy text, not as legal advice.
 - No events: check the script loads, consent callback, exact SITE_ORIGIN (including www), browser network /e requests and the second property's Measurement ID. If `botsFiltered` rises on /health, the test client identifies itself as automated.
 - Console warning "No resolved analytics consent": the tracker found neither a Google consent command nor a supported banner. With no readable signal it stays silent; a supported readable banner waiting for the visitor can send `/d` pings while `/e` waits for a grant.
 - Cookie absent after grant: check both hosts are HTTPS and COOKIE_DOMAIN covers both; use sibling hosts under your own domain.
-- HTTP 429: the collector limits each IP to 1,200 requests/minute and 100 simultaneous deliveries, with 300 simultaneous deliveries globally. Check for repeated script installs or an event loop. Ordinary events are sent one at a time with up to three attempts (one initial send and two retries); cookieless event pings and final engagement time are never retried. Several event pings can be in flight at once. Measured on the live server on 2026-11-08 with real Chromium: 10 visitors at once behind one address, 0 refusals; with the earlier limit of 10, 5 visitors at once lost 4 of 14 pings to 429. With 30 simultaneous deliveries per IP, 28 visitors at once lost the ends of their funnels (2026-11-10), so the limit was raised on 2026-11-12.
+- HTTP 429: the collector limits each IP to 1,200 requests/minute and 100 simultaneous deliveries, with 300 simultaneous deliveries globally. Check for repeated script installs or an event loop. Ordinary events are sent one at a time with up to three attempts (one initial send and two retries); cookieless event pings, class updates and final engagement time are never retried. Several event pings can be in flight at once. Measured on the live server on 2026-11-08 with real Chromium: 10 visitors at once behind one address, 0 refusals; with the earlier limit of 10, 5 visitors at once lost 4 of 14 pings to 429. With 30 simultaneous deliveries per IP, 28 visitors at once lost the ends of their funnels (2026-11-10), so the limit was raised on 2026-11-12.
 - Google errors: run sudo docker compose logs --tail=50 tracker. Check outbound HTTPS and the Measurement ID. Logs omit visitor details. Google refuses more than 16 KiB of event data (about 130 items); the log then says how many items were left out of the purchase. Raw JSON payloads over 64 KiB are dropped by the browser (or rejected by the collector for direct requests) before the 16 KiB item trimmer; this does not guarantee delivery of arbitrary oversized events. To follow individual `/e` requests, set `LOG_EVENTS=on` in .env and rebuild: each writes one line with its name (or `?`), HTTP answer and outcome (`sent`, `retry`, `dropped`, `duplicate`, `bot`, `withdrawn`, or `-` if rejected before delivery), without visitor values. `/d` pings are excluded from LOG_EVENTS. Turn it off again when done. HTTP acceptance does not prove processing: verify the event and session source in the second property.
 - Docker package conflict on an existing machine: follow the official Docker instructions for [Ubuntu](https://docs.docker.com/engine/install/ubuntu/) or [Debian](https://docs.docker.com/engine/install/debian/) before rerunning; use a fresh VPS if unsure.
 
@@ -320,8 +320,7 @@ the latest completed refresh of any document, not whether all feeds are healthy.
 
 Client-supplied vv_type, vv_detail and the old agent_verification, agent_operator,
 agent_purpose, agent_claim, traffic_class, traffic_phase and traffic_agent names are
-reserved and stripped from outgoing GA4 parameters. Browser class/phase/operator remain
-tracker inputs to Vanilla. Priority within 25 parameters: GA4 automatic fields; ecommerce
+reserved and stripped from ordinary outgoing GA4 events. On the dedicated traffic_class event only, validated traffic_class/traffic_phase/traffic_agent are also forwarded beside vv_type/vv_detail. Priority within 25 parameters: GA4 automatic fields; ecommerce
 fields (transaction_id, value, currency, items, tax, shipping, coupon and the other
 ecommerce fields); vv_type; vv_detail; other site parameters. At the 16 KiB body
 limit, remove vv_detail first, then vv_type, then the last items, preserving revenue.
@@ -333,7 +332,7 @@ with a plain script tag before s.js (or self-host its pinned build). Vanilla nev
 loads it. It reads the frozen window.__visitorVerdict snapshot when sending a hit:
 only class, phase and the optional page-marker operator are sent to Vanilla, as
 traffic_class, traffic_phase and traffic_agent, on both full events and denied pings; the
-server uses them in vv_type/vv_detail and does not forward these fields to GA4. Values
+server uses them in vv_type/vv_detail. Ordinary events omit these raw fields in GA4; the dedicated traffic_class event includes the whitelisted fields. Values
 must match exactly: classes human, suspicious, automated, declared_agent; phases initial,
 final, agent; operators openai, anthropic (Visitor Verdict 1.1 and later, only when its page
 marker identified an in-browser agent). Unknown values are dropped in the browser and
@@ -342,15 +341,34 @@ declared_agent. `openai` comes from OpenAI's agent overlay (confirmed in the Cha
 plugin); `anthropic` only from older Claude in Chrome versions. The current extension
 (1.0.107, checked 22 November 2026) keeps its UI in a closed shadow root and is not
 detected, so those visits stay `human` unless other evidence exists.
-A marker that appears after a hit was sent (phase `agent`) is not sent on its own: Vanilla reads
-the detector only when it sends a hit, so the operator arrives with the next tracked event on
-that page, or on the next page of the site through the detector's one-page carry-over. A
-single-page visit with no later event, including a denied visit with no further ping, never
-reports it.
- A detector
-without the operator field sends exactly class and phase. The browser class works with verification off and is spoofable.
-The detector uses minimal sessionStorage; disclose it before installing. Leave its
-own traffic_class event out of TRACKED_EVENTS. Early hits may lack a browser class.
+Vanilla also subscribes to the detector's traffic_class pushes. The first valid `final` or
+`agent` publication sends one lightweight `traffic_class` update per document, automatically,
+independently of `TRACKED_EVENTS`; there is no need to list it. `initial`, unphased legacy
+publications and later duplicates do not generate updates, even if listed. First publication
+wins: agent before final uses the slot, and agent after final reaches GA4 only with a later
+ordinary event. SPA routes and BFCache restores do not reset this document limit.
+
+The update parameters contain only traffic_class, traffic_phase and the optional whitelisted
+traffic_agent. Score, version, signal codes, arbitrary event payload and page content are not
+copied. Standard request identity/consent metadata remains. A keepalive fetch sends it at once,
+including during a tab hide, without waiting behind normal events or retrying. Browser shutdown,
+network failure or a collector error can still lose it; this is not a delivery guarantee.
+
+Consent follows ordinary event rules: no signal sends nothing, pending decisions keep a full
+copy in memory, a grant allows `/e`, and denied/banner pings use `/d` only when enabled, with no
+cookies, click IDs or user_data. An undecided banner can send a cookieless copy and a later grant
+can send the full copy, as for other events. Withdrawal retains the existing suppression rules.
+The collector validates these fields again, forwards the GA4 traffic_class event plus vv labels,
+and retains the strongest session label (denied pings: page memory). Earlier hits are not backfilled.
+Deploy the collector before refreshing s.js; older collectors may reject automatic updates.
+
+Set a custom detector dataLayerName before s.js loads. The default dataLayer needs no extra
+configuration. The frozen snapshot still supplies the latest class on ordinary events. A detector
+without phases creates no dedicated update. The browser class works with verification off and is
+spoofable. The detector uses minimal sessionStorage; disclose it before installing. Visitor Verdict
+1.2.0 finalizes on the first tab hide by default; `finalOnHidden: false` retains pause-on-hidden.
+Its suspicious carry (`CS`) labels one following document without promoting or renewing itself.
+Early hits may lack a browser class.
 
 ### Waiting for the first class
 

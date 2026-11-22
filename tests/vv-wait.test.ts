@@ -229,7 +229,7 @@ it("a detector with a custom dataLayer name releases from its own layer", async 
   expect(layer).toHaveLength(1);
   expect(p.names()).toEqual(["/d page_view"]);
   expect(p.hits()[0]!.params).toMatchObject({ traffic_class: "automated" });
-  // A layer the detector creates only later is covered by the poll.
+  // The tracker now prepares the configured layer, so a later detector publication releases immediately.
   const q = gated("1000", [["consent", "default", denied]], {
     setup: (host) => {
       host.visitorVerdictConfig = { dataLayerName: "lateLayer" };
@@ -237,7 +237,7 @@ it("a detector with a custom dataLayer name releases from its own layer", async 
   });
   await settle();
   q.publish("human", "initial", "lateLayer");
-  expect(q.hits()).toHaveLength(0);
+  expect(q.names()).toEqual(["/d page_view"]);
   q.fire(50);
   expect(q.names()).toEqual(["/d page_view"]);
   expect(q.hits()[0]!.params).toMatchObject({ traffic_class: "human" });

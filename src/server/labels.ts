@@ -145,12 +145,13 @@ export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now 
   };
 }
 export type LabelMemory = ReturnType<typeof createLabelMemory>;
-/** Only the two server-derived labels leave the collector; old and new names are reserved. */
+/** Browser fields leave only on the dedicated update; all label names are reserved. */
 export function withLabels(
   params: Record<string, unknown>,
   verdict?: AgentFields,
   sticky?: { memory: LabelMemory; key: string },
   observe?: LabelObserver,
+  trafficUpdate = false,
 ): Record<string, unknown> {
   const browser = trafficFields(params.traffic_class, params.traffic_phase, params.traffic_agent);
   const input = {
@@ -186,7 +187,9 @@ export function withLabels(
   observe?.(labels, verdict, browser.traffic_class);
   return {
     ...labels,
-    ...Object.fromEntries(Object.entries(params).filter(([key]) => !reserved.has(key))),
+    ...(trafficUpdate
+      ? browser
+      : Object.fromEntries(Object.entries(params).filter(([key]) => !reserved.has(key)))),
   };
 }
 

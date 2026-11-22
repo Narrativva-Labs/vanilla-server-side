@@ -161,7 +161,7 @@ Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a securi
 ## AI agent verification (optional)
 
 `AGENT_VERIFICATION=on` adds verified operator evidence to `/e` and `/d`; default off.
-GA4 receives only two classification event parameters: `vv_type` and `vv_detail`,
+GA4 receives two server-derived classification parameters, `vv_type` and `vv_detail`,
 on every eligible event, even with verification off and no browser detector.
 Without either source they start as `pending` / `none|-|-|-|-|-`. Labels count
 toward the 25-parameter limit after automatic/ecommerce fields and before custom
@@ -199,11 +199,9 @@ always supplies the operator, also when a marker names another one.
 plugin); `anthropic` only from older Claude in Chrome versions. The current extension
 (1.0.107, checked 22 November 2026) keeps its UI in a closed shadow root and is not
 detected, so those visits stay `human` unless other evidence exists.
-A marker that appears after a hit was sent (phase `agent`) is not sent on its own: Vanilla reads
-the detector only when it sends a hit, so the operator arrives with the next tracked event on
-that page, or on the next page of the site through the detector's one-page carry-over. A
-single-page visit with no later event, including a denied visit with no further ping, never
-reports it.
+A marker that appears later qualifies for the dedicated class update if no final/agent update
+has been sent yet. After that one document update, a later marker reaches the collector with
+the next ordinary hit or the detector's one-page carry-over.
 Update the collector before the tracker ([order](INSTALL.md#updates-and-maintenance)).
 The [complete dictionary](INSTALL.md#analyst-value-dictionary) explains every segment,
 priority and session rank. Strongest type and known operator stick immediately to
@@ -216,6 +214,18 @@ later hits in a bounded memory-only session (denied pings: page only); no delays
 | automated | bot_automation |
 | declared_agent | agent_unverified |
 | none / missing | pending |
+
+With the optional browser detector, Vanilla automatically sends the first valid `final` or
+`agent` publication as one `traffic_class` event per document, with a keepalive fetch (also on tab
+hide). No `TRACKED_EVENTS` entry is needed. Only validated traffic_class/traffic_phase/traffic_agent
+parameters are copied, beside the server-derived vv_type/vv_detail; ordinary events keep the vv
+labels. The update refreshes session label memory (denied pings: page memory), without backfill.
+Consent and `DENIED_PINGS` apply exactly as for other events. Initial and legacy unphased detector
+events send no dedicated update. Later publications use no additional update slot; ordinary hits
+still read the latest snapshot. This best-effort update is never retried. Set a custom detector
+layer before s.js; see the [installation contract](INSTALL.md#visitor-verdict-browser-class-optional).
+Upgrade the collector before the tracker. Visitor Verdict 1.2.0 finalizes on first hide by default
+and carries suspicious for one following document; a brief tab switch ends behaviour observation.
 
 GTM-only sites keep traffic_class for now.
 

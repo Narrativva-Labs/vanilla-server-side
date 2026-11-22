@@ -17,3 +17,15 @@ export function trafficFields(trafficClass: unknown, phase: unknown, agent?: unk
   }
   return fields;
 }
+
+/** Dedicated publications require a current phase; legacy detector events remain passive. */
+export function trafficUpdateFields(params: Record<string, unknown>) {
+  const fields = trafficFields(params.traffic_class, params.traffic_phase, params.traffic_agent);
+  if (!fields.traffic_class || !["final", "agent"].includes(fields.traffic_phase ?? "")) return;
+  if (
+    fields.traffic_phase === "agent" &&
+    (fields.traffic_class !== "declared_agent" || !fields.traffic_agent)
+  )
+    return;
+  return fields;
+}

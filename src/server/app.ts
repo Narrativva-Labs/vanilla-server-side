@@ -18,6 +18,7 @@ import { readFile } from "node:fs/promises";
 import { consentSnapshot, canTrack, jsonSnapshot } from "../shared/consent.js";
 import { DEFAULT_EVENTS } from "../shared/settings.js";
 import { timely, type TrackingEvent } from "../shared/event.js";
+import { trafficUpdateFields } from "../shared/traffic.js";
 import { sendGoogle, sendDeniedPing, type DeniedPing, type Destination } from "./google.js";
 /** Oldest entries go first, so no map of visitor state can outgrow its limit. */
 export function remember<T>(map: Map<string, T>, key: string, value: T, limit = 10000) {
@@ -241,9 +242,14 @@ export function createApp(
       if (
         !validEventName(ping.name) ||
         ping.name === "page_engagement" ||
-        (ping.name !== "page_view" && !allowed.has(ping.name))
+        (ping.name !== "page_view" && ping.name !== "traffic_class" && !allowed.has(ping.name))
       )
         return reply.code(400).send({ error: "event_not_allowed" });
+      if (ping.name === "traffic_class") {
+        const fields = trafficUpdateFields(ping.params);
+        if (!fields) return reply.code(400).send({ error: "invalid_traffic_update" });
+        ping.params = fields;
+      }
       const release = limiter.claim(req.ip);
       if (!release) return reply.code(429).send({ error: "rate_limit" });
       try {
@@ -341,10 +347,16 @@ export function createApp(
         return reply.code(403).send({ error: "analytics_consent_required" });
       if (
         !validEventName(event.name) ||
-        (!allowed.has(event.name) && !["page_view", "page_engagement"].includes(event.name))
+        (!allowed.has(event.name) &&
+          !["page_view", "page_engagement", "traffic_class"].includes(event.name))
       )
         return reply.code(400).send({ error: "event_not_allowed" });
       if (!timely(event)) return reply.code(400).send({ error: "expired_event" });
+      if (event.name === "traffic_class") {
+        const fields = trafficUpdateFields(event.params);
+        if (!fields) return reply.code(400).send({ error: "invalid_traffic_update" });
+        event.params = fields;
+      }
       try {
         event.params = jsonSnapshot(event.params);
       } catch {

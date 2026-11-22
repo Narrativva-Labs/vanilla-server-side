@@ -177,6 +177,40 @@ if (script && !win.__vanillaGA) {
       return push.apply(this, items);
     }
   };
+  // Subscribe even when the optional initial-class wait is disabled. The detector's
+  // configured layer can differ from the consent/ecommerce dataLayer.
+  try {
+    const name = (window as { visitorVerdictConfig?: { dataLayerName?: unknown } })
+      .visitorVerdictConfig?.dataLayerName;
+    if (
+      typeof name === "string" &&
+      name !== "dataLayer" &&
+      name.length > 0 &&
+      name.length <= 128 &&
+      !["__proto__", "prototype", "constructor"].includes(name)
+    ) {
+      const host = window as unknown as Record<string, unknown>;
+      const other = (host[name] ??= []) as unknown[];
+      const publish = (item: unknown) => {
+        const event = normalizeEventItem(item);
+        if (event?.name === "traffic_class") tracker.track(event.name, event.params);
+      };
+      if (Array.isArray(other) && typeof other.push === "function") {
+        [...other].forEach(publish);
+        const original = other.push;
+        other.push = function (...items: unknown[]) {
+          try {
+            items.forEach(publish);
+            vvCheck();
+          } finally {
+            return original.apply(this, items);
+          }
+        };
+      }
+    }
+  } catch {
+    // A hostile custom layer cannot prevent ordinary collection.
+  }
   let lastPage = location.href;
   const withoutHash = (href: string) => href.split("#")[0];
   const navigate = () => {

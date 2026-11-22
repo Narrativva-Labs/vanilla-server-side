@@ -191,6 +191,7 @@ export function buildEventCollectUrl(
           }
         : undefined,
       observeLabels,
+      event.name === "traffic_class",
     ),
   );
   const url = buildCollectUrl(destination, {
@@ -406,6 +407,7 @@ export async function sendDeniedPing(
         ? { memory: staged.memory, key: JSON.stringify(["page", ping.page_id, ping.client_id]) }
         : undefined,
       staged.observe,
+      ping.name === "traffic_class",
     ),
   );
   const first = ping.hit_index === 1;

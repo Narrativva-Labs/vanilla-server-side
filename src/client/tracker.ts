@@ -18,6 +18,7 @@ import {
   type TrackingEvent,
 } from "../shared/event.js";
 import { clickIds } from "./click-ids.js";
+import { trafficUpdateFields } from "../shared/traffic.js";
 const PING_URL_BYTES = 1000;
 export interface Runtime {
   title?(): string;
@@ -89,6 +90,8 @@ export function createTracker(
   let holding = false;
   // The page as it was when its held automatic page view could have been sent.
   let heldPage: Record<string, unknown> | undefined;
+  // Document scope: SPA routes and BFCache restores do not restart the detector.
+  let trafficUpdated = false;
   function held() {
     if (released) return false;
     if (!holding) {
@@ -187,9 +190,17 @@ export function createTracker(
     void flush();
   }
   function track(name: string, params: Record<string, unknown> = {}, automatic = false) {
+    const trafficUpdate = name === "traffic_class";
+    if (trafficUpdate) {
+      const fields = trafficUpdateFields(params);
+      if (trafficUpdated || !fields) return;
+      trafficUpdated = true;
+      params = fields;
+    }
     const automaticPage = name === "page_view" && automatic;
     const blockedPage = name === "page_view" && !automaticPage;
-    const allowedName = allowed.has(name) || automaticPage || name === "page_engagement";
+    const allowedName =
+      trafficUpdate || allowed.has(name) || automaticPage || name === "page_engagement";
     if (!allowedName || blockedPage || !/^[a-zA-Z][a-zA-Z0-9_]{0,39}$/.test(name)) return;
     const transaction =
       name === "purchase" && typeof params.transaction_id === "string"
@@ -198,13 +209,15 @@ export function createTracker(
     if (transaction && purchases.has(transaction)) return;
     const pageLocation = sanitizeUrl(runtime.href());
     const pageReferrer = sanitizeUrl(runtime.referrer());
-    params = jsonSnapshot({
-      page_title: runtime.title?.() ?? "",
-      page_location: pageLocation,
-      page_referrer: pageReferrer,
-      ...params,
-      engagement_time_msec: Math.max(0, Math.round(runtime.engagement?.() ?? 0)),
-    });
+    params = trafficUpdate
+      ? params
+      : jsonSnapshot({
+          page_title: runtime.title?.() ?? "",
+          page_location: pageLocation,
+          page_referrer: pageReferrer,
+          ...params,
+          engagement_time_msec: Math.max(0, Math.round(runtime.engagement?.() ?? 0)),
+        });
     if (!canTrack(consent) && name !== "page_engagement") {
       if (pingQueue.length >= 50) pingQueue.shift();
       pingQueue.push({ name, params });
@@ -220,11 +233,13 @@ export function createTracker(
       const deadline = unresolved ? Infinity : waitUntil;
       waiting.push({
         name,
-        params: jsonSnapshot({
-          page_location: pageLocation,
-          page_referrer: pageReferrer,
-          ...params,
-        }),
+        params: trafficUpdate
+          ? params
+          : jsonSnapshot({
+              page_location: pageLocation,
+              page_referrer: pageReferrer,
+              ...params,
+            }),
         timestamp,
         deadline,
         unresolved,
@@ -281,11 +296,14 @@ export function createTracker(
       timestamp_ms: timestamp,
       consent: originalConsent ? intersect(originalConsent, consent) : { ...consent },
       device: runtime.device?.(),
-      params: {
-        page_location: sanitizeUrl(runtime.href()),
-        page_referrer: sanitizeUrl(runtime.referrer()),
-        ...params,
-      },
+      params:
+        name === "traffic_class"
+          ? params
+          : {
+              page_location: sanitizeUrl(runtime.href()),
+              page_referrer: sanitizeUrl(runtime.referrer()),
+              ...params,
+            },
     };
     // A page_location set by the site is cleaned like the automatic one.
     event.params = cleanUrls(jsonSnapshot(event.params)) as Record<string, unknown>;
@@ -296,29 +314,38 @@ export function createTracker(
       if (purchases.size >= 1000) purchases.delete(purchases.values().next().value!);
       purchases.add(transaction);
     }
-    if (immediate) {
+    if (immediate || (name === "traffic_class" && deliveryReady)) {
       // One small best-effort request; never wait for or retry the ordinary event queue.
-      const body = requestBody(snapshot);
-      if (body)
-        void runtime
-          .fetch(endpoint, {
-            method: "POST",
-            credentials: "include",
-            keepalive: true,
-            referrerPolicy: "no-referrer",
-            headers: { "Content-Type": "application/json" },
-            body,
-          })
-          .catch(() => {});
+      sendImmediate(snapshot);
       return;
     }
     if (queue.length >= 50) queue.shift();
     queue.push({ event: snapshot, attempts: 0, next: 0 });
     void flush();
   }
+  function sendImmediate(event: TrackingEvent) {
+    const body = requestBody(event);
+    if (body)
+      void runtime
+        .fetch(endpoint, {
+          method: "POST",
+          credentials: "include",
+          keepalive: true,
+          referrerPolicy: "no-referrer",
+          headers: { "Content-Type": "application/json" },
+          body,
+        })
+        .catch(() => {});
+  }
   function requestBody(queued: TrackingEvent) {
     // The latest browser class when the request leaves, not when the event was queued.
-    const event = { ...queued, params: { ...queued.params, ...runtime.traffic?.() } };
+    const event = {
+      ...queued,
+      params:
+        queued.name === "traffic_class"
+          ? queued.params
+          : { ...queued.params, ...runtime.traffic?.() },
+    };
     // Consent may have narrowed while the event waited in the queue.
     const body = JSON.stringify(
       clickConsent(event.consent) ? event : { ...event, click_ids: undefined },
@@ -367,15 +394,18 @@ export function createTracker(
         session_id: Math.max(1, Math.floor(runtime.now() / 1000)),
         page_id: String(parseInt(runtime.uuid().replace(/-/g, "").slice(0, 12), 16)),
       };
-      const params = cleanUrls(
-        redactAds(
-          jsonSnapshot({
-            ...pageFields(),
-            ...item.params,
-            ...runtime.traffic?.(),
-          }),
-        ),
-      ) as Record<string, unknown>;
+      const params =
+        item.name === "traffic_class"
+          ? item.params
+          : (cleanUrls(
+              redactAds(
+                jsonSnapshot({
+                  ...pageFields(),
+                  ...item.params,
+                  ...runtime.traffic?.(),
+                }),
+              ),
+            ) as Record<string, unknown>);
       // Never send enhanced-conversion data, including scalar values or nested item fields.
       function stripUserData(value: unknown): unknown {
         if (Array.isArray(value)) return value.map(stripUserData);
@@ -412,6 +442,14 @@ export function createTracker(
   async function flush() {
     if (!deliveryReady) return;
     ping();
+    // Startup replay can queue an update before delivery starts. It has the same
+    // immediate, no-retry transport as a live publication, even behind a slow page view.
+    for (const item of [...queue]) {
+      if (item.event.name !== "traffic_class") continue;
+      queue.splice(queue.indexOf(item), 1);
+      const effective = intersect(item.event.consent, consent);
+      if (canTrack(effective)) sendImmediate({ ...item.event, consent: effective });
+    }
     if (resolving) return;
     resolving = true;
     try {

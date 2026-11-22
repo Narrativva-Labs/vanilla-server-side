@@ -128,3 +128,42 @@ test("an unreachable tracker does not hold the page", async ({ page, demo }) => 
   await page.getByRole("button", { name: "Accept" }).click({ timeout: 3000 });
   await expect(page.locator("#state")).toHaveText("granted");
 });
+
+for (const choice of ["Accept", "Reject"]) {
+  test(`a hidden-page detector final sends one class update with ${choice}`, async ({
+    demo,
+    page,
+  }) => {
+    await demo.open();
+    await page.getByRole("button", { name: choice }).click();
+    if (choice === "Accept") await expect.poll(demo.session).toBeDefined();
+    const updates: { path: string; params: Record<string, unknown> }[] = [];
+    page.on("request", (request) => {
+      const data = request.method() === "POST" ? request.postDataJSON() : undefined;
+      if (data?.name === "traffic_class")
+        updates.push({ path: new URL(request.url()).pathname, params: data.params });
+    });
+    await page.evaluate(() => {
+      const host = window as unknown as { dataLayer: unknown[] };
+      // Synthetic detector contract: the publication happens during the hidden transition.
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+      document.dispatchEvent(new Event("visibilitychange"));
+      const final = {
+        event: "traffic_class",
+        traffic_class: "suspicious",
+        traffic_phase: "final",
+        traffic_score: 6,
+        traffic_signals: ["UB"],
+      };
+      host.dataLayer.push(final, final);
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    await expect.poll(() => updates.length).toBe(1);
+    expect(updates[0]).toEqual({
+      path: choice === "Accept" ? "/e" : "/d",
+      params: { traffic_class: "suspicious", traffic_phase: "final" },
+    });
+    if (choice === "Accept") await expect.poll(() => demo.toGoogle("traffic_class")).toBe(1);
+    else expect(await demo.session()).toBeUndefined();
+  });
+}
