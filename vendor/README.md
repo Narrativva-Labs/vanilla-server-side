@@ -1,7 +1,7 @@
 # Visitor Verdict server package
 
 - Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server
-- Source commit: `3c1f2a4` (branch phase2-verifier).
+- Source commit: `fa9c422` (branch phase2-verifier).
 - Version: 0.4.1; archive: visitor-verdict-server-0.4.1.tgz.
 - SHA-512 (hex): `50751f830c77dc22bd497aaea66c1fc88e18a82bdd61e3e8bd61ca751e29fa3b9abf2594ed760ca3ef31a7f2c0670db57f615387da74e042db14e0e4b1f77b4f`
 - npm integrity: `sha512-UHUfgwx33CK9SXqupmwfyI4YqCvdYePovWHKdR4p+juavyWU7XYMo+8xp/LAZw21f2FTh9p04ELbFODksfd7Tw==`

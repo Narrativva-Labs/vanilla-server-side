@@ -244,6 +244,12 @@ The [field observations](https://github.com/Narrativva-Labs/visitor-verdict/blob
 include five badge runs across personal and business accounts, an unsigned masked-headless
 negative control and two unsigned Grok runs; these are separate samples.
 
+The bundled verifier is 0.4.1. Upgrading from 0.3.5 adds provisional Meta Muse at
+muse.ai: allow outbound HTTPS for its key directory; startup health now expects six
+directories instead of five. A blocked Muse fetch can leave 5/6 loaded and a failed
+refresh. Muse's signing identity is third-party-observed, not confirmed by Meta or a
+local request capture. See [upgrade and egress details](INSTALL.md#enable-in-five-steps).
+
 Other registry entries offer uncaptured signature configurations, IP/SAIL evidence,
 inactive rDNS rules or claims only. Registry size is not measured coverage.
 See [operator capabilities](INSTALL.md#operator-capabilities),
@@ -255,9 +261,3 @@ Runtime dependencies are Fastify and the vendored `visitor-verdict-server` packa
 the latter depends on `structured-headers`. There is no database.
 
 Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).
-
-The bundled verifier is 0.4.1. Upgrading from 0.3.5 adds provisional Meta Muse at
-muse.ai: allow outbound HTTPS for its key directory; startup health now expects six
-directories instead of five. A blocked Muse fetch can leave 5/6 loaded and a failed
-refresh. Muse's signing identity is third-party-observed, not confirmed by Meta or a
-local request capture. See [upgrade and egress details](INSTALL.md#enable-in-five-steps).
