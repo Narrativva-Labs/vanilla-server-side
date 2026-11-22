@@ -626,3 +626,21 @@ it("gtag events with send_to are left to their destination, dataLayer objects ar
     params: { value: 1 },
   });
 });
+
+it("does not forward GTM's own keys from objects GTM has already processed", () => {
+  const processed = {
+    event: "view_item_list",
+    "gtm.uniqueEventId": 12,
+    ecommerce: { currency: "CZK", items: [{ item_id: "jablko" }] },
+  };
+  expect(normalizeEventItem(processed)).toEqual({
+    name: "view_item_list",
+    params: { currency: "CZK", items: [{ item_id: "jablko" }] },
+  });
+  expect(
+    normalizeEventItem(["event", "search", { search_term: "x", "gtm.uniqueEventId": 3 }]),
+  ).toEqual({
+    name: "search",
+    params: { search_term: "x" },
+  });
+});
