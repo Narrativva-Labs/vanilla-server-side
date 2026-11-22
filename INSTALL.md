@@ -276,7 +276,7 @@ only the operator; purpose comes from the claimed UA token selecting the feed
 and its purpose mapping. It does not independently verify that product role.
 
 
-Capabilities below describe the bundled 0.4.0 registry, before
+Capabilities below describe the bundled 0.4.1 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
@@ -449,13 +449,15 @@ an operator dimension with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`.
 
 Every later hit retains the strongest vv_type observed in that session. Ranks are
 pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4,
-bot_spoofed=4.5, crawler_verified=agent_verified=5; fresh equal-rank evidence replaces
-the earlier type and operator.
-The detail describes the current hit, with the last known operator carried forward.
+bot_spoofed=4.5, intermediary agent_verified=4.75, direct crawler_verified=agent_verified=5;
+fresh equal-rank evidence replaces the earlier type, operator and verified purpose.
+A later intermediary cannot replace an active direct verified identity. Verified purpose
+travels with the inherited operator, so unsigned Browserbase hits retain intermediary.
+Verification, claim and browser segments still describe the current hit.
 This is immediate memory-only state with separate 10,000-entry LRU budgets for
 full events (client_id + session_id) and denied pings (page_id + client_id). Pending
 never enters memory. Fresh evidence gets at most 30 minutes, capped to proof expiry
-for verified evidence; same-type/same-operator renewal never shortens active expiry.
+for verified evidence; same-type/same-operator/same-purpose renewal never shortens active expiry.
 A different verified operator gets only its own proof lifetime. Inherited lower-ranked
 hits do not extend expiry. A detected replay overrides active verified evidence for
 that hit without erasing it; malformed headers and other invalid signatures can
@@ -486,7 +488,23 @@ from these labels.
 Allow outbound HTTPS for the bundled registry as needed:
 
 **Key directories, warmed at startup:**
-`assistbot.duckduckgo.com`, `chatgpt.com`, `agent.bot.goog`, `www.browserbase.com`, `api.manus.im`.
+`assistbot.duckduckgo.com`, `chatgpt.com`, `agent.bot.goog`, `www.browserbase.com`, `api.manus.im`, `muse.ai`.
+
+**Upgrade from verifier 0.3.5:** 0.4.0 added provisional Meta Muse and raised startup
+key directories from five to six. Allow HTTPS to
+`https://muse.ai/.well-known/http-message-signatures-directory`; an egress block can
+leave `/health` at `directoriesLoaded: "5/6"` and `lastRefreshOk: false`. No hit is held
+or excluded by verification. Muse remains enabled by owner policy based on third-party
+wire observations and a live directory; Meta has not confirmed the identity, and no
+local request capture establishes it. A custom registry may omit this provisional entry.
+
+**Verifier 0.4.1:** valid intermediary signatures cannot mask replay or invalid WBA
+peers. Such a hit is `bot_spoofed` with no operator unless a direct signature verifies.
+Replay overrides retained verified evidence for that hit only. Ordinary malformed/invalid
+hits can still inherit active proof under the session rule above. Missing covered
+signature members fail verification; lossy Decimal inputs remain indeterminate.
+Browserbase uses the registry `intermediary` flag: its former `purposes` mapping and
+`purposePolicies.browserbase` were removed in 0.4.0.
 
 **IP-list/SAIL hosts, loaded on matching claims:** `www.kimi.ai`, `index.commoncrawl.org`, `search.seznam.cz`, `searchadvisor.naver.com`, `search.developer.apple.com`, `www.bing.com`, `mistral.ai`, `duckduckgo.com`, `openai.com`, `developers.google.com`, `claude.com`, `www.perplexity.ai`.
 Many crawler claims are dropped by the bot filter before these feeds are needed.

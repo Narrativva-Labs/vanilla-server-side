@@ -41,7 +41,7 @@ it("uses current evidence, known operator and fresh equal-rank type", () => {
     memory.apply("s", visitorLabels({ browserClass: "human", browserPhase: "final" })),
   ).toEqual({
     vv_type: "agent_verified",
-    vv_detail: "openai|-|-|-|human|final",
+    vv_detail: "openai|-|user_directed|-|human|final",
   });
 });
 it("bounds the LRU, preserves proof expiry, sweeps and clears", () => {

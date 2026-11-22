@@ -45,9 +45,29 @@ const verdicts: (AgentVerdict | undefined)[] = [
     reason: "crypto_mismatch",
     signatures: [],
   },
+  {
+    verification: "none",
+    agent_purpose: "unknown",
+    claimed: { uaTokens: [], signatureAgents: ["https://evil.example"] },
+    reason: "untrusted_signature_agent",
+    signatures: [],
+  },
+  {
+    verification: "signature_invalid",
+    agent_purpose: "unknown",
+    claimed: { uaTokens: [], signatureAgents: ["https://chatgpt.com"] },
+    reason: "replay",
+    signatures: [{ label: "a", result: "signature_invalid", reason: "replay" }],
+  },
+  {
+    ...signed("meta", "user_directed", "https://muse.ai"),
+    agent_purpose: "invalid" as AgentVerdict["agent_purpose"],
+  },
 ];
 const browser = [
   {},
+  { traffic_class: "suspicious", traffic_phase: "final" },
+  { traffic_class: "declared_agent", traffic_phase: "agent", traffic_agent: "google" },
   { traffic_class: "human", traffic_phase: "final" },
   { traffic_class: "automated", traffic_phase: "initial" },
   { traffic_class: "declared_agent", traffic_phase: "agent", traffic_agent: "openai" },
@@ -55,15 +75,43 @@ const browser = [
   { traffic_class: "declared_agent", traffic_phase: "initial" },
 ];
 
-function check(labels: Record<string, unknown>) {
+function check(
+  labels: Record<string, unknown>,
+  allowedVerified: Map<string, string>,
+  markerOperators: Set<string>,
+) {
   const type = labels.vv_type as string;
-  const [operator, verification] = (labels.vv_detail as string).split("|");
+  const [operator, verification, purpose, claim] = (labels.vv_detail as string).split("|");
+  expect((labels.vv_detail as string).length).toBeLessThanOrEqual(100);
   if (operator === "none") return;
-  if (type === "agent_verified" || type === "crawler_verified") return;
-  // Not verified: the only remaining source is a page marker, current or carried.
+  if (type === "agent_verified" || type === "crawler_verified") {
+    expect(allowedVerified.has(operator!)).toBe(true);
+    expect(purpose).toBe(allowedVerified.get(operator!));
+    expect(claim).not.toBe("dom_marker");
+    return;
+  }
   expect(type).toBe("agent_unverified");
-  expect(["openai", "anthropic"]).toContain(operator);
+  expect(markerOperators.has(operator!)).toBe(true);
   expect(["signature_valid", "ip_match"]).not.toContain(verification);
+}
+function remember(
+  v: AgentVerdict | undefined,
+  b: Record<string, unknown>,
+  verified: Map<string, string>,
+  markers: Set<string>,
+) {
+  if (v?.verified && ["signature_valid", "ip_match"].includes(v.verification))
+    verified.set(
+      v.verified.operator,
+      ["user_directed", "crawler", "intermediary"].includes(v.agent_purpose)
+        ? v.agent_purpose
+        : "unknown",
+    );
+  if (
+    b.traffic_class === "declared_agent" &&
+    ["openai", "anthropic"].includes(String(b.traffic_agent))
+  )
+    markers.add(String(b.traffic_agent));
 }
 
 it("every operator states its source on single hits and in deterministic session sequences", () => {
@@ -72,18 +120,28 @@ it("every operator states its source on single hits and in deterministic session
     seed = (seed * 1103515245 + 12345) % 2147483648;
     return seed % n;
   };
-  for (const v of verdicts) for (const b of browser) check(withLabels({ ...b }, v));
+  for (const v of verdicts)
+    for (const b of browser) {
+      const verified = new Map<string, string>();
+      const markers = new Set<string>();
+      remember(v, b, verified, markers);
+      check(withLabels({ ...b }, v), verified, markers);
+    }
   for (let run = 0; run < 300; run++) {
     let time = 1_000_000;
     const memory = createLabelMemory(10, 60_000, () => time);
+    const verified = new Map<string, string>();
+    const markers = new Set<string>();
     for (let hit = 0; hit < 8; hit++) {
       time += 1000;
       const v = verdicts[random(verdicts.length)];
-      const out = withLabels({ ...browser[random(browser.length)] }, v, {
+      const b = browser[random(browser.length)]!;
+      remember(v, b, verified, markers);
+      const out = withLabels({ ...b }, v, {
         memory,
         key: "session",
       });
-      check(out);
+      check(out, verified, markers);
     }
   }
 });
@@ -108,6 +166,65 @@ it("an intermediary stays infrastructure and is never replaced by a marker or a 
     ),
   ).toEqual({
     vv_type: "agent_verified",
-    vv_detail: "browserbase|no_signature|unknown|ua_token|declared_agent|agent",
+    vv_detail: "browserbase|no_signature|intermediary|ua_token|declared_agent|agent",
   });
+});
+
+it("a later intermediary never replaces an active direct identity or extends its proof", () => {
+  let time = 1_000_000;
+  const memory = createLabelMemory(10, 60_000, () => time);
+  const sticky = { memory, key: "s" };
+  const direct = signed("meta", "user_directed", "https://muse.ai");
+  direct.verified!.expiresAt = 1005;
+  const infra = signed("browserbase", "intermediary", "https://www.browserbase.com");
+  for (const v of [direct, infra, undefined]) {
+    const out = withLabels({ traffic_class: "human" }, v, sticky);
+    expect(out.vv_type).toBe("agent_verified");
+    expect(
+      String(out.vv_detail)
+        .split("|")
+        .filter((_, i) => i === 0 || i === 2),
+    ).toEqual(["meta", "user_directed"]);
+    time += 1000;
+  }
+  time = 1_005_000;
+  expect(withLabels({ traffic_class: "human" }, undefined, sticky).vv_type).toBe("human");
+  expect(
+    String(withLabels({}, infra, sticky).vv_detail)
+      .split("|")
+      .slice(0, 3),
+  ).toEqual(["browserbase", "signature_valid", "intermediary"]);
+  expect(String(withLabels({}, direct, sticky).vv_detail).split("|")[0]).toBe("meta");
+});
+
+it("replay labels only that hit as spoofed, without naming an operator or clearing verified memory", () => {
+  for (const v of [
+    signed("meta", "user_directed", "https://muse.ai"),
+    signed("browserbase", "intermediary", "https://www.browserbase.com"),
+  ]) {
+    const memory = createLabelMemory();
+    const sticky = { memory, key: "s" };
+    withLabels({}, v, sticky);
+    const replay: AgentVerdict = {
+      ...v,
+      verified: undefined,
+      agent_purpose: "unknown",
+      verification: "signature_invalid",
+      reason: "replay",
+      signatures: [
+        { label: "a", result: "signature_invalid", reason: "replay" },
+        { label: "b", result: "signature_valid", reason: "verified" },
+      ],
+    };
+    const spoofed = withLabels(
+      { traffic_class: "declared_agent", traffic_agent: "openai" },
+      replay,
+      sticky,
+    );
+    expect(spoofed.vv_type).toBe("bot_spoofed");
+    expect(String(spoofed.vv_detail).split("|")[0]).toBe("none");
+    expect(String(withLabels({}, undefined, sticky).vv_detail).split("|")[0]).toBe(
+      v.verified!.operator,
+    );
+  }
 });

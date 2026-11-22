@@ -145,12 +145,12 @@ it("keeps a verified operator over a conflicting marker, also in session memory"
   // no longer says dom_marker once the operator comes from memory.
   expect(withLabels({ ...marker, traffic_agent: "anthropic" }, undefined, sticky)).toEqual({
     vv_type: "agent_verified",
-    vv_detail: "openai|-|-|-|declared_agent|agent",
+    vv_detail: "openai|-|user_directed|-|declared_agent|agent",
   });
   time += 1000;
   // With a server verdict the claim reverts to the hit's own server claim.
   expect(withLabels({ ...marker, traffic_agent: "openai" }, uaClaim, sticky).vv_detail).toBe(
-    "openai|no_signature|unknown|ua_token|declared_agent|agent",
+    "openai|no_signature|user_directed|ua_token|declared_agent|agent",
   );
 });
 

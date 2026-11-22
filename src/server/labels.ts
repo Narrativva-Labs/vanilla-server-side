@@ -25,12 +25,17 @@ const rank: Record<Labels["vv_type"], number> = {
   agent_verified: 5,
   bot_spoofed: 4.5,
 };
+const verifiedType = (type: Labels["vv_type"]) =>
+  type === "agent_verified" || type === "crawler_verified";
+const evidenceRank = (type: Labels["vv_type"], purpose: string) =>
+  verifiedType(type) && purpose === "intermediary" ? 4.75 : rank[type];
 /** Bounded, memory-only evidence per session (or denied page), never per IP. */
 export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now = Date.now) {
   type Entry = {
     key: string;
     type: Labels["vv_type"];
     operator: string;
+    purpose: string;
     expires: number;
     index: number;
   };
@@ -83,24 +88,33 @@ export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now 
       if (!Number.isFinite(time)) return labels;
       const saved = sessions.get(key);
       const previous = saved && time < saved.expires ? saved : undefined;
-      if (isReplay && previous && rank[previous.type] === 5) return labels;
-      const incomingVerified = rank[labels.vv_type] === 5;
+      if (isReplay && previous && verifiedType(previous.type)) return labels;
+      const incomingVerified = verifiedType(labels.vv_type);
+      const detail = labels.vv_detail.split("|");
       if (incomingVerified && proofExpiresMs !== undefined && !Number.isFinite(proofExpiresMs))
         return labels;
       // Active verified proof wins over malformed signatures; a later proof can repair spoofed state.
-      const inherited = previous && rank[previous.type] > rank[labels.vv_type];
+      const inherited =
+        previous &&
+        evidenceRank(previous.type, previous.purpose) > evidenceRank(labels.vv_type, detail[2]!);
       const type = inherited ? previous.type : labels.vv_type;
-      const isVerified = type === "agent_verified" || type === "crawler_verified";
+      const isVerified = verifiedType(type);
       let expires = inherited
         ? previous.expires
         : Math.min(time + ttlMs, isVerified ? (proofExpiresMs ?? time + ttlMs) : time + ttlMs);
       // Proof can still verify within skew, but cannot be retained beyond signed expiry.
       if (!(expires > time)) return labels;
-      const detail = labels.vv_detail.split("|");
       const operator = inherited ? previous.operator : detail[0]!;
-      if (previous && previous.type === type && previous.operator === operator)
+      const purpose = inherited && isVerified ? previous.purpose : detail[2]!;
+      if (
+        previous &&
+        previous.type === type &&
+        previous.operator === operator &&
+        previous.purpose === purpose
+      )
         expires = Math.max(previous.expires, expires);
       detail[0] = operator;
+      if (isVerified) detail[2] = purpose;
       // Operator segments validated by visitorLabels; replacing none cannot exceed its limit.
       const vv_detail = detail.join("|");
       if (vv_detail.length > 100) throw new RangeError("vv_detail exceeds 100 characters");
@@ -109,7 +123,7 @@ export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now 
         sweep(time);
         const existing = sessions.get(key);
         if (existing) remove(existing);
-        const entry = { key, type, operator, expires, index: heap.length };
+        const entry = { key, type, operator, purpose, expires, index: heap.length };
         sessions.set(key, entry);
         heap.push(entry);
         up(entry.index);

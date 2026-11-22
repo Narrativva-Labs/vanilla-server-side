@@ -226,9 +226,10 @@ detector's initial class or at most that many milliseconds; default 0, no wait
 
 In GA4 use **begins with** `agent_` or `bot_` on vv_type; use **begins with** `openai|`
 on vv_detail for OpenAI, and require vv_type `agent_verified` or `crawler_verified` to count only verified operators
-(an operator with `agent_unverified` comes from a page marker; a UA token never names one). Purpose
-`intermediary` (for example `browserbase|signature_valid|intermediary|…`) marks verified signing
-infrastructure, not the agent. Looker Studio operator dimension:
+(an operator with `agent_unverified` comes from a page marker; a UA token never names one). Verified purpose
+is carried with the operator across unsigned hits; intermediaries have lower session priority
+than direct verified agents. Purpose `intermediary` (for example `browserbase|signature_valid|intermediary|…`) marks verified signing
+infrastructure, not the agent. Leave out purpose `intermediary` when counting agents. Looker Studio operator dimension:
 `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Data API names are `customEvent:vv_type`
 and `customEvent:vv_detail`. The old six field names are no longer forwarded.
 
@@ -254,3 +255,9 @@ Runtime dependencies are Fastify and the vendored `visitor-verdict-server` packa
 the latter depends on `structured-headers`. There is no database.
 
 Need this set up, or your measurement reviewed? I do that as paid work: [frantisekbujnovsky.com](https://frantisekbujnovsky.com).
+
+The bundled verifier is 0.4.1. Upgrading from 0.3.5 adds provisional Meta Muse at
+muse.ai: allow outbound HTTPS for its key directory; startup health now expects six
+directories instead of five. A blocked Muse fetch can leave 5/6 loaded and a failed
+refresh. Muse's signing identity is third-party-observed, not confirmed by Meta or a
+local request capture. See [upgrade and egress details](INSTALL.md#enable-in-five-steps).
