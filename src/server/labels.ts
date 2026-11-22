@@ -139,12 +139,13 @@ export function withLabels(
   observe?: LabelObserver,
 ): Record<string, unknown> {
   const browser = trafficFields(params.traffic_class, params.traffic_phase, params.traffic_agent);
-  let labels = visitorLabels({
+  const input = {
     verdict,
     browserClass: browser.traffic_class,
     browserPhase: browser.traffic_phase,
-    browserAgent: browser.traffic_agent,
-  });
+  };
+  let labels = visitorLabels({ ...input, browserAgent: browser.traffic_agent });
+  const own = labels;
   const proofExpires = verdict?.proofExpiresAt ?? verdict?.verified?.expiresAt;
   const isReplay =
     verdict?.verification !== "signature_valid" &&
@@ -158,6 +159,16 @@ export function withLabels(
       proofExpires === undefined ? undefined : proofExpires * 1000,
       isReplay,
     );
+  if (labels.vv_type !== own.vv_type) {
+    // Stronger sticky evidence supplies type and operator, so this hit's page marker no longer
+    // names the operator: the claim reverts to the hit's server claim. It is never longer than
+    // the 100-character bound (marker hits carry no verified or invalid verification segment).
+    const detail = labels.vv_detail.split("|");
+    if (detail[3] === "dom_marker") {
+      detail[3] = visitorLabels(input).vv_detail.split("|")[3]!;
+      labels = { ...labels, vv_detail: detail.join("|") };
+    }
+  }
   observe?.(labels, verdict, browser.traffic_class);
   return {
     ...labels,

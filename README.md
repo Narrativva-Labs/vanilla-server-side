@@ -79,7 +79,7 @@ For an undecided visitor, full events still wait in memory even after their ping
 | Exit engagement | Denied `user_engagement` | Not sent |
 | `vv_type`, `vv_detail` | Not sent | **Sent** (see below) |
 
-The two labels classify the hit, not the person: `vv_type` is one of `pending`, `human`, `bot_suspicious`, `agent_unverified`, `bot_automation`, `crawler_verified`, `agent_verified`, `bot_spoofed`; `vv_detail` is `operator|verification|purpose|claim|browser_class|phase`, for example `openai|signature_valid|user_directed|signature_agent|human|initial`, `none|no_signature|unknown|none|-|-` or, for an in-browser agent recognised by its page marker, `anthropic|no_signature|unknown|dom_marker|declared_agent|agent`. They contain no identifier, IP, cookie or URL. The other difference is the route: the hits pass through your collector, so your server (and whoever operates it for you) also processes the IP and the hit data.
+The two labels classify the hit, not the person: `vv_type` is one of `pending`, `human`, `bot_suspicious`, `agent_unverified`, `bot_automation`, `crawler_verified`, `agent_verified`, `bot_spoofed`; `vv_detail` is `operator|verification|purpose|claim|browser_class|phase`, for example `openai|signature_valid|user_directed|signature_agent|human|initial`, `none|no_signature|unknown|none|-|-` or, for an in-browser agent recognised by its page marker, `openai|no_signature|unknown|dom_marker|declared_agent|agent`. They contain no identifier, IP, cookie or URL. The other difference is the route: the hits pass through your collector, so your server (and whoever operates it for you) also processes the IP and the hit data.
 
 **Basic Consent Mode:** if the site blocks the Google tag until consent, Google normally receives nothing before a decision. Vanilla's default pings would then send more than your Google tag does. Set `DENIED_PINGS=off` on such sites.
 
@@ -192,9 +192,19 @@ Browser phases are `initial`, `final` and `agent`. When the Visitor Verdict dete
 later) recognises an in-browser agent by its page marker, it also reports the operator
 (`openai` or `anthropic`); Vanilla sends it to the collector as `traffic_agent`. Without a
 verified identity that operator appears in vv_detail with claim `dom_marker`, for example
-`anthropic|no_signature|unknown|dom_marker|declared_agent|agent`, and vv_type stays
+`openai|no_signature|unknown|dom_marker|declared_agent|agent`, and vv_type stays
 `agent_unverified`: a marker is observed, not verified. A verified signature or IP match
 always supplies the operator, also when a marker names another one.
+`openai` comes from OpenAI's agent overlay (confirmed in the ChatGPT desktop app's Chrome
+plugin); `anthropic` only from older Claude in Chrome versions. The current extension
+(1.0.107, checked 22 November 2026) keeps its UI in a closed shadow root and is not
+detected, so those visits stay `human` unless other evidence exists.
+A marker that appears after a hit was sent (phase `agent`) is not sent on its own: Vanilla reads
+the detector only when it sends a hit, so the operator arrives with the next tracked event on
+that page, or on the next page of the site through the detector's one-page carry-over. A
+single-page visit with no later event, including a denied visit with no further ping, never
+reports it.
+Update the collector before the tracker ([order](INSTALL.md#updates-and-maintenance)).
 The [complete dictionary](INSTALL.md#analyst-value-dictionary) explains every segment,
 priority and session rank. Strongest type and known operator stick immediately to
 later hits in a bounded memory-only session (denied pings: page only); no delays.

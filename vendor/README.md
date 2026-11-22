@@ -1,10 +1,10 @@
 # Visitor Verdict server package
 
 - Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server
-- Source commit: `33ec562` (branch phase2-verifier).
+- Source commit: `b26d745` (branch phase2-verifier).
 - Version: 0.3.5; archive: visitor-verdict-server-0.3.5.tgz.
-- SHA-512 (hex): `75d4526f1103e0c0b98612b85f172fc925f23f706a00f1361d338e3f107fcff3707e424b3b35b142243def880fe96e74a097f5a0c66cfb524ad31f65e1cca96a`
-- npm integrity: `sha512-ddRSbxED4MC5hhK4XxcvySXyP3BqAPE2HTOOPxB/z/NwfkJLOzWxQiQ974gP6W50oJf1oMZs+1JK0x9l4cypag==`
+- SHA-512 (hex): `98a8149ed8f735e3ccdec2d0645031003e886c681f566198262dda686a2b7a3f950bc164846b40df0dff68b033d46027ede4395840a11d6f7e0f5623e39776c0`
+- npm integrity: `sha512-mKgUntj3NePM3sLQZFAxAD6IbGgfVmGYJi3aaGorej+VC8FkhGtA3w3/aLAz1GAn7eQ5WEChHW9+D1Yj45d2wA==`
 
 Rebuild: `cd server && npm run build && npm pack`.
 Copy the archive into vendor/, then run `npm install --offline ./vendor/visitor-verdict-server-0.3.5.tgz`.

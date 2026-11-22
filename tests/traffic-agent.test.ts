@@ -62,6 +62,13 @@ it("drops an unknown operator on its own and sends nothing without a valid class
     traffic_class: "declared_agent",
     traffic_agent: "anthropic",
   });
+  // The detector reports an operator only with declared_agent; any other class drops it.
+  for (const value of ["human", "suspicious", "automated"])
+    expect(
+      readTraffic({
+        __visitorVerdict: snapshot({ class: value, phase: "final", agent: "openai" }),
+      }),
+    ).toEqual({ traffic_class: value, traffic_phase: "final" });
 });
 
 it("sends traffic_agent on full events and denied pings", async () => {
@@ -134,11 +141,106 @@ it("keeps a verified operator over a conflicting marker, also in session memory"
   const sticky = { memory, key: "session" };
   withLabels({ traffic_class: "human", traffic_phase: "final" }, verified, sticky);
   time += 1000;
-  // The later unverified marker cannot replace the stronger verified identity.
+  // The later unverified marker cannot replace the stronger verified identity, and the claim
+  // no longer says dom_marker once the operator comes from memory.
   expect(withLabels({ ...marker, traffic_agent: "anthropic" }, undefined, sticky)).toEqual({
     vv_type: "agent_verified",
-    vv_detail: "openai|-|-|dom_marker|declared_agent|agent",
+    vv_detail: "openai|-|-|-|declared_agent|agent",
   });
+  time += 1000;
+  // With a server verdict the claim reverts to the hit's own server claim.
+  expect(withLabels({ ...marker, traffic_agent: "openai" }, uaClaim, sticky).vv_detail).toBe(
+    "openai|no_signature|unknown|ua_token|declared_agent|agent",
+  );
+});
+
+const uaClaim = {
+  verification: "no_signature" as const,
+  agent_purpose: "unknown" as const,
+  claimed: { uaTokens: ["Claude-User"], signatureAgents: [] },
+  signatures: [],
+  reason: "signature_headers_absent",
+};
+const spoofed = {
+  verification: "signature_invalid" as const,
+  agent_purpose: "unknown" as const,
+  claimed: { uaTokens: [], signatureAgents: ["https://chatgpt.com"] },
+  signatures: [],
+  reason: "crypto_mismatch",
+};
+const human = { traffic_class: "human", traffic_phase: "final" };
+const transitions: [string, Record<string, unknown>, object | undefined, object][] = [
+  // Weaker later hit: sticky type and operator stay, the hit's claim is its own.
+  [
+    "human",
+    human,
+    undefined,
+    { vv_type: "agent_unverified", vv_detail: "anthropic|-|-|-|human|final" },
+  ],
+  // Equal rank 3: fresh evidence replaces type and operator.
+  [
+    "ua_token",
+    human,
+    uaClaim,
+    { vv_type: "agent_unverified", vv_detail: "none|no_signature|unknown|ua_token|human|final" },
+  ],
+  [
+    "another marker",
+    { ...marker, traffic_agent: "openai" },
+    undefined,
+    { vv_type: "agent_unverified", vv_detail: "openai|-|-|dom_marker|declared_agent|agent" },
+  ],
+  // Stronger later evidence replaces the marker entirely.
+  [
+    "bot_spoofed",
+    { ...marker, traffic_agent: "openai" },
+    spoofed,
+    {
+      vv_type: "bot_spoofed",
+      vv_detail: "none|signature_invalid|unknown|signature_agent|declared_agent|agent",
+    },
+  ],
+  [
+    "agent_verified",
+    human,
+    verified,
+    {
+      vv_type: "agent_verified",
+      vv_detail: "openai|signature_valid|user_directed|signature_agent|human|final",
+    },
+  ],
+];
+for (const [label, params, verdict, expected] of transitions)
+  it(`moves from an anthropic marker to ${label} in session memory`, () => {
+    let time = 1_000_000;
+    const memory = createLabelMemory(10, 60_000, () => time);
+    const sticky = { memory, key: "session" };
+    expect(withLabels({ ...marker, traffic_agent: "anthropic" }, undefined, sticky)).toEqual({
+      vv_type: "agent_unverified",
+      vv_detail: "anthropic|-|-|dom_marker|declared_agent|agent",
+    });
+    time += 1000;
+    const result = withLabels(params, verdict as never, sticky);
+    expect(result).toEqual(expected);
+    // dom_marker only ever appears with the operator of the hit's own marker.
+    const detail = String(result.vv_detail).split("|");
+    if (detail[3] === "dom_marker") expect(detail[0]).toBe(params.traffic_agent);
+  });
+
+it("never attributes a marker claim to an inherited operator after spoofed or automated evidence", () => {
+  for (const [first, verdict] of [
+    [{ traffic_class: "automated", traffic_phase: "final" }, undefined],
+    [human, spoofed],
+  ] as const) {
+    let time = 1_000_000;
+    const memory = createLabelMemory(10, 60_000, () => time);
+    const sticky = { memory, key: "session" };
+    withLabels(first, verdict as never, sticky);
+    time += 1000;
+    const result = withLabels({ ...marker, traffic_agent: "openai" }, undefined, sticky);
+    expect(String(result.vv_detail).split("|")[3]).toBe("-");
+    expect(String(result.vv_detail).split("|")[0]).toBe("none");
+  }
 });
 
 const config = {

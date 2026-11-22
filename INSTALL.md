@@ -220,6 +220,12 @@ It requires a clean tracked checkout on a branch, backs up .env privately, pulls
 
 Before updating, record `git rev-parse HEAD`. To roll back, run `git checkout` with that revision, restore the matching private .env backup if its format changed, then run `sudo docker compose build --pull tracker && sudo docker compose up -d --wait --wait-timeout 180`. That leaves the checkout off its branch, and `./update.sh` stops until you run `git switch main`. Never roll back by deleting Caddy volumes.
 
+**Update order for `traffic_agent`:** update the collector before any browser gets the new
+s.js. An older collector does not reserve `traffic_agent` and forwards it to GA4 as an
+ordinary event parameter (using one of the 25 slots). A single default install rebuilds both
+at once with `./update.sh`; with several collector instances, or a cached or self-hosted copy
+of s.js, roll out every collector first and the tracker after that (s.js is cached for 300 s).
+
 Install Ubuntu security updates regularly and reboot when required. Docker and Caddy restart automatically. Logs rotate to three 10 MB files per service. Application logs omit visitor values, but Caddy may include client and request metadata in error logs when proxying fails. Restrict server access, set a retention policy appropriate for your disclosure, and check disk space with df -h.
 
 If the VPS goes down, the original GTM measurement continues. Vanilla events during downtime can be lost: there is no durable queue or backfill. Restart the VPS or run sudo docker compose up -d; if replacing the server, clone again, restore .env, update DNS and rerun ./install.sh. Do not delete Caddy volumes during routine updates; they hold certificates.
@@ -328,7 +334,17 @@ server uses them in vv_type/vv_detail and does not forward these fields to GA4. 
 must match exactly: classes human, suspicious, automated, declared_agent; phases initial,
 final, agent; operators openai, anthropic (Visitor Verdict 1.1 and later, only when its page
 marker identified an in-browser agent). Unknown values are dropped in the browser and
-again on the server; phase and operator only count with a valid class. A detector
+again on the server; phase only counts with a valid class, the operator only with
+declared_agent. `openai` comes from OpenAI's agent overlay (confirmed in the ChatGPT desktop app's Chrome
+plugin); `anthropic` only from older Claude in Chrome versions. The current extension
+(1.0.107, checked 22 November 2026) keeps its UI in a closed shadow root and is not
+detected, so those visits stay `human` unless other evidence exists.
+A marker that appears after a hit was sent (phase `agent`) is not sent on its own: Vanilla reads
+the detector only when it sends a hit, so the operator arrives with the next tracked event on
+that page, or on the next page of the site through the detector's one-page carry-over. A
+single-page visit with no later event, including a denied visit with no further ping, never
+reports it.
+ A detector
 without the operator field sends exactly class and phase. The browser class works with verification off and is spoofable.
 The detector uses minimal sessionStorage; disclose it before installing. Leave its
 own traffic_class event out of TRACKED_EVENTS. Early hits may lack a browser class.
@@ -419,7 +435,9 @@ marker never makes a hit verified. An invalid signature stays `bot_spoofed` with
 `none`. Otherwise a declared_agent hit with a valid traffic_agent names that operator with
 claim `dom_marker` (it replaces an unverified UA or Signature-Agent claim, so the claim
 names the source of the operator) and stays `agent_unverified`, for example
-`anthropic|no_signature|unknown|dom_marker|declared_agent|agent`. To count only verified
+`openai|no_signature|unknown|dom_marker|declared_agent|agent`. When stronger session
+evidence supplies the type and operator, the hit's claim reverts to its own server claim, so
+`dom_marker` only ever names the operator of that hit's marker. To count only verified
 operators, also require vv_type `agent_verified`. In Looker Studio create
 an operator dimension with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`.
 
