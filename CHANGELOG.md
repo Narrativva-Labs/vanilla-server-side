@@ -2,6 +2,9 @@
 
 ## 0.3.0
 
+- Keep v1 infrastructure echoes compatible with cached 0.2.0 clients by sending agent_verified + intermediary; internal/GA4 labels remain automation_verified. Freeze the original 0.2.0 reader/schema in a compatibility test fixture.
+- Protect active direct browser identity from infrastructure/crawler storage and publication until proof expiry, including restored records and delayed responses. Verify bot counts and reserve ordinary-event claims; expand operator-source coverage for dom_host.
+
 - Bundle visitor-verdict-server 0.6.1 from phase2-verifier 455e248 with recorded SHA-512 and npm integrity. Adopt narrower bot_spoofed outcomes and key refresh on mutable kid mismatch; Poppy remains optional and disabled.
 - Add automation_verified for verified infrastructure at rank 4.75, retain legacy intermediary priority, and expose its counts. B7 schema v1 accepts the new type and publishes server_intermediary with the infrastructure operator; crawlers remain unpublished.
 - Pass only dom_marker/dom_host browser provenance to visitorLabels as browserAgentClaim, preserving dom_host in vv_detail and dropping stale browser provenance when stronger session evidence wins.

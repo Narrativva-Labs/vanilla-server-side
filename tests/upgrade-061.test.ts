@@ -60,11 +60,17 @@ it("does not retain automation proof beyond expiry or inherit it on replay", () 
 });
 it("accepts new and legacy intermediary echoes but rejects inconsistent automation purpose", () => {
   const vv = verdictEcho(platform, 1800000000)!;
-  expect(vv).toMatchObject({ v: 1, type: "automation_verified", operator: "browserbase", ttl: 60 });
+  expect(vv).toMatchObject({
+    v: 1,
+    type: "agent_verified",
+    purpose: "intermediary",
+    operator: "browserbase",
+    ttl: 60,
+  });
   expect(serverVerdict(vv)).toEqual(vv);
-  expect(serverVerdict({ ...vv, type: "agent_verified" })).toBeDefined();
+  expect(serverVerdict({ ...vv, type: "automation_verified" })).toBeDefined();
   for (const purpose of ["user_directed", "unknown", "crawler"])
-    expect(serverVerdict({ ...vv, purpose })).toBeUndefined();
+    expect(serverVerdict({ ...vv, type: "automation_verified", purpose })).toBeUndefined();
 });
 it("publishes and restores an automation echo as infrastructure and still suppresses crawlers", async () => {
   const vv = verdictEcho(platform, 1800000000)!;

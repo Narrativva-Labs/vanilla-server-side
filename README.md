@@ -402,9 +402,20 @@ items, it removes `vv_detail`, then `vv_type`, as a last resort to preserve the 
 Vanilla 0.3.0 bundles verifier 0.6.1. Verified platforms use `automation_verified`
 (rank 4.75); direct agents and crawlers remain rank 5. Older `agent_verified` labels
 with purpose `intermediary` retain the platform priority and echo compatibility.
-Schema v1 also accepts the new type; its browser publication remains `declared_agent`
-with `server_intermediary` and the infrastructure operator. Browser evidence now
+Schema v1 sends infrastructure as `type: agent_verified` with `purpose: intermediary`,
+so cached Vanilla 0.2.0 scripts still read it. Internally and in GA4 the type remains
+`automation_verified`. Its browser publication remains `declared_agent` with
+`server_intermediary` and the infrastructure operator. Current readers also accept
+the transitional `automation_verified` response type. Browser evidence now
 preserves `dom_host` versus `dom_marker` in vv_detail. The nine type counters include
 `automation_verified`. Poppy remains disabled in Vanilla. Replay and malformed proof
 are unverified evidence rather than spoofing; only definitive known-key crypto
 mismatch produces `bot_spoofed`. See vendor/README.md for pinned source and integrity.
+
+An active, unexpired direct `agent_verified` echo takes precedence in the browser:
+infrastructure (including legacy intermediary echoes) and crawlers cannot replace
+its storage record, server snapshot or publication. The guard uses the original receipt
+or storage timestamp and proof TTL; after expiry a new platform/crawler proof can be
+accepted. Withdrawal clears the guard with persistence. Browser `dom_host` evidence
+can classify ordinary hits, but the separate `traffic_agent_claim` GA4 parameter is
+sent only on `traffic_class` updates; it remains reserved on ordinary events.

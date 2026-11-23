@@ -3,7 +3,7 @@ import type { AgentVerdict } from "visitor-verdict-server";
 import { createLabelMemory, withLabels } from "../src/server/labels.js";
 
 // Evidence versus identity: an operator in vv_detail is either verified (and then the type,
-// also when carried in session memory, is agent_verified or crawler_verified) or named by a
+// also when carried in session memory, is agent_verified, automation_verified or crawler_verified) or named by a
 // browser page marker (type agent_unverified). A UA token never names an operator.
 const signed = (
   operator: string,
@@ -73,6 +73,18 @@ const browser = [
   { traffic_class: "declared_agent", traffic_phase: "agent", traffic_agent: "openai" },
   { traffic_class: "declared_agent", traffic_phase: "agent", traffic_agent: "anthropic" },
   { traffic_class: "declared_agent", traffic_phase: "initial" },
+  {
+    traffic_class: "declared_agent",
+    traffic_phase: "agent",
+    traffic_agent: "openai",
+    traffic_agent_claim: "dom_host",
+  },
+  {
+    traffic_class: "declared_agent",
+    traffic_phase: "agent",
+    traffic_agent: "anthropic",
+    traffic_agent_claim: "dom_host",
+  },
 ];
 
 function check(
@@ -87,7 +99,7 @@ function check(
   if (type === "agent_verified" || type === "crawler_verified" || type === "automation_verified") {
     expect(allowedVerified.has(operator!)).toBe(true);
     expect(purpose).toBe(allowedVerified.get(operator!));
-    expect(claim).not.toBe("dom_marker");
+    expect(["dom_marker", "dom_host"]).not.toContain(claim);
     return;
   }
   expect(type).toBe("agent_unverified");

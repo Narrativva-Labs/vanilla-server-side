@@ -227,7 +227,8 @@ export function verdictEcho(verdict?: AgentFields, now = Date.now() / 1000) {
   return serverVerdict({
     v: 1,
     ttl,
-    type: labels.vv_type,
+    // Keep schema v1 readable by cached 0.2.0 clients; GA4 keeps the native type.
+    type: labels.vv_type === "automation_verified" ? "agent_verified" : labels.vv_type,
     operator: verdict.verified.operator,
     verification: verdict.verification,
     purpose: labels.vv_detail.split("|")[2],

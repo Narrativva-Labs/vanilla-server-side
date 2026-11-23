@@ -10,6 +10,16 @@ export function createVerdictEcho(host: object, now = Date.now, layerName?: stri
     __visitorVerdict?: { class?: unknown; agent?: unknown; claim?: unknown; version?: unknown };
   };
   let published: { operator: string; claim: string } | undefined;
+  // Use the original receipt/storage time: weaker responses must never extend this proof.
+  let direct: { at: number; expires: number } | undefined;
+  const isDirect = (vv: ServerVerdict) =>
+    vv.type === "agent_verified" && vv.purpose !== "intermediary";
+  function accept(vv: ServerVerdict, at: number) {
+    const time = now();
+    if (!isDirect(vv) && direct && direct.at <= time && time < direct.expires) return false;
+    if (isDirect(vv)) direct = { at, expires: at + Math.min(TTL, vv.ttl * 1000) };
+    return true;
+  }
   let granted = false;
   let revision = 0;
   function publish(vv: ServerVerdict) {
@@ -91,7 +101,8 @@ export function createVerdictEcho(host: object, now = Date.now, layerName?: stri
         vv &&
         Number.isFinite(saved.at) &&
         saved.at <= now() &&
-        now() - saved.at < Math.min(TTL, vv.ttl * 1000)
+        now() - saved.at < Math.min(TTL, vv.ttl * 1000) &&
+        accept(vv, saved.at)
       )
         publish(vv);
     }
@@ -139,7 +150,7 @@ export function createVerdictEcho(host: object, now = Date.now, layerName?: stri
         offset += chunk.length;
       }
       const vv = serverVerdict(JSON.parse(new TextDecoder().decode(bytes)).vv);
-      if (!vv || (persist && (epoch !== revision || !granted))) return;
+      if (!vv || (persist && (epoch !== revision || !granted)) || !accept(vv, receivedAt)) return;
       if (persist && granted)
         try {
           // Anchor expiry before body parsing so a slow response cannot extend proof lifetime.
@@ -156,6 +167,7 @@ export function createVerdictEcho(host: object, now = Date.now, layerName?: stri
     if (granted !== value || revoke) revision++;
     granted = value;
     if (revoke) {
+      direct = undefined;
       try {
         win.sessionStorage?.removeItem(KEY);
       } catch {
