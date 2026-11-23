@@ -22,7 +22,7 @@ jobs:
   # Keep the tag equal to @playwright/test in package-lock.json.
   e2e:
     runs-on: ubuntu-latest
-    container: mcr.microsoft.com/playwright:v1.65.0-noble
+    container: mcr.microsoft.com/playwright:v1.65.1-noble
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -32,7 +32,7 @@ jobs:
       - run: npm ci
       - run: |
           want=$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")
-          [ "$want" = "1.65.0" ] || { echo "Playwright $want in package-lock.json: update the container tag in check.yml"; exit 1; }
+          [ "$want" = "1.65.1" ] || { echo "Playwright $want in package-lock.json: update the container tag in check.yml"; exit 1; }
       - run: npm run build
       - run: npm run test:e2e
         env:
