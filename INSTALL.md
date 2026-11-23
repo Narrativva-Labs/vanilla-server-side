@@ -278,7 +278,7 @@ only the operator; purpose comes from the claimed UA token selecting the feed
 and its purpose mapping. It does not independently verify that product role.
 
 
-Capabilities below describe the bundled 0.5.1 registry, before
+Capabilities below describe the bundled 0.6.1 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
@@ -445,15 +445,16 @@ Data API names: `customEvent:vv_type` and `customEvent:vv_detail`.
 |---|---|
 | human | Human-looking browser, without stronger evidence; masked automation can look the same |
 | pending | No browser class or qualifying server evidence yet |
-| agent_verified | Verified signature/IP evidence with user_directed, intermediary or unknown purpose; vv_detail distinguishes them |
+| agent_verified | Verified direct agent identity with user_directed or unknown purpose |
+| automation_verified | Verified intermediary platform; operator identifies infrastructure, not the downstream agent |
 | crawler_verified | Verified signature/IP evidence with documented crawler purpose |
 | bot_automation | Hard browser automation evidence |
 | agent_unverified | Browser declared_agent (also with a page-marker operator) or an unverified UA/signature-agent claim |
 | bot_suspicious | Soft browser evidence |
 | bot_spoofed | Invalid server signature; active verified sticky evidence can take precedence |
 
-Derivation uses the first matching rule: invalid signature; verified user_directed /
-crawler / unknown purpose; automated browser; declared browser or server claim;
+Derivation uses the first matching rule: definitive crypto mismatch; verified user_directed /
+crawler / intermediary / unknown purpose; automated browser; declared browser or server claim;
 suspicious browser; human browser; pending. Verified unknown purpose yields agent_verified:
 identity is established and unknown is preserved in vv_detail, without inferring
 a user-directed role. A verified operator may still submit spam.
@@ -505,7 +506,7 @@ an operator dimension with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`.
 
 Every later hit retains the strongest vv_type observed in that session. Ranks are
 pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4,
-bot_spoofed=4.5, intermediary agent_verified=4.75, direct crawler_verified=agent_verified=5;
+bot_spoofed=4.5, automation_verified=4.75 (also legacy intermediary agent_verified), direct crawler_verified=agent_verified=5;
 fresh equal-rank evidence replaces the earlier type, operator and verified purpose.
 A later intermediary cannot replace an active direct verified identity. Verified purpose
 travels with the inherited operator, so unsigned Browserbase hits retain intermediary.
@@ -604,7 +605,7 @@ Each group contains:
   delivery attempt. Google delivery failures count; retries that reach this point count
   again. Duplicate events, rejected requests, disabled pings, obvious bots filtered
   before labelling, oversized dropped hits and hits whose vv_type was trimmed do not count.
-- `byType`: one counter for each of the eight `vv_type` values, after sticky session/page
+- `byType`: one counter for each of the nine `vv_type` values, after sticky session/page
   evidence is applied. These sum to `total`.
 - `byVerification`: signature_valid, ip_match, signature_invalid, no_signature, none,
   and `cache_miss/unavailable`. The last bucket covers unavailable verification (including
@@ -659,7 +660,7 @@ Cloudflare Browser Run uses an exact workers.dev preview hostname. Corporate
 firewalls may block it; a moved/released hostname needs a reviewed registry update.
 HTTPS domain control, not authority-only directory proofs, protects directory bodies.
 No actual signed visitor captures exist for the three added intermediaries.
-Segment `agent_verified` by the third `vv_detail` segment: `intermediary` identifies
+For legacy `agent_verified`, the third `vv_detail` segment `intermediary` identifies
 infrastructure (including QA/scrapers), and must be excluded from direct-agent totals.
 
 Denied pings use a fixed parameter allowlist in the browser and collector: event name,
@@ -681,3 +682,13 @@ hits with an obvious bot UA and a final bot classification, once per attempt; dr
 hits and verified agents do not count.
 The 16 KiB trimmer removes items first. If an event still exceeds the budget without
 items, it removes `vv_detail`, then `vv_type`, as a last resort to preserve the conversion.
+
+Vanilla 0.3.0 bundles verifier 0.6.1. Verified platforms use `automation_verified`
+(rank 4.75); direct agents and crawlers remain rank 5. Older `agent_verified` labels
+with purpose `intermediary` retain the platform priority and echo compatibility.
+Schema v1 also accepts the new type; its browser publication remains `declared_agent`
+with `server_intermediary` and the infrastructure operator. Browser evidence now
+preserves `dom_host` versus `dom_marker` in vv_detail. The nine type counters include
+`automation_verified`. Poppy remains disabled in Vanilla. Replay and malformed proof
+are unverified evidence rather than spoofing; only definitive known-key crypto
+mismatch produces `bot_spoofed`. See vendor/README.md for pinned source and integrity.

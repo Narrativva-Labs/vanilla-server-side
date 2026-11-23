@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Bundle visitor-verdict-server 0.6.1 from phase2-verifier 455e248 with recorded SHA-512 and npm integrity. Adopt narrower bot_spoofed outcomes and key refresh on mutable kid mismatch; Poppy remains optional and disabled.
+- Add automation_verified for verified infrastructure at rank 4.75, retain legacy intermediary priority, and expose its counts. B7 schema v1 accepts the new type and publishes server_intermediary with the infrastructure operator; crawlers remain unpublished.
+- Pass only dom_marker/dom_host browser provenance to visitorLabels as browserAgentClaim, preserving dom_host in vv_detail and dropping stale browser provenance when stronger session evidence wins.
+
 ## 0.2.0
 
 - Echo bounded verified identities as HTTP 200 JSON with proof-limited TTL when verification is enabled; `VERDICT_ECHO=off` restores 204. Explicitly enable the browser reader only in collector-served scripts.

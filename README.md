@@ -176,7 +176,7 @@ when no stronger verdict exists. `/health` reports `google.botsLabelled`;
 
 Use `/health` → `agentVerification.counters` to **measure your own share of verified agents and bots**.
 It keeps anonymous integer totals in memory since process start (`since`, ISO UTC),
-with separate `events` and `pings` groups. Each has `total`, `byType` (all eight
+with separate `events` and `pings` groups. Each has `total`, `byType` (all nine
 `vv_type` values), `byVerification`, and overlapping `evidence` counts for signature
 headers, known UA claim tokens and non-human browser classes. No visitor data is
 retained in these counters; restart resets them. They count labelled hits, including
@@ -186,7 +186,7 @@ are excluded. Browser labels and evidence presence remain measurable with verifi
 off. See [counter definitions](INSTALL.md#anonymous-hit-counters) before comparing shares.
 
 Register both as **event-scoped custom dimensions**. `vv_type` is human, pending,
-agent_verified, agent_unverified, crawler_verified, bot_automation, bot_suspicious or
+agent_verified, automation_verified, agent_unverified, crawler_verified, bot_automation, bot_suspicious or
 bot_spoofed. Verified unknown purpose maps to agent_verified with unknown retained in vv_detail; no user-directed role is inferred.
 `vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`,
 maximum 100 characters, missing parts `-`, unknown operator `none`.
@@ -262,7 +262,7 @@ The [field observations](https://github.com/Narrativva-Labs/visitor-verdict/blob
 include five badge runs across personal and business accounts, an unsigned masked-headless
 negative control and two unsigned Grok runs; these are separate samples.
 
-The bundled verifier is 0.5.1. Upgrading from 0.3.5 adds provisional Meta Muse at
+The bundled verifier is 0.6.1. Upgrading from 0.3.5 adds provisional Meta Muse at
 muse.ai: allow outbound HTTPS for its key directory; startup health now expects nine
 directories (six before 0.5.0). A blocked Muse fetch can leave 8/9 loaded and a failed
 refresh. Muse's signing identity is third-party-observed, not confirmed by Meta or a
@@ -303,7 +303,7 @@ Cloudflare Browser Run uses an exact workers.dev preview hostname. Corporate
 firewalls may block it; a moved/released hostname needs a reviewed registry update.
 HTTPS domain control, not authority-only directory proofs, protects directory bodies.
 No actual signed visitor captures exist for the three added intermediaries.
-Segment `agent_verified` by the third `vv_detail` segment: `intermediary` identifies
+For legacy `agent_verified`, the third `vv_detail` segment `intermediary` identifies
 infrastructure (including QA/scrapers), and must be excluded from direct-agent totals.
 
 ### Verified verdict echo (0.2.0)
@@ -398,3 +398,13 @@ hits with an obvious bot UA and a final bot classification, once per attempt; dr
 hits and verified agents do not count.
 The 16 KiB trimmer removes items first. If an event still exceeds the budget without
 items, it removes `vv_detail`, then `vv_type`, as a last resort to preserve the conversion.
+
+Vanilla 0.3.0 bundles verifier 0.6.1. Verified platforms use `automation_verified`
+(rank 4.75); direct agents and crawlers remain rank 5. Older `agent_verified` labels
+with purpose `intermediary` retain the platform priority and echo compatibility.
+Schema v1 also accepts the new type; its browser publication remains `declared_agent`
+with `server_intermediary` and the infrastructure operator. Browser evidence now
+preserves `dom_host` versus `dom_marker` in vv_detail. The nine type counters include
+`automation_verified`. Poppy remains disabled in Vanilla. Replay and malformed proof
+are unverified evidence rather than spoofing; only definitive known-key crypto
+mismatch produces `bot_spoofed`. See vendor/README.md for pinned source and integrity.

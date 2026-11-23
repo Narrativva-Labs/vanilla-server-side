@@ -170,9 +170,9 @@ it.each([
       clock = Date.parse(request.ts) / 1000;
       for (const path of ["/e", "/d"]) {
         expect((await post(path, request.headers)).statusCode).toBe(204);
-        expect(detail(hit(), 1)).toBe(path === "/e" ? "signature_valid" : "signature_invalid");
+        expect(detail(hit(), 1)).toBe(path === "/e" ? "signature_valid" : "none");
         expect(detail(hit(), 0)).toBe(path === "/e" ? "openai" : "none");
-        expect(hit().get("ep.vv_type")).toBe(path === "/e" ? "agent_verified" : "bot_spoofed");
+        expect(hit().get("ep.vv_type")).toBe(path === "/e" ? "agent_verified" : "agent_unverified");
         if (path === "/e") {
           expect(detail(hit(), 2)).toBe("user_directed");
           expect(detail(hit(), 3)).toBe("signature_agent");
@@ -182,6 +182,7 @@ it.each([
     }
     expect(construct).toHaveBeenCalledTimes(1);
     expect(construct.mock.calls[0]![0].reverseDns).toEqual({ enabled: false });
+    expect(construct.mock.calls[0]![0].poppy?.enabled ?? false).toBe(false);
     // Only the startup warm-up fetched: one request per registry directory, none per hit.
     expect(fetcher).toHaveBeenCalledTimes(directories);
     expect(fetcher.mock.calls.filter(([url]) => url === chatgpt)).toHaveLength(1);
@@ -449,12 +450,13 @@ it("passes raw headers, trusted client IP and the unchanged target to verificati
   for (const [name, value] of Object.entries(consistency)) expect(values.get(name)).toBe(value);
 });
 
-it("labels invalid signatures and obvious bots while forwarding both", async () => {
+it("labels truncated signatures as unverified and obvious bots while forwarding both", async () => {
   const { post, hit, google } = setup();
   const headers = { ...signed[0]!.headers, signature: "sig1=:AAAA:" };
   for (const path of ["/e", "/d"]) {
     expect((await post(path, headers)).statusCode).toBe(204);
-    expect(detail(hit(), 1)).toBe("signature_invalid");
+    expect(detail(hit(), 1)).toBe("none");
+    expect(hit().get("ep.vv_type")).toBe("agent_unverified");
     expect((await post(path, { "user-agent": "Googlebot/2.1" })).statusCode).toBe(204);
   }
   expect(google).toHaveBeenCalledTimes(4);
@@ -888,7 +890,8 @@ it.each(["cookie", "proxy", "traffic"])(
     expect((await post(retry, extra)).statusCode).toBe(204);
     expect(hit().get("ep.vv_type")).toBe("agent_verified");
     expect((await post({ ...payload, event_id: crypto.randomUUID() })).statusCode).toBe(204);
-    expect(hit().get("ep.vv_type")).toBe("bot_spoofed");
+    expect(hit().get("ep.vv_type")).toBe("agent_unverified");
+    expect(detail(hit(), 1)).toBe("none");
   },
 );
 
@@ -916,5 +919,30 @@ it("obvious UA evidence never overrides verified identity or an invalid signatur
     expect((await app.inject("/health")).json().google.botsLabelled).toBe(
       verification === "signature_valid" ? 0 : 2,
     );
+  }
+});
+
+it("keeps bot_spoofed for a full cryptographic mismatch against a known immutable key", async () => {
+  const warm = spyOnWarm();
+  const request = signed[0]!;
+  const { post, hit } = setup(true, {
+    now: () => Date.parse(request.ts) / 1000,
+    fetcher: async (url: string) =>
+      url === chatgpt ? new Response(directory) : new Response(null, { status: 404 }),
+  });
+  await warm.mock.results[0]!.value;
+  const signature = request.headers.signature!;
+  const base64 = signature.match(/:([^:]+):/)![1]!;
+  const bytes = Buffer.from(base64, "base64");
+  bytes[0] = bytes[0]! ^ 1;
+  const headers = {
+    ...request.headers,
+    signature: signature.replace(base64, bytes.toString("base64")),
+  };
+  for (const path of ["/e", "/d"]) {
+    expect((await post(path, headers)).statusCode).toBe(204);
+    expect(detail(hit(), 1)).toBe("signature_invalid");
+    expect(hit().get("ep.vv_type")).toBe("bot_spoofed");
+    expect(detail(hit(), 0)).toBe("none");
   }
 });

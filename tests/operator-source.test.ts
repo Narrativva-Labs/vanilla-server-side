@@ -84,7 +84,7 @@ function check(
   const [operator, verification, purpose, claim] = (labels.vv_detail as string).split("|");
   expect((labels.vv_detail as string).length).toBeLessThanOrEqual(100);
   if (operator === "none") return;
-  if (type === "agent_verified" || type === "crawler_verified") {
+  if (type === "agent_verified" || type === "crawler_verified" || type === "automation_verified") {
     expect(allowedVerified.has(operator!)).toBe(true);
     expect(purpose).toBe(allowedVerified.get(operator!));
     expect(claim).not.toBe("dom_marker");
@@ -154,7 +154,7 @@ it("an intermediary stays infrastructure and is never replaced by a marker or a 
   expect(
     withLabels({ traffic_class: "human", traffic_phase: "final" }, browserbase, sticky),
   ).toEqual({
-    vv_type: "agent_verified",
+    vv_type: "automation_verified",
     vv_detail: "browserbase|signature_valid|intermediary|signature_agent|human|final",
   });
   time += 1000;
@@ -165,7 +165,7 @@ it("an intermediary stays infrastructure and is never replaced by a marker or a 
       sticky,
     ),
   ).toEqual({
-    vv_type: "agent_verified",
+    vv_type: "automation_verified",
     vv_detail: "browserbase|no_signature|intermediary|ua_token|declared_agent|agent",
   });
 });
@@ -197,7 +197,7 @@ it("a later intermediary never replaces an active direct identity or extends its
   expect(String(withLabels({}, direct, sticky).vv_detail).split("|")[0]).toBe("meta");
 });
 
-it("replay labels only that hit as spoofed, without naming an operator or clearing verified memory", () => {
+it("replay does not inherit verified identity or clear its memory", () => {
   for (const v of [
     signed("meta", "user_directed", "https://muse.ai"),
     signed("browserbase", "intermediary", "https://www.browserbase.com"),
@@ -209,20 +209,21 @@ it("replay labels only that hit as spoofed, without naming an operator or cleari
       ...v,
       verified: undefined,
       agent_purpose: "unknown",
-      verification: "signature_invalid",
+      verification: "none",
       reason: "replay",
       signatures: [
-        { label: "a", result: "signature_invalid", reason: "replay" },
+        { label: "a", result: "none", reason: "replay" },
         { label: "b", result: "signature_valid", reason: "verified" },
       ],
     };
-    const spoofed = withLabels(
+    const replayLabels = withLabels(
       { traffic_class: "declared_agent", traffic_agent: "openai" },
       replay,
       sticky,
     );
-    expect(spoofed.vv_type).toBe("bot_spoofed");
-    expect(String(spoofed.vv_detail).split("|")[0]).toBe("none");
+    expect(replayLabels.vv_type).toBe("agent_unverified");
+    expect(String(replayLabels.vv_detail).split("|")[0]).toBe("openai");
+    expect(String(replayLabels.vv_detail).split("|")[3]).toBe("dom_marker");
     expect(String(withLabels({}, undefined, sticky).vv_detail).split("|")[0]).toBe(
       v.verified!.operator,
     );

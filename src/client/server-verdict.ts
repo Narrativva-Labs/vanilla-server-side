@@ -22,7 +22,7 @@ export function createVerdictEcho(host: object, now = Date.now, layerName?: stri
       });
       if (vv.type === "crawler_verified") return;
       const claim =
-        vv.purpose === "intermediary"
+        vv.type === "automation_verified" || vv.purpose === "intermediary"
           ? "server_intermediary"
           : vv.verification === "signature_valid"
             ? "server_signature"

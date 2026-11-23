@@ -1,5 +1,28 @@
 # Visitor Verdict server package
 
+## 0.6.1 (current)
+
+- Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/455e248/server (branch `phase2-verifier`, commit `455e248`).
+- Version: 0.6.1; archive: `visitor-verdict-server-0.6.1.tgz`.
+- SHA-512 (hex): `9a333183229b97d7e88bb39b3592529bcc0c1be4de729a7190f54c50989887ea0c72ae89c54c791fa59a15442aa55bd20198a9e501ebc5389d0719493b4f1b23`
+- npm integrity (package-lock.json): `sha512-mjMxgyKbl9foi7ObNZJSm8wMG+TecppxkPVMUJiYh+oMcq6JxUx5H6WaFUQqpVvSAZip5QHrxTidBxlJO08bIw==`
+
+Verify with `shasum -a 512 vendor/visitor-verdict-server-0.6.1.tgz`.
+Install this archive with `npm install --offline ./vendor/visitor-verdict-server-0.6.1.tgz`.
+Rebuild at the source commit with `cd server && npm run build && npm pack`.
+
+Changes from 0.5.1:
+
+- `bot_spoofed` is narrower: only a definitive cryptographic mismatch against a known declared key yields `signature_invalid`. Replay, expiration, malformed/truncated signatures and incomplete context stay unverified (`none`). Vanilla keeps retry proof binding and prevents replay hits from inheriting sticky verified identity.
+- In request mode a cached mutable `kid` gets a throttled directory refresh on crypto mismatch. Vanilla retains cache-only verification: a known-kid mismatch stays indeterminate and does not start a mismatch fetch; a normal background directory refresh can provide the rotated key. Unknown/inactive keys still trigger asynchronous refresh. The refreshed key can verify the next hit. A mismatch against a freshly fetched document is definitive; immutable thumbprint keys need no rotation fallback.
+- Verified intermediary infrastructure now has its own `automation_verified` type. Vanilla ranks it at 4.75, between spoofing evidence (4.5) and direct agent/crawler identity (5); legacy `agent_verified` + purpose `intermediary` has the same priority. B7 schema v1 echoes it as `declared_agent` with `server_intermediary` and the infrastructure operator.
+- `browserAgentClaim` distinguishes observed `dom_host` from `dom_marker`. Vanilla accepts only these browser claims, strips server claims from browser input, and removes browser provenance when stronger sticky evidence supplies identity.
+- Poppy 1.0 verification is optional and off by default. The library supports pinned Muse metadata/JWKS and `poppy_session` evidence; Vanilla does not enable Poppy or add a configuration switch in this upgrade. Its existing nine-directory WBA warm-up is unchanged.
+
+The previous archive is retained for provenance; package.json and the lockfile select only 0.6.1.
+
+## Previous archive: 0.5.1
+
 - Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server
 - Source: working tree based on `fbfaa30` (branch phase2-verifier); 0.5.1 changes remain uncommitted for owner review.
 - Version: 0.5.1; archive: visitor-verdict-server-0.5.1.tgz.

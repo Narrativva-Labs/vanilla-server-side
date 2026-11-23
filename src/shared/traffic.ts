@@ -7,13 +7,20 @@ const agents = ["openai", "anthropic"];
  * only with `declared_agent`, the only class the detector reports an operator with.
  * Each value must match its list exactly; an unknown one is dropped on its own.
  */
-export function trafficFields(trafficClass: unknown, phase: unknown, agent?: unknown) {
+export function trafficFields(
+  trafficClass: unknown,
+  phase: unknown,
+  agent?: unknown,
+  claim?: unknown,
+) {
   const fields: Record<string, string> = {};
   if (classes.includes(trafficClass as string)) {
     fields.traffic_class = trafficClass as string;
     if (phases.includes(phase as string)) fields.traffic_phase = phase as string;
     if (trafficClass === "declared_agent" && agents.includes(agent as string))
       fields.traffic_agent = agent as string;
+    if (fields.traffic_agent && ["dom_marker", "dom_host"].includes(claim as string))
+      fields.traffic_agent_claim = claim as string;
   }
   return fields;
 }
@@ -22,18 +29,18 @@ export function trafficFields(trafficClass: unknown, phase: unknown, agent?: unk
 export function trafficUpdateFields(params: unknown) {
   if (!params || typeof params !== "object" || Array.isArray(params)) return;
   const input = params as Record<string, unknown>;
-  const fields = trafficFields(input.traffic_class, input.traffic_phase, input.traffic_agent);
+  const fields = trafficFields(
+    input.traffic_class,
+    input.traffic_phase,
+    input.traffic_agent,
+    input.traffic_agent_claim,
+  );
   if (!fields.traffic_class || !["final", "agent"].includes(fields.traffic_phase ?? "")) return;
   if (
     fields.traffic_phase === "agent" &&
     (fields.traffic_class !== "declared_agent" || !fields.traffic_agent)
   )
     return;
-  if (
-    fields.traffic_class === "declared_agent" &&
-    ["dom_marker", "dom_host"].includes(input.traffic_agent_claim as string)
-  )
-    fields.traffic_agent_claim = input.traffic_agent_claim as string;
   for (const key of ["page_location", "page_title", "page_referrer"])
     if (typeof input[key] === "string") fields[key] = input[key];
   return fields;

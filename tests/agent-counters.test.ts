@@ -111,11 +111,17 @@ const cases = [
     "cache_miss/unavailable",
   ],
   ["agent_verified", "human", verdict("signature_valid"), "signature_valid"],
+  [
+    "automation_verified",
+    "human",
+    { ...verdict("signature_valid"), agent_purpose: "intermediary" },
+    "signature_valid",
+  ],
   ["crawler_verified", "human", verdict("ip_match", "match", true), "ip_match"],
   ["bot_spoofed", "human", verdict("signature_invalid"), "signature_invalid"],
 ] as const;
 for (const route of ["/e", "/d"]) {
-  it(`counts all eight final labels and verification outcomes for ${route}, without visitor data`, async () => {
+  it(`counts all nine final labels and verification outcomes for ${route}, without visitor data`, async () => {
     const { app, set } = setup();
     const before = (await app.inject("/health")).json().agentVerification.counters;
     for (const [type, browser, evidence] of cases) {
@@ -139,17 +145,17 @@ for (const route of ["/e", "/d"]) {
     expect(counters.since).toBe(before.since);
     expect(new Date(counters.since).toISOString()).toBe(counters.since);
     const counts = counters[route === "/e" ? "events" : "pings"];
-    expect(counts.total).toBe(8);
-    expect(Object.values(counts.byType)).toEqual(Array(8).fill(1));
+    expect(counts.total).toBe(9);
+    expect(Object.values(counts.byType)).toEqual(Array(9).fill(1));
     expect(counts.byVerification).toEqual({
-      signature_valid: 1,
+      signature_valid: 2,
       ip_match: 1,
       signature_invalid: 1,
       no_signature: 1,
       none: 1,
       "cache_miss/unavailable": 3,
     });
-    expect(counts.evidence).toEqual({ signatureHeaders: 8, uaClaim: 8, browserNonHuman: 3 });
+    expect(counts.evidence).toEqual({ signatureHeaders: 9, uaClaim: 9, browserNonHuman: 3 });
     expect(counters[route === "/e" ? "pings" : "events"].total).toBe(0);
     const numeric = (value: unknown): void => {
       if (typeof value === "object" && value !== null) Object.values(value).forEach(numeric);

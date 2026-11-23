@@ -5,6 +5,7 @@ const types = [
   "human",
   "pending",
   "agent_verified",
+  "automation_verified",
   "agent_unverified",
   "crawler_verified",
   "bot_automation",

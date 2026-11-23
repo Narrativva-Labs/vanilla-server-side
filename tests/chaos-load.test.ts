@@ -139,7 +139,8 @@ it("all directories down: startup, 200 collector hits, retry warning limit and h
       expect(Object.values(counts.byVerification).reduce((a, b) => Number(a) + Number(b), 0)).toBe(
         100,
       );
-      expect(counts.byVerification.signature_invalid).toBe(100);
+      expect(counts.byVerification.signature_invalid).toBe(0);
+      expect(counts.byVerification.none).toBe(100);
       expect(counts.evidence.signatureHeaders).toBe(100);
     }
     expect(health.google.errors).toBe(0);

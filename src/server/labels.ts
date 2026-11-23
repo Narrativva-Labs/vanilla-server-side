@@ -25,10 +25,11 @@ const rank: Record<Labels["vv_type"], number> = {
   bot_automation: 4,
   crawler_verified: 5,
   agent_verified: 5,
+  automation_verified: 4.75,
   bot_spoofed: 4.5,
 };
 const verifiedType = (type: Labels["vv_type"]) =>
-  type === "agent_verified" || type === "crawler_verified";
+  type === "agent_verified" || type === "crawler_verified" || type === "automation_verified";
 const evidenceRank = (type: Labels["vv_type"], purpose: string) =>
   verifiedType(type) && purpose === "intermediary" ? 4.75 : rank[type];
 /** Bounded, memory-only evidence per session (or denied page), never per IP. */
@@ -155,13 +156,22 @@ export function withLabels(
   observe?: LabelObserver,
   trafficUpdate = false,
 ): Record<string, unknown> {
-  const browser = trafficFields(params.traffic_class, params.traffic_phase, params.traffic_agent);
+  const browser = trafficFields(
+    params.traffic_class,
+    params.traffic_phase,
+    params.traffic_agent,
+    params.traffic_agent_claim,
+  );
   const input = {
     verdict,
     browserClass: browser.traffic_class,
     browserPhase: browser.traffic_phase,
   };
-  let labels = visitorLabels({ ...input, browserAgent: browser.traffic_agent });
+  let labels = visitorLabels({
+    ...input,
+    browserAgent: browser.traffic_agent,
+    browserAgentClaim: browser.traffic_agent_claim,
+  });
   if (verdict?.obviousBot && ["pending", "human", "bot_suspicious"].includes(labels.vv_type)) {
     const detail = labels.vv_detail.split("|");
     detail[3] = "ua_token";
@@ -186,7 +196,7 @@ export function withLabels(
     // names the operator: the claim reverts to the hit's server claim. It is never longer than
     // the 100-character bound (marker hits carry no verified or invalid verification segment).
     const detail = labels.vv_detail.split("|");
-    if (detail[3] === "dom_marker") {
+    if (detail[3] === "dom_marker" || detail[3] === "dom_host") {
       detail[3] = visitorLabels(input).vv_detail.split("|")[3]!;
       labels = { ...labels, vv_detail: detail.join("|") };
     }

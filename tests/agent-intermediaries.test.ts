@@ -46,12 +46,13 @@ for (const name of ["kernel", "cloudflare_browser_run", "shopify_cloudsurf"]) {
       expect(
         visitorLabels({ verdict: proof, browserClass: "declared_agent", browserAgent: "openai" }),
       ).toEqual({
-        vv_type: "agent_verified",
+        vv_type: "automation_verified",
         vv_detail: `${name}|signature_valid|intermediary|signature_agent|declared_agent|-`,
       });
       const replay = await labeller.label(request);
       expect(replay?.reason).toBe("replay");
-      expect(visitorLabels({ verdict: replay }).vv_type).toBe("bot_spoofed");
+      expect(replay?.verification).toBe("none");
+      expect(visitorLabels({ verdict: replay }).vv_type).toBe("agent_unverified");
       expect(visitorLabels({ verdict: replay }).vv_detail.split("|")[0]).toBe("none");
     } finally {
       labeller.close();
@@ -118,6 +119,56 @@ it("Kernel key validity and rotation do not report spoofing during a fresh HTTP 
     now = clock + 72;
     unavailable(await hit());
     await new Promise((resolve) => setImmediate(resolve));
+    expect((await hit()).verification).toBe("signature_valid");
+  } finally {
+    verifier.close();
+  }
+});
+
+it("keeps mutable kid mismatch indeterminate in cache-only and refreshes in request mode", async () => {
+  const operator = defaultRegistry.find((o) => o.operator === "google")!;
+  const clock = 1800000000;
+  const kid = "rotating-key";
+  let pair = generateKeyPairSync("ed25519");
+  const fetcher = vi.fn(async () =>
+    Response.json({ keys: [{ ...pair.publicKey.export({ format: "jwk" }), kid }] }),
+  );
+  const verifier = createVerifier({
+    registry: [operator],
+    authorities: ["tracker.example"],
+    fetcher,
+    now: () => clock,
+  });
+  expect(operator.allowKidAlias).toBe(true);
+  const hit = (cacheOnly = true) => {
+    const identity = JSON.stringify(operator.signatureAgent);
+    const params = `("@authority" "@method" "signature-agent");created=${clock};expires=${clock + 60};keyid="${kid}";alg="ed25519";tag="web-bot-auth"`;
+    const base = `"@authority": tracker.example\n"@method": GET\n"signature-agent": ${identity}\n"@signature-params": ${params}`;
+    const signature = sign(null, Buffer.from(base, "ascii"), pair.privateKey).toString("base64");
+    return verifier.verify(
+      {
+        method: "GET",
+        host: "tracker.example",
+        headers: {
+          "signature-agent": identity,
+          "signature-input": `s=${params}`,
+          signature: `s=:${signature}:`,
+        },
+      },
+      { cacheOnly },
+    );
+  };
+  try {
+    await verifier.warm();
+    expect((await hit()).verification).toBe("signature_valid");
+    pair = generateKeyPairSync("ed25519");
+    const rotating = await hit();
+    expect(rotating.verification).toBe("none");
+    expect(visitorLabels({ verdict: rotating }).vv_type).not.toBe("bot_spoofed");
+    expect(rotating.reason).toBe("insufficient_context");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((await hit(false)).verification).toBe("signature_valid");
+    expect(fetcher).toHaveBeenCalledTimes(2);
     expect((await hit()).verification).toBe("signature_valid");
   } finally {
     verifier.close();
