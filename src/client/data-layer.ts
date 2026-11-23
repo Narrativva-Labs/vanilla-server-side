@@ -24,6 +24,7 @@ export function normalizeEventItem(item: unknown) {
       : item;
   // Shoptet reports banner state this way; it is consent data, not an analytics event.
   if (!isObject(raw) || typeof raw.event !== "string" || "cookie_consent" in raw) return;
+  if (raw.event === "traffic_class" && raw.traffic_source === "vanilla") return;
   const { event, ecommerce, ...params } = raw;
   // Flatten the standard ecommerce envelope; preserve values and items without guessing aliases.
   const {

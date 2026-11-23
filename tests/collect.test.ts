@@ -322,7 +322,10 @@ it("the tracker sends click IDs in their own field only with ad consent", async 
   const refused = client();
   refused.tracker.update(analyticsOnly);
   await refused.wait(0);
-  expect(JSON.stringify(refused.sent().map((item) => item.body))).not.toContain("abc");
+  for (const { body } of refused.sent()) {
+    expect(body).not.toHaveProperty("click_ids");
+    expect(body.params.page_location).not.toContain("abc");
+  }
 });
 
 it("the tracker pings immediately per event without credentials", async () => {

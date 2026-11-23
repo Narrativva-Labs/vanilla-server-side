@@ -2,6 +2,7 @@ import { deviceCategory, deviceModel, deviceBrowser } from "./device.js";
 import { createTracker } from "./tracker.js";
 import { createConsentObserver } from "./consent.js";
 import { normalizeEventItem } from "./data-layer.js";
+import { createVerdictEcho } from "./server-verdict.js";
 import { readTraffic } from "./traffic.js";
 import { cookiebot } from "./cmp/cookiebot.js";
 import { cookieconsent } from "./cmp/cookieconsent.js";
@@ -83,6 +84,10 @@ if (script && !win.__vanillaGA) {
     };
     window.setTimeout(poll, 50);
   }
+  const verdict =
+    script.dataset.verdictEcho === "on"
+      ? createVerdictEcho(window, Date.now, script.dataset.vvLayer)
+      : undefined;
   const tracker = createTracker(
     new URL("./e", script.src).href,
     {
@@ -95,6 +100,8 @@ if (script && !win.__vanillaGA) {
         screen_resolution: `${window.screen?.width ?? 0}x${window.screen?.height ?? 0}`,
       }),
       engagement,
+      verdict,
+      verdictConsent: verdict?.consent,
       traffic: () => readTraffic(window),
       ready: vvReady,
       hold: vvHold,

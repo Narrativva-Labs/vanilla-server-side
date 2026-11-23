@@ -302,3 +302,67 @@ HTTPS domain control, not authority-only directory proofs, protects directory bo
 No actual signed visitor captures exist for the three added intermediaries.
 Segment `agent_verified` by the third `vv_detail` segment: `intermediary` identifies
 infrastructure (including QA/scrapers), and must be excluded from direct-agent totals.
+
+### Verified verdict echo (0.2.0)
+
+With agent verification enabled, successfully delivered `/e` and `/d` hits with current
+`signature_valid` or `ip_match` evidence return HTTP 200 JSON, for example
+`{"vv":{"v":1,"ttl":300,"type":"agent_verified","operator":"openai","verification":"signature_valid","purpose":"user_directed"}}`.
+Only the bundled library's bounded identity vocabulary is returned, never IP addresses,
+headers, UA or diagnostics. `ttl` is an integer in seconds: the smaller of 1800 and the
+remaining proof lifetime at response time (rounded down; zero if expired or unknown).
+Other successes, withdrawn hits and duplicates remain 204; 429/503 and retry behavior stay
+unchanged. Session evidence alone cannot create an echo.
+
+The tracker publishes to `data-vv-layer` on its script tag, then
+`visitorVerdictConfig.dataLayerName`, then `dataLayer`. Arrays and array-like layers with
+a valid length and push function are supported. Direct verified agents produce
+`{event:'traffic_class', traffic_class:'declared_agent', traffic_phase:'agent',
+traffic_agent:<verified operator>, traffic_agent_claim:'server_signature' | 'server_ip',
+traffic_source:'vanilla', traffic_score:undefined, traffic_signals:undefined}`.
+The score and signals are explicitly reset so GTM does not inherit an earlier browser
+classification's values. The detector's version is included when already available;
+a late detector can leave the first server event without a version.
+
+Verified infrastructure with purpose `intermediary` (Browserbase, Kernel, Cloudflare
+Browser Run, Shopify Cloudsurf) also uses `declared_agent`, but always with
+`traffic_agent_claim:'server_intermediary'`. Its operator identifies the signing
+infrastructure, never the customer agent. `crawler_verified` is **never published to
+dataLayer**; its type remains available in the server response and separate snapshot.
+The existing GTM agent-phase trigger and GA4 tag forward the operator and claim without
+changes. Nothing is excluded, blocked or withheld, including advertising conversions.
+
+Verified identity takes precedence even over `automated`. A DOM marker/host declaration
+for the same operator receives one upgrade to the verified server claim; an identical
+server operator/claim is not published again. A new server operator, or stronger verified
+claim (`server_ip` → `server_signature`), can produce a corrective publication after
+restoration. A known signature claim is never downgraded by a later IP-only response for
+the same operator. The frozen detector snapshot `window.__visitorVerdict` stays untouched;
+a separate frozen, read-only `window.__visitorVerdictServer` exposes the latest server
+identity. Vanilla never collects its own `traffic_source:'vanilla'` publications.
+
+**The agent-phase GTM tag can fire twice:** once for a detector declaration and once for
+the verified upgrade; a detector loaded late can also publish after the server event.
+The supplied Visitor Verdict GTM tag uses **Once per event**, not Once per page, so both
+publications can reach GA4. These events carry distinct claims and must not be interpreted
+as two visitors or two conversions. Corrective operator changes can create further label
+events. This behavior requires no GTM edits; it does not deduplicate a site's other tags.
+
+Only fetch responses are read (JSON, schema v1 including bounded `ttl`, at most 1 KiB by
+stream bytes, with a 2-second read deadline); exit hits are ignored. Parsing and storage
+failures are silent and do not affect delivery. With analytics consent granted, eligible
+`/e` responses store only the bounded identity and receipt timestamp in sessionStorage
+under `vanilla.verdict.v1`. `/d` responses never write storage, even if consent is granted
+while the ping is in flight. Withdrawal deletes the key and invalidates pending event
+response readers. Fresh stored evidence is published immediately on the next page;
+its TTL cannot exceed the server proof lifetime or 30 minutes. An unsigned response does
+not erase it, and a different verified operator replaces it. Storage and browser snapshots
+are labels, never authentication credentials.
+
+`VERDICT_ECHO` accepts `on|off` and defaults to `AGENT_VERIFICATION`. Only an enabled
+collector prefixes `/s.js` with its explicit `data-verdict-echo=on` flag. Raw/self-hosted
+bundles without that flag do not read responses or restore memory. Set `VERDICT_ECHO=off`
+to restore successful collector responses to 204 and disable the reader in newly fetched
+scripts. An already cached enabled script can retain the flag until refresh (up to 300 s);
+the bundled reader code is still downloaded when disabled, but never started. Deploy the
+collector before refreshing the tracker. Old stored records without `ttl` are ignored.

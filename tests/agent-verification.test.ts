@@ -64,10 +64,18 @@ afterEach(async () => {
 function setup(
   enabled = true,
   options: Parameters<typeof createApp>[2] = {},
-  privacy: { deniedPingIp?: "full" | "truncated" | "off"; deniedPingUserAgent?: boolean } = {},
+  privacy: {
+    verdictEcho?: boolean;
+    deniedPingIp?: "full" | "truncated" | "off";
+    deniedPingUserAgent?: boolean;
+  } = {},
 ) {
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-  const app = createApp({ ...config, agentVerification: enabled, ...privacy }, google, options);
+  const app = createApp(
+    { ...config, verdictEcho: false, agentVerification: enabled, ...privacy },
+    google,
+    options,
+  );
   apps.push(app);
   const post = (path: string, headers: Record<string, string> = {}, params: object = {}) => {
     const now = Date.now();
@@ -569,3 +577,263 @@ it("collector never forwards local evidence or raw verification headers to GA4",
     expect(payload).not.toContain(secret);
   expect(hit().get("ep.vv_type")).toBe("human");
 });
+
+for (const verification of ["signature_valid", "ip_match"] as const)
+  for (const purpose of ["user_directed", "crawler"] as const)
+    it(`echoes only bounded current proof: ${verification}/${purpose}`, async () => {
+      vi.mocked(verdict.createVerifier).mockReturnValue(
+        fakeVerifier(async () => ({
+          verification,
+          agent_purpose: purpose,
+          reason: "private-reason",
+          claimed: { uaTokens: [], signatureAgents: [] },
+          signatures: [],
+          verified: {
+            operator: "openai",
+            method: verification === "ip_match" ? "ip" : "signature",
+          },
+        })),
+      );
+      const { app, post, google } = setup(true, {}, { verdictEcho: true });
+      for (const route of ["/e", "/d"]) {
+        const result = await post(route, { "x-secret": "private-value" });
+        expect(result.statusCode).toBe(200);
+        expect(result.headers["content-type"]).toContain("application/json");
+        expect(result.json()).toEqual({
+          vv: {
+            v: 1,
+            ttl: verification === "ip_match" ? expect.any(Number) : 0,
+            type: purpose === "crawler" ? "crawler_verified" : "agent_verified",
+            operator: "openai",
+            verification,
+            purpose,
+          },
+        });
+        expect(result.body.length).toBeLessThan(200);
+      }
+      const now = Date.now();
+      const payload = {
+        event_id: crypto.randomUUID(),
+        name: "page_view",
+        client_id: "1.2",
+        session_id: 1,
+        session_started_ms: now,
+        session_expires_ms: now + 1800000,
+        timestamp_ms: now,
+        consent: { analytics_storage: "granted" },
+        params: {},
+      };
+      const request = {
+        method: "POST" as const,
+        url: "/e",
+        headers: { origin: config.siteOrigin, "content-type": "application/json" },
+        payload,
+      };
+      expect((await app.inject(request)).statusCode).toBe(200);
+      const count = google.mock.calls.length;
+      const duplicate = await app.inject(request);
+      expect(duplicate.statusCode).toBe(204);
+      expect(duplicate.body).toBe("");
+      expect(google.mock.calls.length).toBe(count);
+    });
+
+it("defaults echo to verification and validates the explicit switch", () => {
+  const env = { GA4_MEASUREMENT_ID: "G-TEST", COOKIE_SECRET: "s".repeat(64) };
+  expect(configFromEnv(env).verdictEcho).toBe(false);
+  expect(
+    configFromEnv({ ...env, AGENT_VERIFICATION: "on", TRACKER_DOMAIN: "tracker.example" })
+      .verdictEcho,
+  ).toBe(true);
+  expect(
+    configFromEnv({
+      ...env,
+      AGENT_VERIFICATION: "on",
+      TRACKER_DOMAIN: "tracker.example",
+      VERDICT_ECHO: "off",
+    }).verdictEcho,
+  ).toBe(false);
+  expect(() => configFromEnv({ ...env, VERDICT_ECHO: "bad" })).toThrow("VERDICT_ECHO");
+});
+it("default app echoes verified identity and off keeps 204", async () => {
+  vi.mocked(verdict.createVerifier).mockReturnValue(
+    fakeVerifier(async () => ({
+      verification: "signature_valid",
+      agent_purpose: "user_directed",
+      reason: "ok",
+      claimed: { uaTokens: [], signatureAgents: [] },
+      signatures: [],
+      verified: { operator: "openai", method: "signature" },
+    })),
+  );
+  const { post } = setup();
+  expect((await post("/e")).statusCode).toBe(204);
+  // undefined exercises createApp's default rather than configFromEnv.
+  const enabled = setup(true, {}, { verdictEcho: undefined });
+  expect((await enabled.post("/e")).statusCode).toBe(200);
+});
+
+for (const verification of ["no_signature", "signature_invalid"] as const)
+  it(`echo enabled still returns 204 for ${verification}`, async () => {
+    vi.mocked(verdict.createVerifier).mockReturnValue(
+      fakeVerifier(async () => ({
+        verification,
+        agent_purpose: "unknown",
+        reason: "private-error",
+        claimed: { uaTokens: [], signatureAgents: [] },
+        signatures: [],
+      })),
+    );
+    const { post } = setup(true, {}, { verdictEcho: true });
+    for (const route of ["/e", "/d"]) {
+      const r = await post(route);
+      expect(r.statusCode).toBe(204);
+      expect(r.body).toBe("");
+    }
+  });
+it("verified retry responses stay 503 and concurrent duplicates stay 204", async () => {
+  vi.mocked(verdict.createVerifier).mockReturnValue(
+    fakeVerifier(async () => ({
+      verification: "signature_valid",
+      agent_purpose: "user_directed",
+      reason: "ok",
+      claimed: { uaTokens: [], signatureAgents: [] },
+      signatures: [],
+      verified: { operator: "openai", method: "signature" },
+    })),
+  );
+  const { app, google } = setup(true, {}, { verdictEcho: true });
+  const now = Date.now();
+  const payload = {
+    event_id: crypto.randomUUID(),
+    name: "page_view",
+    client_id: "1.2",
+    session_id: 1,
+    session_started_ms: now,
+    session_expires_ms: now + 1800000,
+    timestamp_ms: now,
+    consent: { analytics_storage: "granted" },
+    params: {},
+  };
+  const request = {
+    method: "POST" as const,
+    url: "/e",
+    headers: { origin: config.siteOrigin, "content-type": "application/json" },
+    payload,
+  };
+  google.mockImplementation(async () => new Response(null, { status: 503 }));
+  expect((await app.inject(request)).statusCode).toBe(503);
+  let release!: () => void;
+  const wait = new Promise<void>((r) => {
+    release = r;
+  });
+  google.mockImplementation(async () => {
+    await wait;
+    return new Response(null, { status: 204 });
+  });
+  const first = app.inject(request);
+  await vi.waitFor(() => expect(google.mock.calls.length).toBeGreaterThan(1));
+  const twin = app.inject(request);
+  await new Promise((r) => setTimeout(r, 10));
+  release();
+  const results = await Promise.all([first, twin]);
+  expect(results.map((r) => r.statusCode)).toEqual([200, 204]);
+});
+
+it("caps and rounds TTL to the remaining proof lifetime", async () => {
+  const { verdictEcho } = await import("../src/server/labels.js");
+  const proof: import("../src/server/agent-verification.js").AgentFields = {
+    verification: "signature_valid",
+    agent_purpose: "user_directed",
+    reason: "ok",
+    claimed: { uaTokens: [], signatureAgents: [] },
+    signatures: [],
+    verified: { operator: "openai", method: "signature", expiresAt: 1100.9 },
+  };
+  expect(verdictEcho(proof, 1000)?.ttl).toBe(100);
+  expect(verdictEcho(proof, -10000)?.ttl).toBe(1800);
+  expect(verdictEcho(proof, 1101)?.ttl).toBe(0);
+  expect(verdictEcho({ ...proof, proofExpiresAt: 1007 }, 1000)?.ttl).toBe(7);
+  expect(
+    verdictEcho({ ...proof, verified: { ...proof.verified!, expiresAt: undefined } }, 1000)?.ttl,
+  ).toBe(0);
+});
+it("computes wire TTL after delivery waits, not at verification time", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(1800000000000);
+  vi.mocked(verdict.createVerifier).mockReturnValue(
+    fakeVerifier(async () => ({
+      verification: "signature_valid",
+      agent_purpose: "user_directed",
+      reason: "ok",
+      claimed: { uaTokens: [], signatureAgents: [] },
+      signatures: [],
+      verified: { operator: "openai", method: "signature", expiresAt: 1800000010 },
+    })),
+  );
+  const { post, google } = setup(true, {}, { verdictEcho: true });
+  let finish!: (r: Response) => void;
+  google.mockImplementation(
+    () =>
+      new Promise<Response>((r) => {
+        finish = r;
+      }),
+  );
+  const pending = post("/e");
+  await vi.waitFor(() => expect(google).toHaveBeenCalledTimes(1));
+  vi.setSystemTime(1800000007000);
+  finish(new Response(null, { status: 204 }));
+  expect((await pending).json().vv.ttl).toBe(3);
+});
+it("never echoes a successful hit withdrawn during delivery", async () => {
+  vi.mocked(verdict.createVerifier).mockReturnValue(
+    fakeVerifier(async () => ({
+      verification: "signature_valid",
+      agent_purpose: "user_directed",
+      reason: "ok",
+      claimed: { uaTokens: [], signatureAgents: [] },
+      signatures: [],
+      verified: { operator: "openai", method: "signature", expiresAt: Date.now() / 1000 + 300 },
+    })),
+  );
+  const { post, google, app } = setup(true, {}, { verdictEcho: true });
+  let finish!: (r: Response) => void;
+  google.mockImplementation(
+    () =>
+      new Promise<Response>((r) => {
+        finish = r;
+      }),
+  );
+  const pending = post("/e");
+  await vi.waitFor(() => expect(google).toHaveBeenCalledTimes(1));
+  expect(
+    (
+      await app.inject({
+        method: "POST",
+        url: "/p",
+        headers: { origin: config.siteOrigin, "content-type": "application/json" },
+        payload: { client_id: "123.456" },
+      })
+    ).statusCode,
+  ).toBe(204);
+  finish(new Response(null, { status: 204 }));
+  const r = await pending;
+  expect(r.statusCode).toBe(204);
+  expect(r.body).toBe("");
+  expect(r.headers["set-cookie"]).toBeUndefined();
+});
+for (const enabled of [true, false])
+  it(`collector script enable flag only exists when echo is on: ${enabled}`, async () => {
+    const { createApp: builtApp } = (await import(
+      new URL("../dist/server/app.js", import.meta.url).href
+    )) as { createApp: typeof createApp };
+    const app = builtApp(
+      { ...config, agentVerification: false, verdictEcho: enabled },
+      async () => new Response(null, { status: 204 }),
+    );
+    apps.push(app);
+    const result = await app.inject({ method: "GET", url: "/s.js" });
+    expect(result.statusCode).toBe(200);
+    expect(result.body.startsWith('document.currentScript.dataset.verdictEcho="on";')).toBe(
+      enabled,
+    );
+  });

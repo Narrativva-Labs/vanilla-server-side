@@ -12,6 +12,7 @@ const bundle = buildSync({
 export interface PageOptions {
   /** Extra script tag attributes, as `dataset` keys. */
   dataset?: Record<string, string>;
+  sessionStorage?: Storage;
   /** Runs before the tracker, for example to publish a detector snapshot first. */
   setup?(host: Record<string, unknown>): void;
   /** Replaces globals of the page, for example a deterministic `crypto`. */
@@ -52,7 +53,13 @@ export function page(history: unknown[] = [], options: PageOptions = {}) {
     },
     location: { href: "https://shop.example/?email=private&utm_source=test" },
   });
-  for (const key of ["localStorage", "sessionStorage", "indexedDB"])
+  if (options.sessionStorage)
+    Object.defineProperty(host, "sessionStorage", { value: options.sessionStorage });
+  for (const key of [
+    "localStorage",
+    ...(options.sessionStorage ? [] : ["sessionStorage"]),
+    "indexedDB",
+  ])
     Object.defineProperty(host, key, {
       get() {
         throw Error("Storage access prohibited");

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Echo bounded verified identities as HTTP 200 JSON with proof-limited TTL when verification is enabled; `VERDICT_ECHO=off` restores 204. Explicitly enable the browser reader only in collector-served scripts.
+- Publish compatible Visitor Verdict server claims, upgrade DOM declarations, identify intermediary infrastructure with `server_intermediary`, and exclude crawlers from browser publications. Reset inherited score/signals, support script-selected and array-like layers, and allow corrected operator labels after restoration.
+- Persist verified event responses only with analytics consent, cap session memory to proof expiry/30 minutes, and clear it on withdrawal without allowing pending readers to repopulate it. Keep ping persistence disabled and suppress echoes for withdrawn events. Document repeated agent-phase label events without changing GTM, delivery, retry or conversion handling.
+
 ## Unreleased
 
 - Automatically send one Visitor Verdict `traffic_class` update per document on its first valid final/agent publication, including while hiding, with a best-effort keepalive fetch. Whitelist class/phase/operator, ignore initial/legacy phases and duplicates, preserve consent and cookieless ping rules, and keep normal event labels current. The collector admits the update independently of TRACKED_EVENTS, forwards those browser parameters plus vv labels to GA4 and refreshes session/page label memory. Upgrade the collector before the tracker; no retries or delivery guarantee. Document early-final and one-page suspicious carry in detector 1.2.0.

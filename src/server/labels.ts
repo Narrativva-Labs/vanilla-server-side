@@ -1,3 +1,4 @@
+import { serverVerdict } from "../shared/verdict.js";
 import { trafficFields, trafficUpdateFields } from "../shared/traffic.js";
 import { visitorLabels } from "visitor-verdict-server";
 import type { AgentFields } from "./agent-verification.js";
@@ -196,4 +197,23 @@ export function withLabels(
 /** Independent admission budgets: page churn cannot displace session evidence. */
 export function createLabelMemories(capacity = 10000) {
   return { sessions: createLabelMemory(capacity), pages: createLabelMemory(capacity) };
+}
+
+/** Current verified evidence only; sticky browser/session labels cannot create an echo. */
+export function verdictEcho(verdict?: AgentFields, now = Date.now() / 1000) {
+  if (!verdict?.verified) return;
+  const labels = visitorLabels({ verdict });
+  const expires = verdict.proofExpiresAt ?? verdict.verified.expiresAt;
+  const ttl =
+    expires !== undefined && Number.isFinite(expires)
+      ? Math.max(0, Math.min(1800, Math.floor(expires - now)))
+      : 0;
+  return serverVerdict({
+    v: 1,
+    ttl,
+    type: labels.vv_type,
+    operator: verdict.verified.operator,
+    verification: verdict.verification,
+    purpose: labels.vv_detail.split("|")[2],
+  });
 }

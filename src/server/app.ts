@@ -1,7 +1,7 @@
 import { validateTrustProxy } from "./config.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createAgentCounters } from "./agent-counters.js";
-import { createLabelMemories } from "./labels.js";
+import { createLabelMemories, verdictEcho } from "./labels.js";
 import { createAgentLabeller, type AgentVerifierOptions } from "./agent-verification.js";
 import { validEventName } from "./mp-validation.js";
 import {
@@ -34,6 +34,7 @@ export function createApp(
       deniedPingUserAgent?: boolean;
       logEvents?: boolean;
       agentVerification?: boolean;
+      verdictEcho?: boolean;
       trackerHost?: string;
       trustProxy?: string[] | false;
       healthToken?: string;
@@ -64,6 +65,7 @@ export function createApp(
     ? createAgentLabeller(config.trackerHost, verifierOptions)
     : undefined;
   const label = labeller?.label;
+  const echoEnabled = config.verdictEcho ?? Boolean(config.agentVerification);
   const { sessions: labelMemory, pages: pageLabelMemory } = createLabelMemories();
   const agentCounters = createAgentCounters();
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));
@@ -162,7 +164,7 @@ export function createApp(
       .type("text/javascript")
       .header("Cache-Control", "public, max-age=300")
       .send(
-        `document.currentScript.dataset.events=${JSON.stringify([...allowed].join(","))};document.currentScript.dataset.pings=${JSON.stringify(pings ? "on" : "off")};\n${source}`,
+        `${echoEnabled ? 'document.currentScript.dataset.verdictEcho="on";' : ""}document.currentScript.dataset.events=${JSON.stringify([...allowed].join(","))};document.currentScript.dataset.pings=${JSON.stringify(pings ? "on" : "off")};\n${source}`,
       );
   });
   app.addHook("onRequest", async (req, reply) => {
@@ -254,19 +256,24 @@ export function createApp(
       if (!release) return reply.code(429).send({ error: "rate_limit" });
       try {
         // No cookie or retry. Page identity is transient; IP supplies visitor geography.
+        const verification = label?.(req);
         const result = await sendDeniedPing(
           config,
           ping,
           req.headers["user-agent"],
           fetcher,
           req.ip,
-          label?.(req),
+          verification,
           pageLabelMemory,
           agentCounters.observe("pings", req.raw.rawHeaders),
           config,
         );
         if (result === "sent") status.sent++;
         else status.errors++;
+        if (result === "sent" && echoEnabled) {
+          const vv = verdictEcho(await verification);
+          if (vv) return reply.code(200).type("application/json").send({ vv });
+        }
         return reply.code(204).send();
       } finally {
         release();
@@ -489,6 +496,10 @@ export function createApp(
         if (result === "retry") {
           seen.delete(event.event_id);
           return reply.code(503).send();
+        }
+        if (result === "sent" && echoEnabled) {
+          const vv = verdictEcho(await verification);
+          if (vv && !withdrawn()) return reply.code(200).type("application/json").send({ vv });
         }
         return reply.code(204).send();
       } finally {

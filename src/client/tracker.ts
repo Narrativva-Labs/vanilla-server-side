@@ -38,6 +38,8 @@ export interface Runtime {
   defer?(task: () => void, delay: number): void;
   uuid(): string;
   fetch: typeof fetch;
+  verdict?(response: Response, persist: boolean): Promise<void>;
+  verdictConsent?(granted: boolean, revoke: boolean): void;
 }
 export function createTracker(
   endpoint: string,
@@ -163,6 +165,10 @@ export function createTracker(
     const withdrawal =
       (consent.analytics_storage === "granted" || memory !== undefined) &&
       next.analytics_storage === "denied";
+    runtime.verdictConsent?.(
+      canTrack(next),
+      explicitDenial || withdrawal || (decided && next.analytics_storage === "denied"),
+    );
     const previousWait = waitUntil;
     waitUntil = runtime.now() + Math.min(2000, Math.max(0, waitMs));
     // Wake at the command's deadline instead of waiting for the next periodic flush.
@@ -219,6 +225,7 @@ export function createTracker(
     void flush();
   }
   function track(name: string, params: Record<string, unknown> = {}, automatic = false) {
+    if (name === "traffic_class" && params.traffic_source === "vanilla") return;
     const trafficUpdate = name === "traffic_class";
     if (trafficUpdate) {
       const fields = trafficUpdateFields(params);
@@ -360,6 +367,7 @@ export function createTracker(
     void flush();
   }
   function sendImmediate(event: TrackingEvent) {
+    const epoch = generation;
     const body = requestBody(event);
     if (body) {
       if (event.name === "traffic_class") trafficSent.add(`e:${event.params.traffic_phase}`);
@@ -371,6 +379,10 @@ export function createTracker(
           referrerPolicy: "no-referrer",
           headers: { "Content-Type": "application/json" },
           body,
+        })
+        .then((response) => {
+          if (event.name === "traffic_class" && epoch === generation && canTrack(consent))
+            void runtime.verdict?.(response, true)?.catch(() => {});
         })
         .catch(() => {});
     }
@@ -488,6 +500,9 @@ export function createTracker(
           headers: { "Content-Type": "application/json" },
           body,
         })
+        .then((response) => {
+          void runtime.verdict?.(response, false)?.catch(() => {});
+        })
         .catch(() => {});
     }
   }
@@ -587,6 +602,8 @@ export function createTracker(
               "[Vanilla Server-Side] Event skipped: request exceeds the collector's 64 KiB limit (HTTP 413). Reduce the event payload or number of items.",
             );
           }
+          if (epoch === generation && canTrack(consent))
+            void runtime.verdict?.(response, true)?.catch(() => {});
           retry = response.status === 429 || (response.status >= 500 && response.status < 600);
         } catch {
           retry = !controller.signal.aborted;

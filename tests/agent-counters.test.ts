@@ -50,7 +50,7 @@ function setup() {
     })),
   });
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-  const app = createApp(config, google);
+  const app = createApp({ ...config, verdictEcho: false }, google);
   apps.push(app);
   return {
     app,
