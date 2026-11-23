@@ -352,7 +352,7 @@ as two visitors or two conversions. Corrective operator changes can create furth
 events. This behavior requires no GTM edits; it does not deduplicate a site's other tags.
 
 Only fetch responses are read (JSON, schema v1 including bounded `ttl`, at most 1 KiB by
-stream bytes, with a 2-second read deadline); exit hits are ignored. Parsing and storage
+stream bytes, with a 2-second read deadline), including successful exit responses. Parsing and storage
 failures are silent and do not affect delivery. With analytics consent granted, eligible
 `/e` responses store only the bounded identity and receipt timestamp in sessionStorage
 under `vanilla.verdict.v1`. `/d` responses never write storage, even if consent is granted
@@ -377,7 +377,9 @@ Traffic class updates consume at most the final and agent phases per document ac
 both consent transports. An update released after waiting for consent keeps its original
 timestamp and the normal event age bound, without the ordinary queue’s 30-second limit.
 On page exit pending events enter keepalive transport immediately with their bootstrap
-secret; browser keepalive limits and network failure can still prevent delivery.
+secret. While the document remains alive (including hidden tabs and SPA navigation),
+ordinary events retain their retry queue and backoff. Browser keepalive limits and
+network failure can still prevent delivery.
 
 Denied pings use a fixed allowlist in both the browser and collector: event name,
 `page_location`, `page_referrer`, `value`, `currency`, and Visitor Verdict fields
@@ -386,3 +388,13 @@ Denied pings use a fixed allowlist in both the browser and collector: event name
 conversion data are omitted. Page title remains context and is sent as before.
 IP (`DENIED_PING_IP=full`), User-Agent (`DENIED_PING_USER_AGENT=on`) and default URL
 cleaning (only `utm_*` query parameters) remain unchanged.
+
+Denied-ping `value` must be a finite JSON number (numeric strings are omitted), and
+`currency` must match `^[A-Z]{3}$`. Browser-supplied `vv_type`/`vv_detail` never leave
+on `/d`; the collector derives them. Only `dom_marker` and `dom_host` claims are
+accepted from the browser on dedicated class updates; ordinary events omit claims.
+`server_*` claims come only from verified server echo. `botsLabelled` counts deliverable
+hits with an obvious bot UA and a final bot classification, once per attempt; dropped
+hits and verified agents do not count.
+The 16 KiB trimmer removes items first. If an event still exceeds the budget without
+items, it removes `vv_detail`, then `vv_type`, as a last resort to preserve the conversion.

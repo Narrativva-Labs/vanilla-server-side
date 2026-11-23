@@ -74,7 +74,7 @@ for (const kind of ["events", "pings"] as const) {
       kind === "events" ? 1 : 2,
     );
   });
-  it(`keeps both labels on deliverable boundary hits for ${kind}`, async () => {
+  it(`counts only surviving labels on deliverable boundary hits for ${kind}`, async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     let fitting: TrackingEvent | undefined;
     for (let n = 1300; n < 1400; n++) {
@@ -82,8 +82,8 @@ for (const kind of ["events", "pings"] as const) {
       const request = collectRequest(buildEventCollectUrl(destination, e, consent)!);
       if (!request) continue;
       const fields = new URLSearchParams(request.body ?? request.url.search);
+      if (!fields.has("ep.vv_detail")) continue;
       expect(fields.has("ep.vv_type")).toBe(true);
-      expect(fields.has("ep.vv_detail")).toBe(true);
       fitting = e;
     }
     expect(fitting).toBeDefined();
@@ -151,4 +151,46 @@ it("does not count or retain labels when aborted while awaiting verification", a
   expect(fetcher).not.toHaveBeenCalled();
   expect(memory.size).toBe(0);
   expect(counters.events.total).toBe(0);
+});
+
+it("counts and retains only the type that survives emergency label removal", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  let stripped: TrackingEvent | undefined, detailOnly: TrackingEvent | undefined;
+  for (let n = 1300; n < 1400; n++) {
+    const e = event(largeParams(n));
+    const request = collectRequest(buildEventCollectUrl(destination, e, consent)!);
+    if (!request) continue;
+    const fields = new URLSearchParams(request.body ?? request.url.search);
+    if (!fields.has("ep.vv_type")) stripped ??= e;
+    else if (!fields.has("ep.vv_detail")) detailOnly ??= e;
+  }
+  expect(stripped).toBeDefined();
+  expect(detailOnly).toBeDefined();
+  for (const [e, count] of [
+    [stripped!, 0],
+    [detailOnly!, 1],
+  ] as const) {
+    const memory = createLabelMemory();
+    const { counters, observe } = createAgentCounters();
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
+    expect(
+      await sendGoogle(
+        destination,
+        e,
+        () => consent,
+        new AbortController().signal,
+        fetcher,
+        undefined,
+        undefined,
+        memory,
+        observe("events", []),
+      ),
+    ).toBe("sent");
+    const [url, init] = fetcher.mock.calls[0]!;
+    const fields = new URLSearchParams(String(init?.body ?? new URL(String(url)).search));
+    expect(fields.has("ep.vv_type")).toBe(Boolean(count));
+    expect(fields.has("ep.vv_detail")).toBe(false);
+    expect(counters.events.total).toBe(count);
+    expect(memory.size).toBe(count);
+  }
 });

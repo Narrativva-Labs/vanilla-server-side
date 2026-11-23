@@ -130,7 +130,7 @@ it("collector validates names, strips sensitive keys and uses ordinary ecommerce
     params: {
       transaction_id: "tx",
       currency: "CZK",
-      value: "100",
+      value: 100,
       user_data: "private",
       gclid: "secret",
       gbraid: "secret",

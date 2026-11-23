@@ -1,7 +1,8 @@
+import { retryFingerprint } from "./retry-fingerprint.js";
 import { validateTrustProxy } from "./config.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createAgentCounters } from "./agent-counters.js";
-import { createLabelMemories, verdictEcho } from "./labels.js";
+import { createLabelMemories, verdictEcho, type LabelObserver } from "./labels.js";
 import {
   createAgentLabeller,
   type AgentVerifierOptions,
@@ -73,7 +74,6 @@ export function createApp(
   const classify = async (req: Parameters<NonNullable<typeof label>>[0]) => {
     const verdict = await label?.(req);
     if (!isObviousBot(req.headers["user-agent"])) return verdict;
-    status.botsLabelled++;
     return {
       verification: "none",
       claimed: { uaTokens: [], signatureAgents: [] },
@@ -89,6 +89,16 @@ export function createApp(
   const echoEnabled = config.verdictEcho ?? Boolean(config.agentVerification);
   const { sessions: labelMemory, pages: pageLabelMemory } = createLabelMemories();
   const agentCounters = createAgentCounters();
+  const observe = (kind: "events" | "pings", headers: readonly string[]): LabelObserver => {
+    const counter = agentCounters.observe(kind, headers);
+    let counted = false;
+    return (labels, verdict, browserClass) => {
+      counter(labels, verdict, browserClass);
+      if (!counted && verdict?.obviousBot && labels.vv_type.startsWith("bot_"))
+        status.botsLabelled++;
+      counted = true;
+    };
+  };
   const allowed = new Set(config.allowedEvents ?? DEFAULT_EVENTS.split(","));
   const pings = config.deniedPings !== false;
   // LOG_EVENTS=on: one line per event with its name, the answer and Google's outcome only.
@@ -300,7 +310,7 @@ export function createApp(
           req.ip,
           verification,
           pageLabelMemory,
-          agentCounters.observe("pings", req.raw.rawHeaders),
+          observe("pings", req.raw.rawHeaders),
           config,
         );
         if (result === "sent") status.sent++;
@@ -413,17 +423,7 @@ export function createApp(
           return reply.code(204).send();
         }
         // Reuse proof only for this exact event, payload, peer and signed headers.
-        const fingerprint = createHash("sha256")
-          .update(
-            JSON.stringify([
-              event,
-              req.ip,
-              req.method,
-              req.url,
-              Object.entries(req.headers).sort(([a], [b]) => a.localeCompare(b)),
-            ]),
-          )
-          .digest("hex");
+        const fingerprint = retryFingerprint(event, req);
         const cached = retryVerdicts.get(fingerprint);
         const verification = cached && cached.expires > Date.now() ? cached.verdict : classify(req);
         if (!cached || cached.expires <= Date.now())
@@ -521,7 +521,7 @@ export function createApp(
           },
           verification,
           labelMemory,
-          agentCounters.observe("events", req.raw.rawHeaders),
+          observe("events", req.raw.rawHeaders),
         );
         inFlight.set(event.event_id, delivery);
         let result: "sent" | "retry" | "dropped";

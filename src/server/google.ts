@@ -285,6 +285,14 @@ export function collectRequest(
     parts.splice(i, 1);
     left++;
   }
+  // With no items left, a near-limit conversion takes priority over optional labels.
+  for (const key of ["ep.vv_detail", "ep.vv_type"]) {
+    if (size <= COLLECT_BODY_BYTES) break;
+    const index = parts.findIndex((part) => part.key === key);
+    if (index < 0) continue;
+    size -= Buffer.byteLength(parts[index]!.text) + 1;
+    parts.splice(index, 1);
+  }
   if (size > COLLECT_BODY_BYTES) {
     console.warn("Collect event dropped: encoded event exceeds 16 KiB without items");
     return undefined;

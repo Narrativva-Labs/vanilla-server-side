@@ -460,7 +460,7 @@ it("labels invalid signatures and obvious bots while forwarding both", async () 
   expect(google).toHaveBeenCalledTimes(4);
 });
 
-it("rejects an oversized non-item payload without stripping evidence", () => {
+it("removes detail as a last resort to deliver a near-limit non-item hit", () => {
   const url = new URL("https://www.google-analytics.com/g/collect?v=2&en=page_view");
   url.searchParams.set("ep.payload", "x".repeat(16320));
   url.searchParams.set("ep.vv_type", "agent_verified");
@@ -469,7 +469,10 @@ it("rejects an oversized non-item payload without stripping evidence", () => {
     "openai|signature_valid|user_directed|signature_agent|human|final",
   );
   const request = collectRequest(url);
-  expect(request).toBeUndefined();
+  expect(request).toBeDefined();
+  const fields = new URLSearchParams(request!.body);
+  expect(fields.get("ep.vv_type")).toBe("agent_verified");
+  expect(fields.has("ep.vv_detail")).toBe(false);
 });
 
 it("anchors IP memory expiry to proof time before delivery waits", async () => {
@@ -833,47 +836,61 @@ for (const enabled of [true, false])
     );
   });
 
-it("retains signed verdict on identical retry after Google 500 but rejects a different event replay", async () => {
-  const warm = spyOnWarm();
-  const request = signed[0]!;
-  const clock = Date.parse(request.ts) / 1000;
-  const { app, google, hit } = setup(true, {
-    now: () => clock,
-    fetcher: async (url: string) =>
-      url === chatgpt ? new Response(directory) : new Response(null, { status: 404 }),
-  });
-  await warm.mock.results[0]!.value;
-  google.mockResolvedValueOnce(new Response(null, { status: 500 }));
-  const now = Date.now();
-  const payload = {
-    name: "purchase",
-    params: {},
-    client_id: "123.456",
-    session_id: 123,
-    event_id: crypto.randomUUID(),
-    timestamp_ms: now,
-    session_started_ms: now,
-    session_expires_ms: now + 1800000,
-    consent: { analytics_storage: "granted" },
-  };
-  const post = (body: typeof payload) =>
-    app.inject({
-      method: "POST",
-      url: "/e",
-      headers: {
-        ...request.headers,
-        origin: config.siteOrigin,
-        "content-type": "application/json",
-      },
-      payload: body,
+it.each(["cookie", "proxy", "traffic"])(
+  "retains signed retry with changed %s and rejects a different event replay",
+  async (change) => {
+    const warm = spyOnWarm();
+    const request = signed[0]!;
+    const clock = Date.parse(request.ts) / 1000;
+    const { app, google, hit } = setup(true, {
+      now: () => clock,
+      fetcher: async (url: string) =>
+        url === chatgpt ? new Response(directory) : new Response(null, { status: 404 }),
     });
-  expect((await post(payload)).statusCode).toBe(503);
-  expect(hit().get("ep.vv_type")).toBe("agent_verified");
-  expect((await post(payload)).statusCode).toBe(204);
-  expect(hit().get("ep.vv_type")).toBe("agent_verified");
-  expect((await post({ ...payload, event_id: crypto.randomUUID() })).statusCode).toBe(204);
-  expect(hit().get("ep.vv_type")).toBe("bot_spoofed");
-});
+    await warm.mock.results[0]!.value;
+    google.mockResolvedValueOnce(new Response(null, { status: 500 }));
+    const now = Date.now();
+    const payload = {
+      name: "purchase",
+      params: {},
+      client_id: "123.456",
+      session_id: 123,
+      event_id: crypto.randomUUID(),
+      timestamp_ms: now,
+      session_started_ms: now,
+      session_expires_ms: now + 1800000,
+      consent: { analytics_storage: "granted" },
+    };
+    const post = (body: typeof payload, extra: Record<string, string> = {}) =>
+      app.inject({
+        method: "POST",
+        url: "/e",
+        headers: {
+          ...request.headers,
+          ...extra,
+          origin: config.siteOrigin,
+          "content-type": "application/json",
+        },
+        payload: body,
+      });
+    expect((await post(payload)).statusCode).toBe(503);
+    expect(hit().get("ep.vv_type")).toBe("agent_verified");
+    const extra: Record<string, string> =
+      change === "cookie"
+        ? { cookie: "unrelated=changed" }
+        : change === "proxy"
+          ? { "x-request-id": "two", "cf-ray": "new" }
+          : {};
+    const retry =
+      change === "traffic"
+        ? { ...payload, params: { traffic_class: "human", traffic_phase: "final" } }
+        : payload;
+    expect((await post(retry, extra)).statusCode).toBe(204);
+    expect(hit().get("ep.vv_type")).toBe("agent_verified");
+    expect((await post({ ...payload, event_id: crypto.randomUUID() })).statusCode).toBe(204);
+    expect(hit().get("ep.vv_type")).toBe("bot_spoofed");
+  },
+);
 
 it("obvious UA evidence never overrides verified identity or an invalid signature", async () => {
   for (const verification of ["signature_valid", "signature_invalid"] as const) {
@@ -889,12 +906,15 @@ it("obvious UA evidence never overrides verified identity or an invalid signatur
           : {}),
       })),
     );
-    const { post, hit } = setup();
+    const { post, hit, app } = setup();
     for (const path of ["/e", "/d"]) {
       expect((await post(path, { "user-agent": "HeadlessChrome" })).statusCode).toBe(204);
       expect(hit().get("ep.vv_type")).toBe(
         verification === "signature_valid" ? "agent_verified" : "bot_spoofed",
       );
     }
+    expect((await app.inject("/health")).json().google.botsLabelled).toBe(
+      verification === "signature_valid" ? 0 : 2,
+    );
   }
 });

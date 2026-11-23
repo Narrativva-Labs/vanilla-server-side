@@ -671,3 +671,13 @@ are omitted. Page title, IP and User-Agent remain context with unchanged default
 by default. `KEEP_QUERY_PARAMS=vvp` explicitly retains an additional test marker;
 the default list is empty. `FILTER_OBVIOUS_BOTS=off` labels and forwards obvious
 bot UAs; opt-in `on` restores legacy filtering.
+
+Denied-ping `value` must be a finite JSON number (numeric strings are omitted), and
+`currency` must match `^[A-Z]{3}$`. Browser-supplied `vv_type`/`vv_detail` never leave
+on `/d`; the collector derives them. Only `dom_marker` and `dom_host` claims are
+accepted from the browser on dedicated class updates; ordinary events omit claims.
+`server_*` claims come only from verified server echo. `botsLabelled` counts deliverable
+hits with an obvious bot UA and a final bot classification, once per attempt; dropped
+hits and verified agents do not count.
+The 16 KiB trimmer removes items first. If an event still exceeds the budget without
+items, it removes `vv_detail`, then `vv_type`, as a last resort to preserve the conversion.

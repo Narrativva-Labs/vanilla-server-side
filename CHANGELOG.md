@@ -8,6 +8,12 @@
 
 ## Unreleased
 
+- Validate denied value as a finite JSON number and currency as three uppercase letters; strip browser vv labels and reject server claims from browser input. Reserve traffic_agent_claim on ordinary events.
+- Retain ordinary retries and backoff when leaving a page or hiding a tab, release mature consent waiting on exit, and process verdict echoes for every event response.
+- Stabilize retry proof fingerprints across unsigned cookie/proxy headers and runtime traffic labels while binding all signed headers and semantic event fields. Count obvious bots only on deliverable bot-labelled hits.
+- Preserve conversion delivery by removing vv_detail, then vv_type, only after item trimming cannot bring a hit below 16 KiB.
+
+
 - Label and forward obvious bot UAs by default; add opt-in legacy `FILTER_OBVIOUS_BOTS=on` and `botsLabelled` health counter.
 - Hand pending conversions and class updates to keepalive transport on exit, share the two document phases across consent transports, and preserve class updates released after 30 seconds awaiting consent.
 - Bind retry verdicts to an exact payload/request fingerprint after upstream failures; preserve rejection of signature replay for different events.

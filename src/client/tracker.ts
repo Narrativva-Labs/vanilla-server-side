@@ -375,6 +375,7 @@ export function createTracker(
     const body = requestBody(event);
     if (body) {
       if (event.name === "traffic_class") trafficSent.add(String(event.params.traffic_phase));
+      if (event.name === "page_view") pageSent = true;
       void runtime
         .fetch(endpoint, {
           method: "POST",
@@ -385,7 +386,7 @@ export function createTracker(
           body,
         })
         .then((response) => {
-          if (event.name === "traffic_class" && epoch === generation && canTrack(consent))
+          if (epoch === generation && canTrack(consent))
             void runtime.verdict?.(response, true)?.catch(() => {});
         })
         .catch(() => {});
@@ -499,6 +500,55 @@ export function createTracker(
         .catch(() => {});
     }
   }
+  /** Start synchronously; the same completion path keeps retries for exits and ordinary flushes. */
+  function startQueued(item: (typeof queue)[number], effective: Consent) {
+    if (dispatching.has(item.event)) return;
+    const body = requestBody({ ...item.event, consent: effective });
+    if (!body) {
+      queue.splice(queue.indexOf(item), 1);
+      return;
+    }
+    const controller = new AbortController();
+    active.add(controller);
+    dispatching.add(item.event);
+    const epoch = generation;
+    if (item.event.name === "page_view") pageSent = true;
+    let response: Promise<Response>;
+    try {
+      response = runtime.fetch(endpoint, {
+        method: "POST",
+        credentials: "include",
+        keepalive: true,
+        referrerPolicy: "no-referrer",
+        headers: { "Content-Type": "application/json" },
+        body,
+        signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
+      });
+    } catch (error) {
+      response = Promise.reject(error);
+    }
+    return {
+      response,
+      finish(response?: Response) {
+        active.delete(controller);
+        dispatching.delete(item.event);
+        if (response?.status === 413)
+          runtime.warn(
+            "[Vanilla Server-Side] Event skipped: request exceeds the collector's 64 KiB limit (HTTP 413). Reduce the event payload or number of items.",
+          );
+        if (response && epoch === generation && canTrack(consent))
+          void runtime.verdict?.(response, true)?.catch(() => {});
+        if (epoch !== generation || !queue.includes(item)) return;
+        const retry = response
+          ? response.status === 429 || (response.status >= 500 && response.status < 600)
+          : !controller.signal.aborted;
+        if (retry) {
+          item.attempts++;
+          item.next = runtime.now() + item.attempts * 1000;
+        } else queue.splice(queue.indexOf(item), 1);
+      },
+    };
+  }
   async function flush() {
     if (!deliveryReady) return;
     ping();
@@ -570,54 +620,32 @@ export function createTracker(
           }
           continue;
         }
-        const body = requestBody({ ...item.event, consent: effective });
-        if (!body) {
-          queue.splice(queue.indexOf(item), 1);
-          continue;
-        }
-        const controller = new AbortController();
-        active.add(controller);
-        const epoch = generation;
-        let retry = false;
-        dispatching.add(item.event);
-        try {
-          if (item.event.name === "page_view") pageSent = true;
-          const response = await runtime.fetch(endpoint, {
-            method: "POST",
-            credentials: "include",
-            keepalive: true,
-            referrerPolicy: "no-referrer",
-            headers: { "Content-Type": "application/json" },
-            body,
-            signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]),
-          });
-          if (response.status === 413) {
-            runtime.warn(
-              "[Vanilla Server-Side] Event skipped: request exceeds the collector's 64 KiB limit (HTTP 413). Reduce the event payload or number of items.",
-            );
-          }
-          if (epoch === generation && canTrack(consent))
-            void runtime.verdict?.(response, true)?.catch(() => {});
-          retry = response.status === 429 || (response.status >= 500 && response.status < 600);
-        } catch {
-          retry = !controller.signal.aborted;
-        } finally {
-          active.delete(controller);
-          dispatching.delete(item.event);
-        }
-        if (epoch !== generation || !queue.includes(item)) continue;
-        if (retry) {
-          item.attempts++;
-          item.next = runtime.now() + item.attempts * 1000;
+        if (dispatching.has(item.event)) {
           if (item.event.name === "page_view") {
             waitingForPage = true;
             break;
           }
-        } else queue.splice(queue.indexOf(item), 1);
+          continue;
+        }
+        const request = startQueued(item, effective);
+        if (!request) continue;
+        try {
+          request.finish(await request.response);
+        } catch {
+          request.finish();
+        }
+        if (queue.includes(item) && item.event.name === "page_view") {
+          waitingForPage = true;
+          break;
+        }
       }
     } finally {
       flushing = false;
-      if (!waitingForPage && queue.some((item) => item.next <= runtime.now()) && canTrack(consent))
+      if (
+        !waitingForPage &&
+        queue.some((item) => !dispatching.has(item.event) && item.next <= runtime.now()) &&
+        canTrack(consent)
+      )
         void Promise.resolve().then(flush);
     }
   }
@@ -637,11 +665,11 @@ export function createTracker(
     exit(elapsed = runtime.engagement?.() ?? 0, page = runtime.href()) {
       // Leaving: held hits go first, also denied pings, which have no exit hit of their own.
       release();
+      void flush(); // Also resolve mature consent waiting when no readiness hold was active.
       if (!deliveryReady || !canTrack(consent) || runtime.now() < waitUntil) return;
       // Start keepalive requests synchronously: the document may vanish before any await resumes.
       for (const item of [...queue]) {
         if (dispatching.has(item.event)) continue;
-        queue.splice(queue.indexOf(item), 1);
         const effective = intersect(item.event.consent, consent);
         if (!canTrack(effective) || !timely(item.event, runtime.now())) continue;
         if (
@@ -649,7 +677,17 @@ export function createTracker(
           (trafficSent.has(String(item.event.params.traffic_phase)) || redundant(item.event.params))
         )
           continue;
-        sendImmediate({ ...item.event, consent: effective });
+        if (item.event.name === "traffic_class") {
+          queue.splice(queue.indexOf(item), 1);
+          sendImmediate({ ...item.event, consent: effective });
+        } else if (item.attempts < 3 && item.next <= runtime.now()) {
+          const request = startQueued(item, effective);
+          if (request)
+            void request.response.then(
+              (response) => request.finish(response),
+              () => request.finish(),
+            );
+        }
       }
       if (elapsed <= 0) return;
       // Fixed automatic fields only: custom ecommerce data cannot inflate the exit request.

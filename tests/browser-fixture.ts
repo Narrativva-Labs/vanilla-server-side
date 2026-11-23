@@ -10,6 +10,8 @@ const bundle = buildSync({
   target: "es2022",
 }).outputFiles[0]!.text;
 export interface PageOptions {
+  /** Optional collector-served bundle, including its dataset assignments. */
+  source?: string;
   /** Extra script tag attributes, as `dataset` keys. */
   dataset?: Record<string, string>;
   sessionStorage?: Storage;
@@ -67,7 +69,7 @@ export function page(history: unknown[] = [], options: PageOptions = {}) {
     });
   const warnings = vi.fn();
   options.setup?.(host as unknown as Record<string, unknown>);
-  runInNewContext(bundle, {
+  runInNewContext(options.source ?? bundle, {
     window: host,
     document: doc,
     location: host.location,

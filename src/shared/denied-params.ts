@@ -9,22 +9,15 @@ const allowed = new Set([
   "traffic_phase",
   "traffic_agent",
   "traffic_agent_claim",
-  "vv_type",
-  "vv_detail",
 ]);
 export function deniedParams(params: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(params).filter(
       ([key, value]) =>
         allowed.has(key) &&
-        (key !== "traffic_agent_claim" ||
-          [
-            "dom_marker",
-            "dom_host",
-            "server_signature",
-            "server_ip",
-            "server_intermediary",
-          ].includes(value as string)) &&
+        (key !== "value" || (typeof value === "number" && Number.isFinite(value))) &&
+        (key !== "currency" || (typeof value === "string" && /^[A-Z]{3}$/.test(value))) &&
+        (key !== "traffic_agent_claim" || ["dom_marker", "dom_host"].includes(value as string)) &&
         (typeof value === "string" || (typeof value === "number" && Number.isFinite(value))),
     ),
   );

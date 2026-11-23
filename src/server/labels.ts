@@ -13,6 +13,7 @@ const reserved = new Set([
   "traffic_class",
   "traffic_phase",
   "traffic_agent",
+  "traffic_agent_claim",
 ]);
 type Labels = ReturnType<typeof visitorLabels>;
 export type LabelObserver = (labels: Labels, verdict?: AgentFields, browserClass?: string) => void;
