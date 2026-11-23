@@ -180,7 +180,7 @@ using [offline conversion import](https://support.google.com/google-ads/answer/2
 or [enhanced conversions for leads](https://support.google.com/google-ads/answer/11021502).
 GA4's UI rules are calculated client-side and do not apply to Vanilla's server-to-server
 hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)).
-The [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/docs/conversion-guidance.md)
+The [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/docs/conversion-guidance.md)
 describes optional routing rules.
 
 ## What to disclose
@@ -296,7 +296,7 @@ Amazon Bedrock AgentCore Browser is not supported yet: it signs only when a cust
 
 A recognized UA or an accessible key directory alone verifies no request. Signature
 verification needs a valid covered request and usable cached key; IP evidence needs
-a matching token and trusted source IP. [Server documentation](https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server#operator-coverage-and-sources-checked-2026-11-20)
+a matching token and trusted source IP. [Server documentation](https://github.com/Narrativva-Labs/visitor-verdict/tree/main/server#operator-coverage-and-sources-checked-2026-11-20)
 tracks the detailed sources and limits.
 
 `TRACKER_DOMAIN` is the trusted external host, without a scheme/path. Use a bare

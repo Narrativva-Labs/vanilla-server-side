@@ -23,7 +23,7 @@ The previous archive is retained for provenance; package.json and the lockfile s
 
 ## Previous archive: 0.5.1
 
-- Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/phase2-verifier/server
+- Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/main/server
 - Source: working tree based on `fbfaa30` (branch phase2-verifier); 0.5.1 changes remain uncommitted for owner review.
 - Version: 0.5.1; archive: visitor-verdict-server-0.5.1.tgz.
 - SHA-512 (hex): `7b97faa2eab79eb762e967316a75a2ee4cf00b4757c80c0c76bd831386c97803de2ec1a02560a8fd18e3193e4a9732ccd1a18e5b6def93a1c7452e53037bdf33`

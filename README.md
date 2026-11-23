@@ -111,7 +111,7 @@ using [offline conversion import](https://support.google.com/google-ads/answer/2
 or [enhanced conversions for leads](https://support.google.com/google-ads/answer/11021502).
 GA4's UI rules are calculated client-side and do not apply to Vanilla's server-to-server
 hits ([GA4 limits](https://support.google.com/analytics/answer/10085872)).
-The [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/docs/conversion-guidance.md)
+The [conversion guidance](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/docs/conversion-guidance.md)
 describes optional routing rules.
 
 ## History
@@ -153,7 +153,7 @@ Related: [Visitor Verdict](https://github.com/Narrativva-Labs/visitor-verdict) â
 - [Cookie banners](docs/cookie-banners.md): what consent banners really send
 - [Design decisions](docs/decisions.md): each decision with its alternative and source
 - [Verification](docs/verification.md): what is tested against real Google Analytics, how, and what is still open
-- Related: [Visitor Verdict](https://github.com/Narrativva-Labs/visitor-verdict), privacy-minimal browser detector of clear automation; its labels and server-side agent verification are in development here on the [`agent-verification`](https://github.com/Narrativva-Labs/vanilla-server-side/tree/agent-verification) branch ([roadmap](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/ROADMAP.md))
+- Related: [Visitor Verdict](https://github.com/Narrativva-Labs/visitor-verdict), privacy-minimal browser detector of clear automation; its labels and server-side agent verification are in development here on the [`agent-verification`](https://github.com/Narrativva-Labs/vanilla-server-side/tree/main) branch ([roadmap](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/ROADMAP.md))
 
 For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `tests/fuzz.test.ts` runs random sequences against rules that must always hold.
 
@@ -258,7 +258,7 @@ GA4 Realtime showed `signature_valid` on 5/5 `view_cart` events after cache warm
 (1/5 before); only 1/5 had a browser class because early events preceded detection.
 This is one operator on one site, not a coverage estimate. Standard reports,
 BigQuery and advertising attribution for these agent events are unverified.
-The [field observations](https://github.com/Narrativva-Labs/visitor-verdict/blob/phase2-verifier/research/agents-and-tells.md#field-observations-v10-2026-11-19)
+The [field observations](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/research/agents-and-tells.md#field-observations-v10-2026-11-19)
 include five badge runs across personal and business accounts, an unsigned masked-headless
 negative control and two unsigned Grok runs; these are separate samples.
 
