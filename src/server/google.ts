@@ -1,3 +1,4 @@
+import { deniedParams } from "../shared/denied-params.js";
 import type { AgentFields } from "./agent-verification.js";
 import { withLabels, type LabelMemory, type LabelObserver } from "./labels.js";
 /** All events use the Google tag wire format; see the protocol notes. */
@@ -18,6 +19,7 @@ import { shortenBytes, timely, type TrackingEvent } from "../shared/event.js";
 import { ENGAGED_MS } from "./identity.js";
 export interface Destination {
   measurementId: string;
+  keepQueryParams?: string[];
   region?: "eu";
 }
 export type Delivery = "sent" | "retry" | "dropped";
@@ -69,8 +71,12 @@ const COLLECT_TITLE_BYTES = 300;
 const host = (destination: Destination) =>
   destination.region === "eu" ? "region1.google-analytics.com" : "www.google-analytics.com";
 const text = (value: unknown) => (typeof value === "string" ? value : "");
-function landingUrl(location: unknown, clicks?: Record<string, string>) {
-  const clean = shortenBytes(sanitizeUrl(text(location)), COLLECT_URL_BYTES);
+function landingUrl(
+  location: unknown,
+  clicks?: Record<string, string>,
+  keepQueryParams?: string[],
+) {
+  const clean = shortenBytes(sanitizeUrl(text(location), keepQueryParams), COLLECT_URL_BYTES);
   if (!clicks) return clean;
   try {
     const url = new URL(clean);
@@ -103,8 +109,11 @@ export function buildCollectUrl(destination: Destination, hit: CollectHit) {
         : "0",
     _s: String(hit.hitIndex ?? 1),
     en: hit.name,
-    dl: landingUrl(hit.location, hit.clicks),
-    dr: shortenBytes(sanitizeUrl(text(hit.referrer)), COLLECT_URL_BYTES),
+    dl: landingUrl(hit.location, hit.clicks, destination.keepQueryParams),
+    dr: shortenBytes(
+      sanitizeUrl(text(hit.referrer), destination.keepQueryParams),
+      COLLECT_URL_BYTES,
+    ),
     dt: shortenBytes(redactAds(text(hit.title)) as string, COLLECT_TITLE_BYTES),
     ul: hit.language?.toLowerCase(),
     sr: hit.screen,
@@ -179,7 +188,10 @@ export function buildEventCollectUrl(
     return undefined;
   }
   // URLs are cleaned here too: a request does not have to come from the tracker.
-  const cleaned = cleanUrls(redactAds(event.params)) as Record<string, unknown>;
+  const cleaned = cleanUrls(redactAds(event.params), "", destination.keepQueryParams) as Record<
+    string,
+    unknown
+  >;
   const params = validateParams(
     withLabels(
       { ...cleaned, session_id: event.session_id },
@@ -266,14 +278,6 @@ export function collectRequest(
     if (bodyField(key)) parts.push({ key, text: new URLSearchParams([[key, value]]).toString() });
     else head.searchParams.append(key, value);
   let size = parts.reduce((n, part) => n + Buffer.byteLength(part.text) + 1, -1);
-  // Optional labels must never turn an otherwise deliverable event into an oversized hit.
-  for (const name of ["ep.vv_detail", "ep.vv_type"]) {
-    if (size <= COLLECT_BODY_BYTES) break;
-    const index = parts.findIndex((part) => part.key === name);
-    if (index < 0) continue;
-    size -= Buffer.byteLength(parts[index]!.text) + 1;
-    parts.splice(index, 1);
-  }
   let left = 0;
   for (let i = parts.length - 1; i >= 0 && size > COLLECT_BODY_BYTES; i--) {
     if (!/^pr\d+$/.test(parts[i]!.key)) continue;
@@ -388,17 +392,11 @@ export async function sendDeniedPing(
 ) {
   const agentFields = verification ? await verification : undefined;
   const staged = stageLabels(labelMemory, observeLabels);
-  function strip(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(strip);
-    if (value && typeof value === "object")
-      return Object.fromEntries(
-        Object.entries(value)
-          .filter(([key]) => key.toLowerCase() !== "user_data")
-          .map(([key, entry]) => [key, strip(entry)]),
-      );
-    return value;
-  }
-  const cleaned = cleanUrls(redactAds(strip(ping.params))) as Record<string, unknown>;
+  const cleaned = cleanUrls(
+    redactAds(deniedParams(ping.params)),
+    "",
+    destination.keepQueryParams,
+  ) as Record<string, unknown>;
   const params = validateParams(
     withLabels(
       { ...cleaned, session_id: ping.session_id },

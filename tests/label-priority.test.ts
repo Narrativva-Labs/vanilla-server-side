@@ -179,13 +179,18 @@ for (const enabled of [false, true])
         expect(response.statusCode).toBe(204);
         const [url, init] = google.mock.calls.at(-1)!;
         const hit = new URLSearchParams(new URL(String(url)).search + "&" + (init?.body ?? ""));
-        expect(hit.get("ep.transaction_id")).toBe(purchase.transaction_id);
+        expect(hit.get("ep.transaction_id")).toBe(route === "/d" ? null : purchase.transaction_id);
         expect(hit.get("cu")).toBe(purchase.currency);
         expect(hit.get("epn.value")).toBe(String(purchase.value));
-        expect(hit.get("pr1")).toContain("idSKU-1");
-        expect(hit.get("ep.coupon")).toBe(purchase.coupon);
-        expect(hit.get("epn.shipping")).toBe(String(purchase.shipping));
-        expect(hit.get("epn.tax")).toBe(String(purchase.tax));
+        if (route === "/e") {
+          expect(hit.get("pr1")).toContain("idSKU-1");
+          expect(hit.get("ep.coupon")).toBe(purchase.coupon);
+          expect(hit.get("epn.shipping")).toBe(String(purchase.shipping));
+          expect(hit.get("epn.tax")).toBe(String(purchase.tax));
+        } else {
+          for (const key of ["pr1", "ep.coupon", "epn.shipping", "epn.tax", "epn.custom_0"])
+            expect(hit.has(key)).toBe(false);
+        }
         expect(hit.has("ep.agent_verification")).toBe(false);
         expect(hit.has("ep.agent_operator")).toBe(false);
         expect(hit.has("ep.agent_claim")).toBe(false);

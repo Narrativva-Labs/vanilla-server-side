@@ -2,7 +2,11 @@ import { validateTrustProxy } from "./config.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createAgentCounters } from "./agent-counters.js";
 import { createLabelMemories, verdictEcho } from "./labels.js";
-import { createAgentLabeller, type AgentVerifierOptions } from "./agent-verification.js";
+import {
+  createAgentLabeller,
+  type AgentVerifierOptions,
+  type AgentFields,
+} from "./agent-verification.js";
 import { validEventName } from "./mp-validation.js";
 import {
   COOKIE_NAME,
@@ -28,6 +32,7 @@ export function remember<T>(map: Map<string, T>, key: string, value: T, limit = 
 export function createApp(
   config: Destination &
     CookieConfig & {
+      filterObviousBots?: boolean;
       allowedEvents?: string[];
       deniedPings?: boolean;
       deniedPingIp?: "full" | "truncated" | "off";
@@ -65,6 +70,22 @@ export function createApp(
     ? createAgentLabeller(config.trackerHost, verifierOptions)
     : undefined;
   const label = labeller?.label;
+  const classify = async (req: Parameters<NonNullable<typeof label>>[0]) => {
+    const verdict = await label?.(req);
+    if (!isObviousBot(req.headers["user-agent"])) return verdict;
+    status.botsLabelled++;
+    return {
+      verification: "none",
+      claimed: { uaTokens: [], signatureAgents: [] },
+      signatures: [],
+      ...verdict,
+      obviousBot: true,
+    } as AgentFields;
+  };
+  const retryVerdicts = new Map<
+    string,
+    { expires: number; verdict: Promise<AgentFields | undefined> }
+  >();
   const echoEnabled = config.verdictEcho ?? Boolean(config.agentVerification);
   const { sessions: labelMemory, pages: pageLabelMemory } = createLabelMemories();
   const agentCounters = createAgentCounters();
@@ -105,6 +126,8 @@ export function createApp(
     if (Date.now() - pruned < 1000) return;
     pruned = Date.now();
     for (const [key, expires] of revoked) if (expires <= Date.now()) revoked.delete(key);
+    for (const [key, entry] of retryVerdicts)
+      if (entry.expires <= Date.now()) retryVerdicts.delete(key);
     for (const [id, expires] of seen) if (expires <= Date.now()) seen.delete(id);
     for (const map of [initialIdentities, recent])
       for (const [key, value] of map) if (value.expires <= Date.now()) map.delete(key);
@@ -121,6 +144,7 @@ export function createApp(
     labeller?.close();
     labelMemory.clear();
     pageLabelMemory.clear();
+    retryVerdicts.clear();
     seen.clear();
     inFlight.clear();
     revoked.clear();
@@ -129,7 +153,13 @@ export function createApp(
     recent.clear();
     limiter.clear();
   });
-  const status = { sent: 0, errors: 0, botsFiltered: 0, lastSuccess: null as string | null };
+  const status = {
+    sent: 0,
+    errors: 0,
+    botsFiltered: 0,
+    botsLabelled: 0,
+    lastSuccess: null as string | null,
+  };
   app.get("/health", async (req, reply) => {
     reply.header("Cache-Control", "no-store");
     if (healthDigest) reply.header("Vary", "X-Health-Token");
@@ -164,7 +194,7 @@ export function createApp(
       .type("text/javascript")
       .header("Cache-Control", "public, max-age=300")
       .send(
-        `${echoEnabled ? 'document.currentScript.dataset.verdictEcho="on";' : ""}document.currentScript.dataset.events=${JSON.stringify([...allowed].join(","))};document.currentScript.dataset.pings=${JSON.stringify(pings ? "on" : "off")};\n${source}`,
+        `${echoEnabled ? 'document.currentScript.dataset.verdictEcho="on";' : ""}document.currentScript.dataset.keepQueryParams=${JSON.stringify((config.keepQueryParams ?? []).join(","))};document.currentScript.dataset.events=${JSON.stringify([...allowed].join(","))};document.currentScript.dataset.pings=${JSON.stringify(pings ? "on" : "off")};\n${source}`,
       );
   });
   app.addHook("onRequest", async (req, reply) => {
@@ -234,11 +264,16 @@ export function createApp(
     },
     async (req, reply) => {
       if (!pings) return reply.code(204).send();
-      if (isObviousBot(req.headers["user-agent"])) {
+      if (config.filterObviousBots && isObviousBot(req.headers["user-agent"])) {
         status.botsFiltered++;
         return reply.code(204).send();
       }
       const ping = { ...req.body, consent: consentSnapshot(req.body.consent) };
+      try {
+        ping.params = jsonSnapshot(ping.params);
+      } catch {
+        return reply.code(400).send({ error: "invalid_event_data" });
+      }
       if (ping.consent.analytics_storage !== "denied")
         return reply.code(400).send({ error: "ping_requires_denied_consent" });
       if (
@@ -256,7 +291,7 @@ export function createApp(
       if (!release) return reply.code(429).send({ error: "rate_limit" });
       try {
         // No cookie or retry. Page identity is transient; IP supplies visitor geography.
-        const verification = label?.(req);
+        const verification = classify(req);
         const result = await sendDeniedPing(
           config,
           ping,
@@ -343,7 +378,7 @@ export function createApp(
     },
     async (req, reply) => {
       // Answer as delivered so a bot has no reason to retry; it receives no cookie either.
-      if (isObviousBot(req.headers["user-agent"])) {
+      if (config.filterObviousBots && isObviousBot(req.headers["user-agent"])) {
         status.botsFiltered++;
         outcomes.set(req, "bot");
         return reply.code(204).send();
@@ -377,7 +412,25 @@ export function createApp(
           outcomes.set(req, "duplicate");
           return reply.code(204).send();
         }
-        const verification = label?.(req);
+        // Reuse proof only for this exact event, payload, peer and signed headers.
+        const fingerprint = createHash("sha256")
+          .update(
+            JSON.stringify([
+              event,
+              req.ip,
+              req.method,
+              req.url,
+              Object.entries(req.headers).sort(([a], [b]) => a.localeCompare(b)),
+            ]),
+          )
+          .digest("hex");
+        const cached = retryVerdicts.get(fingerprint);
+        const verification = cached && cached.expires > Date.now() ? cached.verdict : classify(req);
+        if (!cached || cached.expires <= Date.now())
+          remember(retryVerdicts, fingerprint, {
+            expires: Date.now() + 60_000,
+            verdict: verification,
+          });
         const browserKey = "browser:" + event.client_id;
         // Not async: a twin must not slip in between this check and the inFlight entry below.
         const duplicate = () => {
@@ -485,7 +538,10 @@ export function createApp(
         // Decided here, last, so a withdrawal during delivery always wins.
         if ((opened || (result === "sent" && !identity.newSession)) && !withdrawn())
           reply.header("Set-Cookie", identity.cookie);
-        if (result !== "retry") remember(seen, event.event_id, Date.now() + 60_000);
+        if (result !== "retry") {
+          retryVerdicts.delete(fingerprint);
+          remember(seen, event.event_id, Date.now() + 60_000);
+        }
         if (result === "sent") {
           status.sent++;
           status.lastSuccess = new Date().toISOString();

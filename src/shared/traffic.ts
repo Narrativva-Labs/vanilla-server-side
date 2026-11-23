@@ -29,6 +29,13 @@ export function trafficUpdateFields(params: unknown) {
     (fields.traffic_class !== "declared_agent" || !fields.traffic_agent)
   )
     return;
+  if (
+    fields.traffic_class === "declared_agent" &&
+    ["dom_marker", "dom_host", "server_signature", "server_ip", "server_intermediary"].includes(
+      input.traffic_agent_claim as string,
+    )
+  )
+    fields.traffic_agent_claim = input.traffic_agent_claim as string;
   for (const key of ["page_location", "page_title", "page_referrer"])
     if (typeof input[key] === "string") fields[key] = input[key];
   return fields;

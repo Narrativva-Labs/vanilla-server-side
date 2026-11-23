@@ -165,7 +165,7 @@ for (const route of ["/e", "/d"]) {
     );
   });
 }
-it("counts sticky labels once per labelled event, ignores duplicates, rejected and filtered hits", async () => {
+it("counts sticky labels and obvious bots, ignores duplicates and rejected hits", async () => {
   const { app, set } = setup();
   set(verdict("signature_invalid"));
   const first = hit("/e", "human");
@@ -182,9 +182,10 @@ it("counts sticky labels once per labelled event, ignores duplicates, rejected a
   await app.inject({ ...hit("/e"), headers: { origin: "https://rejected.example" } });
   await app.inject({ ...hit("/e"), headers: { ...first.headers, "user-agent": "HeadlessChrome" } });
   const counts = (await app.inject("/health")).json().agentVerification.counters.events;
-  expect(counts.total).toBe(2);
+  expect(counts.total).toBe(3);
   expect(counts.byType.bot_spoofed).toBe(2);
-  expect(counts.byVerification).toMatchObject({ signature_invalid: 1, none: 1 });
+  expect(counts.byType.bot_automation).toBe(1);
+  expect(counts.byVerification).toMatchObject({ signature_invalid: 1, none: 2 });
 });
 it("counts evidence even with verification disabled and starts new counters for a new app", async () => {
   const app = createApp(

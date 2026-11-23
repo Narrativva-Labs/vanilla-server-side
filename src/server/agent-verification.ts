@@ -7,7 +7,7 @@ import {
 } from "visitor-verdict-server";
 import type { FastifyRequest } from "fastify";
 
-export type AgentFields = AgentVerdict & { proofExpiresAt?: number };
+export type AgentFields = AgentVerdict & { obviousBot?: boolean; proofExpiresAt?: number };
 // Test dependencies are supplied in code, never from the environment or a request.
 export type AgentVerifierOptions = Pick<VerifierOptions, "fetcher" | "now">;
 // Key directories and IP lists load in the background; a slow operator endpoint (about 0.9 s

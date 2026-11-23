@@ -449,7 +449,7 @@ it("passes raw headers, trusted client IP and the unchanged target to verificati
   for (const [name, value] of Object.entries(consistency)) expect(values.get(name)).toBe(value);
 });
 
-it("labels an invalid signature and still sends the hit; obvious bots stay filtered", async () => {
+it("labels invalid signatures and obvious bots while forwarding both", async () => {
   const { post, hit, google } = setup();
   const headers = { ...signed[0]!.headers, signature: "sig1=:AAAA:" };
   for (const path of ["/e", "/d"]) {
@@ -457,10 +457,10 @@ it("labels an invalid signature and still sends the hit; obvious bots stay filte
     expect(detail(hit(), 1)).toBe("signature_invalid");
     expect((await post(path, { "user-agent": "Googlebot/2.1" })).statusCode).toBe(204);
   }
-  expect(google).toHaveBeenCalledTimes(2);
+  expect(google).toHaveBeenCalledTimes(4);
 });
 
-it("removes vv_detail before vv_type to fit the 16 KiB body", () => {
+it("rejects an oversized non-item payload without stripping evidence", () => {
   const url = new URL("https://www.google-analytics.com/g/collect?v=2&en=page_view");
   url.searchParams.set("ep.payload", "x".repeat(16320));
   url.searchParams.set("ep.vv_type", "agent_verified");
@@ -469,12 +469,7 @@ it("removes vv_detail before vv_type to fit the 16 KiB body", () => {
     "openai|signature_valid|user_directed|signature_agent|human|final",
   );
   const request = collectRequest(url);
-  expect(request).toBeDefined();
-  const body = new URLSearchParams(request!.body);
-  expect(body.get("ep.payload")).toHaveLength(16320);
-  expect(Buffer.byteLength(request!.body!)).toBeLessThanOrEqual(16384);
-  expect(body.get("ep.vv_type")).toBe("agent_verified");
-  expect(body.has("ep.vv_detail")).toBe(false);
+  expect(request).toBeUndefined();
 });
 
 it("anchors IP memory expiry to proof time before delivery waits", async () => {
@@ -837,3 +832,69 @@ for (const enabled of [true, false])
       enabled,
     );
   });
+
+it("retains signed verdict on identical retry after Google 500 but rejects a different event replay", async () => {
+  const warm = spyOnWarm();
+  const request = signed[0]!;
+  const clock = Date.parse(request.ts) / 1000;
+  const { app, google, hit } = setup(true, {
+    now: () => clock,
+    fetcher: async (url: string) =>
+      url === chatgpt ? new Response(directory) : new Response(null, { status: 404 }),
+  });
+  await warm.mock.results[0]!.value;
+  google.mockResolvedValueOnce(new Response(null, { status: 500 }));
+  const now = Date.now();
+  const payload = {
+    name: "purchase",
+    params: {},
+    client_id: "123.456",
+    session_id: 123,
+    event_id: crypto.randomUUID(),
+    timestamp_ms: now,
+    session_started_ms: now,
+    session_expires_ms: now + 1800000,
+    consent: { analytics_storage: "granted" },
+  };
+  const post = (body: typeof payload) =>
+    app.inject({
+      method: "POST",
+      url: "/e",
+      headers: {
+        ...request.headers,
+        origin: config.siteOrigin,
+        "content-type": "application/json",
+      },
+      payload: body,
+    });
+  expect((await post(payload)).statusCode).toBe(503);
+  expect(hit().get("ep.vv_type")).toBe("agent_verified");
+  expect((await post(payload)).statusCode).toBe(204);
+  expect(hit().get("ep.vv_type")).toBe("agent_verified");
+  expect((await post({ ...payload, event_id: crypto.randomUUID() })).statusCode).toBe(204);
+  expect(hit().get("ep.vv_type")).toBe("bot_spoofed");
+});
+
+it("obvious UA evidence never overrides verified identity or an invalid signature", async () => {
+  for (const verification of ["signature_valid", "signature_invalid"] as const) {
+    vi.mocked(verdict.createVerifier).mockReturnValue(
+      fakeVerifier(async () => ({
+        verification,
+        reason: "test",
+        agent_purpose: "user_directed",
+        claimed: { uaTokens: [], signatureAgents: [] },
+        signatures: [],
+        ...(verification === "signature_valid"
+          ? { verified: { operator: "openai", method: "signature" as const } }
+          : {}),
+      })),
+    );
+    const { post, hit } = setup();
+    for (const path of ["/e", "/d"]) {
+      expect((await post(path, { "user-agent": "HeadlessChrome" })).statusCode).toBe(204);
+      expect(hit().get("ep.vv_type")).toBe(
+        verification === "signature_valid" ? "agent_verified" : "bot_spoofed",
+      );
+    }
+  }
+});

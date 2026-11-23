@@ -277,7 +277,7 @@ it("a ping ignores a visitor cookie and refuses any other consent state", async 
       expect(refused.statusCode).toBe(400);
     }
     expect((await post("/d", ping(), "", "Googlebot/2.1")).statusCode).toBe(204);
-    expect(google).not.toHaveBeenCalled();
+    expect(google).toHaveBeenCalledTimes(1);
   } finally {
     await app.close();
   }
@@ -940,7 +940,7 @@ it("LOG_EVENTS writes the event name, answer and outcome, nothing about the visi
     expect(lines).toEqual([
       "Event page_view 204 sent",
       "Event page_view 204 duplicate",
-      "Event page_view 204 bot",
+      "Event page_view 204 sent",
       "Event ? 400 -",
     ]);
     expect(lines.join(" ")).not.toMatch(/123\.456|127\.0\.0\.1|shop\.example|Landing/);

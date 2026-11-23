@@ -524,7 +524,7 @@ it("a class published while the tracker subscribes is found by the check after s
   expect(p.hits()[0]!.params).toMatchObject({ traffic_class: "automated" });
 });
 
-it("pagehide sends the first held full event at once; the next follow the existing queue", async () => {
+it("pagehide hands all held events to transport at once", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   const answers: ((response: Response) => void)[] = [];
   const p = gated("1000", [["consent", "default", granted]]);
@@ -538,10 +538,9 @@ it("pagehide sends the first held full event at once; the next follow the existi
   await settle();
   vi.setSystemTime(Date.now() + 300);
   leave(p, "pagehide");
-  // The page view, which may open the session, leaves synchronously, then the exit hit, which
-  // never waits for the queue; the held event follows the page view's response, as today.
-  expect(p.names()).toEqual(["/e page_view", "/e page_engagement"]);
+  // All pending events enter transport before the document can disappear.
+  expect(p.names()).toEqual(["/e page_view", "/e generate_lead", "/e page_engagement"]);
   answers[0]!(new Response(null, { status: 204 }));
   await settle();
-  expect(p.names()).toEqual(["/e page_view", "/e page_engagement", "/e generate_lead"]);
+  expect(p.names()).toEqual(["/e page_view", "/e generate_lead", "/e page_engagement"]);
 });

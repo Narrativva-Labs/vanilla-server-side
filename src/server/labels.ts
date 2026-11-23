@@ -161,6 +161,11 @@ export function withLabels(
     browserPhase: browser.traffic_phase,
   };
   let labels = visitorLabels({ ...input, browserAgent: browser.traffic_agent });
+  if (verdict?.obviousBot && ["pending", "human", "bot_suspicious"].includes(labels.vv_type)) {
+    const detail = labels.vv_detail.split("|");
+    detail[3] = "ua_token";
+    labels = { vv_type: "bot_automation", vv_detail: detail.join("|") };
+  }
   const own = labels;
   const proofExpires = verdict?.proofExpiresAt ?? verdict?.verified?.expiresAt;
   const isReplay =

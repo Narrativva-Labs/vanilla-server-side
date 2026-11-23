@@ -61,7 +61,7 @@ for (const release of ["publication", "deadline", "pagehide"] as const) {
     // At pagehide the exit hit leaves beside the held page view, without waiting for the queue.
     expect(hits.map((hit) => `${hit.path} ${hit.name}`)).toEqual(
       release === "pagehide"
-        ? ["/e page_view", "/e page_engagement", "/e generate_lead"]
+        ? ["/e page_view", "/e generate_lead", "/e page_engagement"]
         : ["/e page_view", "/e generate_lead"],
     );
     const token = hits[0]!.bootstrap_token;
@@ -140,6 +140,7 @@ it("the page view and exit hit released together at pagehide join one client and
     p.host.dispatchEvent(new Event("pagehide"));
     expect(p.sent().map((hit) => `${hit.path} ${hit.name}`)).toEqual([
       "/e page_view",
+      "/e generate_lead",
       "/e page_engagement",
     ]);
     const token = p.sent()[0]!.bootstrap_token;
@@ -156,8 +157,8 @@ it("the page view and exit hit released together at pagehide join one client and
     await Promise.all(responses);
     expect(p.sent().map((hit) => hit.name)).toEqual([
       "page_view",
-      "page_engagement",
       "generate_lead",
+      "page_engagement",
     ]);
     expect(google.map((hit) => hit.get("en"))).toEqual(
       expect.arrayContaining(["page_view", "page_engagement", "generate_lead"]),

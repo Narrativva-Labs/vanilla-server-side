@@ -28,6 +28,15 @@ export function configFromEnv(env = process.env) {
   const verdictEcho = env.VERDICT_ECHO || agentVerification;
   if (verdictEcho !== "on" && verdictEcho !== "off")
     throw new Error("VERDICT_ECHO must be on or off");
+  const filterObviousBots = env.FILTER_OBVIOUS_BOTS || "off";
+  if (!["on", "off"].includes(filterObviousBots))
+    throw new Error("FILTER_OBVIOUS_BOTS must be on or off");
+  const keepQueryParams = (env.KEEP_QUERY_PARAMS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (keepQueryParams.some((s) => !/^[a-zA-Z0-9_-]+$/.test(s)))
+    throw new Error("Invalid KEEP_QUERY_PARAMS");
   const trackerHost = env.TRACKER_DOMAIN;
   if (
     agentVerification === "on" &&
@@ -57,6 +66,8 @@ export function configFromEnv(env = process.env) {
     .map((s) => s.trim())
     .filter(Boolean);
   return {
+    filterObviousBots: filterObviousBots === "on",
+    keepQueryParams,
     region: region as "eu" | undefined,
     deniedPings: deniedPings === "on",
     deniedPingIp: deniedPingIp as "full" | "truncated" | "off",

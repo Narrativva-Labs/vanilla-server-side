@@ -5,7 +5,7 @@ import { page } from "./browser-fixture.js";
 // Without data-vv-wait-ms, or with any value that clamps to 0, the tracker must make exactly the
 // requests and timers it made before the readiness gate existed. The golden file was recorded
 // from the tracker at 15d617d plus the bootstrap secret, before the gate; rerecord only for an
-// intended change, with RECORD_VV_GOLDEN=1.
+// intended change, with RECORD_VV_GOLDEN=1. Denied params now follow the fixed privacy allowlist.
 const golden = new URL("./fixtures/vv-wait-default-golden.json", import.meta.url);
 afterEach(() => vi.useRealTimers());
 

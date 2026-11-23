@@ -36,7 +36,7 @@ function largeParams(length: number) {
 }
 afterEach(() => vi.restoreAllMocks());
 for (const kind of ["events", "pings"] as const) {
-  it(`does not count or retain sticky evidence for oversized ${kind}`, async () => {
+  it(`handles oversized custom data before counting evidence for ${kind}`, async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const memory = createLabelMemory();
     const { counters, observe } = createAgentCounters();
@@ -65,32 +65,29 @@ for (const kind of ["events", "pings"] as const) {
             memory,
             observe(kind, []),
           );
-    expect(await send(e)).toBe("dropped");
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(memory.size).toBe(0);
-    expect(counters[kind].total).toBe(0);
+    expect(await send(e)).toBe(kind === "events" ? "dropped" : "sent");
+    expect(fetcher).toHaveBeenCalledTimes(kind === "events" ? 0 : 1);
+    expect(memory.size).toBe(kind === "events" ? 0 : 1);
+    expect(counters[kind].total).toBe(kind === "events" ? 0 : 1);
     await send({ ...e, params: { traffic_class: "human", traffic_phase: "final" } });
-    expect(counters[kind].byType.human).toBe(1);
+    expect(counters[kind].byType[kind === "events" ? "human" : "bot_automation"]).toBe(
+      kind === "events" ? 1 : 2,
+    );
   });
-  it(`counts only the labels still present after the 16 KiB trim for ${kind}`, async () => {
+  it(`keeps both labels on deliverable boundary hits for ${kind}`, async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    // Find the boundary from the encoded wire size rather than depending on detail text length.
-    let stripped: TrackingEvent | undefined;
-    let detailOnly: TrackingEvent | undefined;
+    let fitting: TrackingEvent | undefined;
     for (let n = 1300; n < 1400; n++) {
       const e = event(largeParams(n));
       const request = collectRequest(buildEventCollectUrl(destination, e, consent)!);
       if (!request) continue;
       const fields = new URLSearchParams(request.body ?? request.url.search);
-      if (!fields.has("ep.vv_type")) stripped ??= e;
-      else if (!fields.has("ep.vv_detail")) detailOnly ??= e;
+      expect(fields.has("ep.vv_type")).toBe(true);
+      expect(fields.has("ep.vv_detail")).toBe(true);
+      fitting = e;
     }
-    expect(stripped).toBeDefined();
-    expect(detailOnly).toBeDefined();
-    for (const [e, expected] of [
-      [stripped!, 0],
-      [detailOnly!, 1],
-    ] as const) {
+    expect(fitting).toBeDefined();
+    for (const [e, expected] of [[fitting!, 1]] as const) {
       const memory = createLabelMemory();
       const { counters, observe } = createAgentCounters();
       const fetcher = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
@@ -121,7 +118,7 @@ for (const kind of ["events", "pings"] as const) {
       const [url, init] = fetcher.mock.calls[0]!;
       const fields = new URLSearchParams((init?.body as string) ?? new URL(String(url)).search);
       expect(fields.has("ep.vv_type")).toBe(Boolean(expected));
-      expect(fields.has("ep.vv_detail")).toBe(false);
+      expect(fields.has("ep.vv_detail")).toBe(true);
       expect(counters[kind].total).toBe(expected);
       expect(counters[kind].byType.bot_automation).toBe(expected);
       expect(memory.size).toBe(expected);

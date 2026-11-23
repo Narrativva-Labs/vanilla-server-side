@@ -84,7 +84,7 @@ it("self-declared automated clients match, ordinary browsers and Cubot phones do
 
 it("an obvious bot is answered as delivered, counted, and reaches neither Google nor the cookie", async () => {
   const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-  const app = createApp(site, google);
+  const app = createApp({ ...site, filterObviousBots: true }, google);
   const send = (agent: string) =>
     app.inject({
       method: "POST",

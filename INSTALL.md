@@ -149,7 +149,7 @@ After denial the tracker requests deletion of its cookie and clears pending anal
 
 ## 7. Verify
 
-Open https://kx7qpa.example.com/health. It should show ok, Google delivery counters and `botsFiltered`. With no consent signal at all, counters should not increase and no vanilla_session cookie should be set. With consent denied or a readable undecided banner, the automatic page view and each allowed event raise `sent` via cookieless pings, and no vanilla_session cookie is set. A readable banner sends immediately; a Google default alone waits its `wait_for_update` (0 when omitted, at most 2 seconds). Accept analytics, navigate pages and send a test ecommerce event if available. Inspect the HttpOnly cookie in browser developer tools under Storage/Application; JavaScript cannot read it. Withdraw consent and verify deletion.
+Open https://kx7qpa.example.com/health. It should show ok, Google delivery counters and `botsLabelled` (plus legacy `botsFiltered`). With no consent signal at all, counters should not increase and no vanilla_session cookie should be set. With consent denied or a readable undecided banner, the automatic page view and each allowed event raise `sent` via cookieless pings, and no vanilla_session cookie is set. A readable banner sends immediately; a Google default alone waits its `wait_for_update` (0 when omitted, at most 2 seconds). Accept analytics, navigate pages and send a test ecommerce event if available. Inspect the HttpOnly cookie in browser developer tools under Storage/Application; JavaScript cannot read it. Withdraw consent and verify deletion.
 
 In the **second property**, open Reports -> Realtime. Then use DebugView with a temporary event carrying debug_mode:
 
@@ -157,7 +157,7 @@ In the **second property**, open Reports -> Realtime. Then use DebugView with a 
 dataLayer.push({ event: "generate_lead", debug_mode: true });
 ```
 
-Send that only after the required consent, remove debug flags after testing, and check development/internal traffic filters if events are missing. Use an ordinary browser for this test: headless browsers and tools such as Lighthouse identify themselves in their User-Agent and are filtered as bots. Ordinary reports take longer than Realtime and reports can differ from the regular tag. A successful /health delivery counter proves only Google's HTTP acceptance.
+Send that only after the required consent, remove debug flags after testing, and check development/internal traffic filters if events are missing. Use an ordinary browser for this test: headless browsers and tools such as Lighthouse identify themselves in their User-Agent and are labelled as automation by default. Ordinary reports take longer than Realtime and reports can differ from the regular tag. A successful /health delivery counter proves only Google's HTTP acceptance.
 
 ## Optional: import conversions into Google Ads
 
@@ -190,8 +190,8 @@ Use this as a factual base for your privacy text, not as legal advice.
 - **With analytics consent:** your server stores the `vanilla_session` cookie and receives the events. Google receives them with the visitor's IP address and `User-Agent`.
 - **Verified browser labels (when verdict echo is enabled):** only with analytics consent, eligible full-event responses store a bounded verified operator/type/purpose/method and proof-limited TTL plus timestamp in `sessionStorage` (`vanilla.verdict.v1`, at most 30 minutes). Withdrawal deletes this key. Denied pings never write it. Fresh stored labels can be restored immediately on the next page; these are traffic labels, not authentication credentials.
 - **With ad consent too:** Google also receives `gclid`, `gbraid` or `wbraid` from the landing page.
-- **Without consent:** with `DENIED_PINGS=on` (default), the automatic page view and each allowed event send a cookieless ping. A readable banner, including an undecided one, sends immediately; a Google denied default alone waits only `wait_for_update` (0 when omitted, capped at 2 seconds). With no signal nothing is sent. Google receives the full visitor IP (`_uip`, unless DENIED_PING_IP changes it), browser `User-Agent` (unless DENIED_PING_USER_AGENT=off), sanitized event parameters including items, value and currency, cleaned page URL/path, referrer/UTM values, title, language and screen size. No persistent identifiers are used; client/page IDs have random components and last only for the page. session_id is the Unix second of the first ping (not random) and can collide across visitors. Group pings by batch_page_id, never ga_session_id. No cookie, click ID or `user_data` is sent. Pings never retry; `page_engagement` is excluded. Disclose IP and event parameters in your privacy notice. Tests: `tests/denied-events.test.ts`.
-- **Compared with the Google tag:** in Advanced Consent Mode the Google tag's own denied pings carry the same data; Vanilla adds vv_type/vv_detail (traffic type and verification evidence, no identifiers) and an optional dedicated traffic_class update, removes click IDs and sends no exit engagement hit. With Basic Consent Mode (Google tag blocked until consent) set `DENIED_PINGS=off`, otherwise Vanilla sends more than the Google tag. See [Compared with the Google tag](README.md#compared-with-the-google-tag).
+- **Without consent:** with `DENIED_PINGS=on` (default), the automatic page view and each allowed event send a cookieless ping. A readable banner, including an undecided one, sends immediately; a Google denied default alone waits only `wait_for_update` (0 when omitted, capped at 2 seconds). With no signal nothing is sent. Google receives the full visitor IP (`_uip`, unless DENIED_PING_IP changes it), browser `User-Agent` (unless DENIED_PING_USER_AGENT=off), allowlisted value, currency and Visitor Verdict fields, cleaned page URL/path, referrer/UTM values, title, language and screen size. Items, transaction IDs and custom event parameters are omitted. No persistent identifiers are used; client/page IDs have random components and last only for the page. session_id is the Unix second of the first ping (not random) and can collide across visitors. Group pings by batch_page_id, never ga_session_id. No cookie, click ID or `user_data` is sent. Pings never retry; `page_engagement` is excluded. Disclose IP and event parameters in your privacy notice. Tests: `tests/denied-events.test.ts`.
+- **Compared with the Google tag:** in Advanced Consent Mode the Google tag also sends denied pings; Vanilla restricts custom parameters to a fixed allowlist, adds vv_type/vv_detail (traffic type and verification evidence, no identifiers) and an optional dedicated traffic_class update, removes click IDs and sends no exit engagement hit. With Basic Consent Mode (Google tag blocked until consent) set `DENIED_PINGS=off`, otherwise Vanilla sends more than the Google tag. See [Compared with the Google tag](README.md#compared-with-the-google-tag).
 - **Labels on pings and full events:** the server derives vv_type/vv_detail, even with verification off and no browser detector, subject to outgoing parameter/body budgets. Browser traffic_class/traffic_phase/traffic_agent are optional inputs to Vanilla; those and the four old agent_* fields are stripped from ordinary Google events. The dedicated traffic_class update forwards the three validated browser fields beside the vv labels. The optional browser detector uses minimal sessionStorage. Disclose the combined labels as traffic and operator evidence, distinct from a visitor identity.
 - **IP address on your server:** the collector keeps it in memory for the rate limit, removes it within two minutes and does not log it. The default Caddy setup has no access log. With your own proxy, check its logs and how long it keeps them.
 - **What cleaning does not do:** it removes credentials, fragments and query parameters other than `utm_*`. It does not touch URL paths, UTM values or page titles, so check that yours hold no personal data, for example an email in a path. Avoid calling the ping anonymous in your privacy text unless you checked this.
@@ -258,13 +258,14 @@ With `AGENT_VERIFICATION=on`, /e and /d label verified operator evidence from
 Visitor Verdict. The default is off. Every eligible event gets vv_type/vv_detail,
 even with verification off and no browser detector: pending / none|-|-|-|-|-.
 They count toward the 25-parameter limit after automatic/ecommerce fields and before
-custom site parameters; budget limits can remove them before delivery. This labels traffic; it does not itself
+custom site parameters; the 16 KiB body trimmer preserves both labels while trimming items. This labels traffic; it does not itself
 withhold anything or change consent. **unverified ≠ human**.
 
-Only JavaScript-executing visitors that pass the obvious-bot filter reach verification.
-UAs matching `bot`/`crawl`/`spider` or `HeadlessChrome` are dropped first, including the
-full ChatGPT-User UA containing `openai.com/bot`. Most crawler registry entries therefore
-never reach GA4 in the default setup. Registry entries are capabilities, not observed coverage.
+Only JavaScript-executing visitors normally reach verification. Obvious bot UAs,
+including HeadlessChrome and ChatGPT-User, are labelled and forwarded by default.
+`FILTER_OBVIOUS_BOTS=on` restores legacy dropping; `botsFiltered` then counts the
+filtered hits, while `botsLabelled` counts obvious UAs admitted to labelling.
+Registry entries are capabilities, not observed coverage.
 Live signature capture has been confirmed only for the ChatGPT agent (OpenAI);
 other signing configurations have no captured live request here. See the
 [measured sample and limits](README.md#ai-agent-verification-optional).
@@ -660,3 +661,13 @@ HTTPS domain control, not authority-only directory proofs, protects directory bo
 No actual signed visitor captures exist for the three added intermediaries.
 Segment `agent_verified` by the third `vv_detail` segment: `intermediary` identifies
 infrastructure (including QA/scrapers), and must be excluded from direct-agent totals.
+
+Denied pings use a fixed parameter allowlist in the browser and collector: event name,
+`page_location`, `page_referrer`, `value`, `currency`, and Visitor Verdict fields
+(`traffic_class`, `traffic_phase`, `traffic_agent`, `traffic_agent_claim`, server-derived
+`vv_type`/`vv_detail`). All other custom fields, items, transaction IDs and email fields
+are omitted. Page title, IP and User-Agent remain context with unchanged defaults:
+`DENIED_PING_IP=full`, `DENIED_PING_USER_AGENT=on`. URL cleaning keeps only `utm_*`
+by default. `KEEP_QUERY_PARAMS=vvp` explicitly retains an additional test marker;
+the default list is empty. `FILTER_OBVIOUS_BOTS=off` labels and forwards obvious
+bot UAs; opt-in `on` restores legacy filtering.

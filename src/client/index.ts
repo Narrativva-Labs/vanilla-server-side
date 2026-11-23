@@ -91,6 +91,7 @@ if (script && !win.__vanillaGA) {
   const tracker = createTracker(
     new URL("./e", script.src).href,
     {
+      keepQueryParams: (script.dataset.keepQueryParams ?? "").split(",").filter(Boolean),
       title: () => document.title,
       device: () => ({
         browser: deviceBrowser(window.navigator?.userAgent ?? ""),

@@ -23,7 +23,7 @@ it("keeps labels on a long URL whose body is far below 16 KiB", () => {
   for (const k of Object.keys(labels)) expect(body.has(k)).toBe(true);
 });
 
-it("removes optional labels before trimming an oversized item list", () => {
+it("keeps labels while trimming an oversized item list", () => {
   const url = new URL("https://www.google-analytics.com/g/collect?v=2&en=purchase");
   url.searchParams.set("ep.transaction_id", "T1");
   url.searchParams.set("epn.value", "1234.5");
@@ -33,15 +33,15 @@ it("removes optional labels before trimming an oversized item list", () => {
   const request = collectRequest(url, true)!;
   const body = new URLSearchParams(request.body);
   expect(body.get("ep.transaction_id")).toBe("T1");
-  for (const k of Object.keys(labels)) expect(body.has(k)).toBe(false);
+  for (const k of Object.keys(labels)) expect(body.has(k)).toBe(true);
   expect(request.body).toBeDefined();
   expect(Buffer.byteLength(request.body!)).toBeLessThanOrEqual(16_384);
   expect(body.get("epn.value")).toBe("1234.5");
   expect(new URL(request.url).searchParams.get("cu")).toBe("CZK");
   const items = [...body].filter(([key]) => /^pr\d+$/.test(key));
-  expect(items).toHaveLength(120);
+  expect(items).toHaveLength(119);
   expect(items).toEqual(
-    Array.from({ length: 120 }, (_, i) => [`pr${i + 1}`, `id${i + 1}~nm${"n".repeat(120)}`]),
+    Array.from({ length: 119 }, (_, i) => [`pr${i + 1}`, `id${i + 1}~nm${"n".repeat(120)}`]),
   );
 });
 

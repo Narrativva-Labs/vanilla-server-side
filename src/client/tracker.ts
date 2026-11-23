@@ -1,13 +1,14 @@
+import { deniedParams } from "../shared/denied-params.js";
 import {
   consentSnapshot,
   normalizeConsent,
   canTrack,
   clickConsent,
-  cleanUrls,
+  cleanUrls as cleanUrlsWithParams,
   intersect,
   jsonSnapshot,
   redactAds,
-  sanitizeUrl,
+  sanitizeUrl as sanitizeUrlWithParams,
   type Consent,
 } from "../shared/consent.js";
 import {
@@ -22,6 +23,7 @@ import { clickIds } from "./click-ids.js";
 import { trafficUpdateFields } from "../shared/traffic.js";
 const PING_URL_BYTES = 1000;
 export interface Runtime {
+  keepQueryParams?: string[];
   title?(): string;
   device?(): TrackingEvent["device"];
   engagement?(): number;
@@ -49,6 +51,8 @@ export function createTracker(
   pings = true,
   holdMs = 0,
 ) {
+  const sanitizeUrl = (value: string) => sanitizeUrlWithParams(value, runtime.keepQueryParams);
+  const cleanUrls = (value: unknown) => cleanUrlsWithParams(value, "", runtime.keepQueryParams);
   let consent = consentSnapshot(null);
   const purchases = new Set<string>();
   let pageId = "";
@@ -87,6 +91,7 @@ export function createTracker(
   let generation = 0;
   const queue: { event: TrackingEvent; attempts: number; next: number }[] = [];
   const active = new Set<AbortController>();
+  const dispatching = new Set<TrackingEvent>();
   // Opt-in readiness wait, once per document: hits that may leave wait at most holdMs for the
   // browser class. One state for the deadline, the publication and leaving the page.
   let released = !(holdMs > 0);
@@ -232,8 +237,7 @@ export function createTracker(
       if (
         !fields ||
         phasePending(fields.traffic_phase) ||
-        (trafficSent.has(`e:${fields.traffic_phase}`) && canTrack(consent)) ||
-        (trafficSent.has(`d:${fields.traffic_phase}`) && !canTrack(consent))
+        trafficSent.has(String(fields.traffic_phase))
       )
         return;
       params = fields;
@@ -370,7 +374,7 @@ export function createTracker(
     const epoch = generation;
     const body = requestBody(event);
     if (body) {
-      if (event.name === "traffic_class") trafficSent.add(`e:${event.params.traffic_phase}`);
+      if (event.name === "traffic_class") trafficSent.add(String(event.params.traffic_phase));
       void runtime
         .fetch(endpoint, {
           method: "POST",
@@ -439,7 +443,7 @@ export function createTracker(
           : undefined;
       if (
         item.name === "traffic_class" &&
-        (redundant(item.params) || trafficSent.has(`d:${item.params.traffic_phase}`))
+        (redundant(item.params) || trafficSent.has(String(item.params.traffic_phase)))
       )
         continue;
       if (transaction && pingPurchases.has(transaction)) continue;
@@ -465,23 +469,12 @@ export function createTracker(
                 }),
               ),
             ) as Record<string, unknown>);
-      // Never send enhanced-conversion data, including scalar values or nested item fields.
-      function stripUserData(value: unknown): unknown {
-        if (Array.isArray(value)) return value.map(stripUserData);
-        if (value && typeof value === "object")
-          return Object.fromEntries(
-            Object.entries(value)
-              .filter(([key]) => key.toLowerCase() !== "user_data")
-              .map(([key, entry]) => [key, stripUserData(entry)]),
-          );
-        return value;
-      }
       const body = JSON.stringify({
         ...pingIdentity,
         hit_index: ++pingIndex,
         name: item.name,
         consent: pingConsent,
-        params: stripUserData(params),
+        params: deniedParams(params),
         language: device?.language,
         screen_resolution: device?.screen_resolution,
       });
@@ -490,7 +483,7 @@ export function createTracker(
         ordinaryStarted = true;
         ordinaryClass = params.traffic_class as string | undefined;
       }
-      if (item.name === "traffic_class") trafficSent.add(`d:${item.params.traffic_phase}`);
+      if (item.name === "traffic_class") trafficSent.add(String(item.params.traffic_phase));
       void runtime
         .fetch(new URL("./d", endpoint).href, {
           method: "POST",
@@ -550,7 +543,7 @@ export function createTracker(
         const now = runtime.now();
         if (
           !timely(item.event, now) ||
-          now - item.event.timestamp_ms > 30_000 ||
+          (item.event.name !== "traffic_class" && now - item.event.timestamp_ms > 30_000) ||
           item.attempts >= 3
         ) {
           queue.splice(queue.indexOf(item), 1);
@@ -571,7 +564,7 @@ export function createTracker(
         }
         if (item.event.name === "traffic_class") {
           queue.splice(queue.indexOf(item), 1);
-          const key = `e:${item.event.params.traffic_phase}`;
+          const key = String(item.event.params.traffic_phase);
           if (!trafficSent.has(key) && !redundant(item.event.params)) {
             sendImmediate({ ...item.event, consent: effective });
           }
@@ -586,6 +579,7 @@ export function createTracker(
         active.add(controller);
         const epoch = generation;
         let retry = false;
+        dispatching.add(item.event);
         try {
           if (item.event.name === "page_view") pageSent = true;
           const response = await runtime.fetch(endpoint, {
@@ -609,6 +603,7 @@ export function createTracker(
           retry = !controller.signal.aborted;
         } finally {
           active.delete(controller);
+          dispatching.delete(item.event);
         }
         if (epoch !== generation || !queue.includes(item)) continue;
         if (retry) {
@@ -642,7 +637,21 @@ export function createTracker(
     exit(elapsed = runtime.engagement?.() ?? 0, page = runtime.href()) {
       // Leaving: held hits go first, also denied pings, which have no exit hit of their own.
       release();
-      if (!deliveryReady || !canTrack(consent) || runtime.now() < waitUntil || elapsed <= 0) return;
+      if (!deliveryReady || !canTrack(consent) || runtime.now() < waitUntil) return;
+      // Start keepalive requests synchronously: the document may vanish before any await resumes.
+      for (const item of [...queue]) {
+        if (dispatching.has(item.event)) continue;
+        queue.splice(queue.indexOf(item), 1);
+        const effective = intersect(item.event.consent, consent);
+        if (!canTrack(effective) || !timely(item.event, runtime.now())) continue;
+        if (
+          item.event.name === "traffic_class" &&
+          (trafficSent.has(String(item.event.params.traffic_phase)) || redundant(item.event.params))
+        )
+          continue;
+        sendImmediate({ ...item.event, consent: effective });
+      }
+      if (elapsed <= 0) return;
       // Fixed automatic fields only: custom ecommerce data cannot inflate the exit request.
       enqueue(
         "page_engagement",

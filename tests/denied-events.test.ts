@@ -160,8 +160,8 @@ it("collector validates names, strips sensitive keys and uses ordinary ecommerce
     expect(q.get("gcs")).toBe("G110");
     expect(q.get("cu")).toBe("CZK");
     expect(q.get("epn.value")).toBe("100");
-    expect(q.get("ep.transaction_id")).toBe("tx");
-    expect(q.get("pr1")).toBe("idSKU1~pr100~qt1");
+    expect(q.get("ep.transaction_id")).toBeNull();
+    expect(q.get("pr1")).toBeNull();
     expect(raw).not.toMatch(/private|secret|user_data|gclid|gbraid|wbraid/);
     for (const name of ["page_engagement", "session_start", "not_allowed", "ga_custom"])
       expect((await post({ ...base, name })).statusCode).toBe(400);

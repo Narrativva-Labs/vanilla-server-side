@@ -97,7 +97,7 @@
         "headers": {
           "Content-Type": "application/json"
         },
-        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":2,\"name\":\"generate_lead\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":0},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":2,\"name\":\"generate_lead\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
       },
       {
         "url": "https://kx7qpa.example.com/d",
@@ -108,7 +108,7 @@
         "headers": {
           "Content-Type": "application/json"
         },
-        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":3,\"name\":\"purchase\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"transaction_id\":\"T1\",\"value\":9,\"currency\":\"EUR\",\"engagement_time_msec\":600},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":3,\"name\":\"purchase\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":9,\"currency\":\"EUR\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
       }
     ],
     "timeouts": [500, 2000],
@@ -240,7 +240,7 @@
         "headers": {
           "Content-Type": "application/json"
         },
-        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":2,\"name\":\"generate_lead\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":0,\"traffic_class\":\"suspicious\",\"traffic_phase\":\"initial\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":2,\"name\":\"generate_lead\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"traffic_class\":\"suspicious\",\"traffic_phase\":\"initial\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
       },
       {
         "url": "https://kx7qpa.example.com/e",
@@ -292,7 +292,7 @@
         "headers": {
           "Content-Type": "application/json"
         },
-        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":2,\"name\":\"generate_lead\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"engagement_time_msec\":150,\"traffic_class\":\"automated\",\"traffic_phase\":\"initial\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
+        "body": "{\"client_id\":\"2654435761.1795262400\",\"session_id\":1795262400,\"page_id\":\"66447227370606\",\"hit_index\":2,\"name\":\"generate_lead\",\"consent\":{\"analytics_storage\":\"denied\",\"ad_storage\":\"denied\",\"ad_user_data\":\"denied\",\"ad_personalization\":\"denied\"},\"params\":{\"page_location\":\"https://shop.example/?utm_source=test\",\"page_referrer\":\"\",\"page_title\":\"Shop\",\"value\":1,\"traffic_class\":\"automated\",\"traffic_phase\":\"initial\"},\"language\":\"en-US\",\"screen_resolution\":\"1920x1080\"}"
       },
       {
         "url": "https://kx7qpa.example.com/e",

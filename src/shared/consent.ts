@@ -36,7 +36,7 @@ export function canTrack(consent: Consent) {
 export function clickConsent(consent: Consent) {
   return consent.ad_storage === "granted" && consent.ad_user_data === "granted";
 }
-export function sanitizeUrl(value: string) {
+export function sanitizeUrl(value: string, keepQueryParams: readonly string[] = []) {
   try {
     const input = value
       .trim()
@@ -50,7 +50,7 @@ export function sanitizeUrl(value: string) {
     url.username = "";
     url.password = "";
     for (const key of [...url.searchParams.keys()]) {
-      if (!key.startsWith("utm_")) url.searchParams.delete(key);
+      if (!key.startsWith("utm_") && !keepQueryParams.includes(key)) url.searchParams.delete(key);
     }
     if (input.startsWith("//")) return `//${url.host}${url.pathname}${url.search}`;
     if (!/^https?:/i.test(input)) return `${url.pathname}${url.search}`;
@@ -60,15 +60,21 @@ export function sanitizeUrl(value: string) {
   }
 }
 /** Clean URL fields and absolute URLs at any depth. Plain text in a URL field has nothing to remove. */
-export function cleanUrls(value: unknown, key = ""): unknown {
-  if (Array.isArray(value)) return value.map((entry) => cleanUrls(entry, key));
+export function cleanUrls(
+  value: unknown,
+  key = "",
+  keepQueryParams: readonly string[] = [],
+): unknown {
+  if (Array.isArray(value)) return value.map((entry) => cleanUrls(entry, key, keepQueryParams));
   if (value && typeof value === "object")
     return Object.fromEntries(
-      Object.entries(value).map(([name, entry]) => [name, cleanUrls(entry, name)]),
+      Object.entries(value).map(([name, entry]) => [name, cleanUrls(entry, name, keepQueryParams)]),
     );
   if (typeof value !== "string") return value;
   const isUrlField = /(?:^|_)(url|location|referrer)$/i.test(key) && /[/\\?#]/.test(value);
-  return isUrlField || /^https?:\/\//i.test(value.trim()) ? sanitizeUrl(value) : value;
+  return isUrlField || /^https?:\/\//i.test(value.trim())
+    ? sanitizeUrl(value, keepQueryParams)
+    : value;
 }
 /** Reject cycles, unsupported JSON values and excessive nesting before recursive filters. */
 export function jsonSnapshot<T>(value: T): T {

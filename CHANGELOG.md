@@ -8,6 +8,14 @@
 
 ## Unreleased
 
+- Label and forward obvious bot UAs by default; add opt-in legacy `FILTER_OBVIOUS_BOTS=on` and `botsLabelled` health counter.
+- Hand pending conversions and class updates to keepalive transport on exit, share the two document phases across consent transports, and preserve class updates released after 30 seconds awaiting consent.
+- Bind retry verdicts to an exact payload/request fingerprint after upstream failures; preserve rejection of signature replay for different events.
+- Validate denied-ping JSON depth and preserve vv_type/vv_detail while trimming oversized item lists.
+- Add optional `KEEP_QUERY_PARAMS` (empty by default) for retained URL markers such as vvp.
+- Restrict denied pings to event name, URL/referrer, value, currency and Visitor Verdict fields in browser and collector. Omit items, transaction IDs and arbitrary custom data. Keep page title, IP, User-Agent and default URL cleaning unchanged; DENIED_PING_IP remains full and DENIED_PING_USER_AGENT remains on.
+
+
 - Automatically send one Visitor Verdict `traffic_class` update per document on its first valid final/agent publication, including while hiding, with a best-effort keepalive fetch. Whitelist class/phase/operator, ignore initial/legacy phases and duplicates, preserve consent and cookieless ping rules, and keep normal event labels current. The collector admits the update independently of TRACKED_EVENTS, forwards those browser parameters plus vv labels to GA4 and refreshes session/page label memory. Upgrade the collector before the tracker; no retries or delivery guarantee. Document early-final and one-page suspicious carry in detector 1.2.0.
 
 - Preserve verified purpose through session carry-over. Intermediary proof has rank 4.75, below direct verified agents/crawlers (5), so later Browserbase signatures cannot erase an active direct identity. Replay still labels only its hit as spoofed with no operator. Expand operator-source, purpose, expiry and replay regressions.

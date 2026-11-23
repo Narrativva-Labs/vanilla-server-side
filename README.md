@@ -14,7 +14,7 @@ Browser -- regular Google tag / GTM -----------------> regular property (unchang
    `-- Vanilla script --> your server --------------> second property
         waits for consent   signed cookie              /g/collect for every event
                             consent check              session flags on the first hit
-                            bot filter
+                            bot labels
                             optional operator verification
 ```
 
@@ -61,7 +61,7 @@ After consent the identity is a random ID in a signed server cookie, the one fir
 
 With `DENIED_PINGS=on` (default), without analytics consent the automatic `page_view` and every allowed event (including ecommerce and purchases) send cookieless `/g/collect` hits with the effective denied state in `gcs` and `gcd`. A readable supported banner, including an undecided one, sends immediately. A Google `default` denied alone waits its `wait_for_update`, capped at 2 seconds; without that field it sends immediately. No consent signal sends nothing: Vanilla cannot infer a site's consent policy. A page already measured with consent sends no later denied pings.
 
-Pings share a random client/page identity within the page, with a rising hit index. Their session_id is the Unix second of the first ping, not random and not unique across visitors. Group denied pings by batch_page_id, never ga_session_id; check that batch_page_id is present in the export first. They carry sanitized event parameters, items, currency, value, cleaned page URL/path, referrer/UTM values, title, language, screen size, browser `User-Agent` (unless DENIED_PING_USER_AGENT=off) and visitor IP (as `_uip`, unless DENIED_PING_IP changes it). No persistent client identifiers are used. They never carry cookies, `user_data` or click IDs, and never retry. Purchase transaction IDs are deduplicated in page memory. `DENIED_PING_IP=full` (default) forwards the full visitor IP as `_uip`; `truncated` zeros the last IPv4 octet (/24) or keeps only the first 48 IPv6 bits (/48), treating IPv4-mapped IPv6 as IPv4; `off` omits `_uip`, so Google geolocates the collector server. Truncation reduces geographic precision. `DENIED_PING_USER_AGENT=on` (default) forwards the browser User-Agent; `off` sends the fixed neutral `User-Agent: unknown` instead, with no browser/device dimensions from that header. An explicit neutral value prevents native fetch from sending its default `node` User-Agent and reveals no runtime version or server identity. These options affect only `/d`; verification still uses the incoming IP and headers, rate limiting retains the real IP, and labels and deduplication are unchanged. `DENIED_PINGS=off` disables all pings. `page_engagement` is excluded, although the Google tag sends a denied `user_engagement` on exit (captured 2026-11-15); Vanilla's exit hit stays consent-only.
+Pings share a random client/page identity within the page, with a rising hit index. Their session_id is the Unix second of the first ping, not random and not unique across visitors. Group denied pings by batch_page_id, never ga_session_id; check that batch_page_id is present in the export first. They carry only allowlisted event parameters (value, currency and Visitor Verdict labels), cleaned page URL/path, referrer/UTM values, title, language, screen size, browser `User-Agent` (unless DENIED_PING_USER_AGENT=off) and visitor IP (as `_uip`, unless DENIED_PING_IP changes it). No persistent client identifiers are used. They never carry cookies, `user_data` or click IDs, and never retry. Purchase transaction IDs are deduplicated in page memory. `DENIED_PING_IP=full` (default) forwards the full visitor IP as `_uip`; `truncated` zeros the last IPv4 octet (/24) or keeps only the first 48 IPv6 bits (/48), treating IPv4-mapped IPv6 as IPv4; `off` omits `_uip`, so Google geolocates the collector server. Truncation reduces geographic precision. `DENIED_PING_USER_AGENT=on` (default) forwards the browser User-Agent; `off` sends the fixed neutral `User-Agent: unknown` instead, with no browser/device dimensions from that header. An explicit neutral value prevents native fetch from sending its default `node` User-Agent and reveals no runtime version or server identity. These options affect only `/d`; verification still uses the incoming IP and headers, rate limiting retains the real IP, and labels and deduplication are unchanged. `DENIED_PINGS=off` disables all pings. `page_engagement` is excluded, although the Google tag sends a denied `user_engagement` on exit (captured 2026-11-15); Vanilla's exit hit stays consent-only.
 
 For an undecided visitor, full events still wait in memory even after their pings leave. A grant on the same page releases them with identity and the campaign; refusal drops them. Consent given only on a later page does not bring back the landing page's campaign, for the Google tag either. This intentional duplication in raw BigQuery data can be separated with `WHERE privacy_info.analytics_storage = 'Yes'` for full events or `= 'No'` for pings. Tests: `tests/denied-events.test.ts`, `tests/collect.test.ts`. On the live demo on 2026-11-15, Realtime showed only the 5 purchases sent with consent, not the 4 denied purchase pings, so pings did not add to that report. In BigQuery the pings were stored without a visitor ID, with `privacy_info.analytics_storage = 'No'` and the visitor's country (2026-11-15). Standard reports and modeling: **Not verified**.
 
@@ -71,7 +71,8 @@ For an undecided visitor, full events still wait in memory even after their ping
 
 | Data | Google tag, consent denied (Advanced Consent Mode) | Vanilla denied ping |
 | --- | --- | --- |
-| page_view and events, incl. items, value, currency, transaction ID | Sent | Same |
+| page_view and allowed event names, value, currency | Sent | Sent |
+| Items, transaction ID and custom event parameters | Sent | Omitted |
 | Page URL, title, language, screen size | Sent, URL including `gclid` | Same, but click IDs are removed from URLs |
 | Browser User-Agent | Sent by the browser | Same (or `unknown` with `DENIED_PING_USER_AGENT=off`) |
 | Visitor IP | Google sees it from the browser connection | Forwarded as `_uip` so geography is the visitor's (or truncated/omitted, see `DENIED_PING_IP`) |
@@ -134,7 +135,7 @@ Earlier transport experiments are recorded in the [technical overview](docs/tech
 - **`/g/collect` has no public contract.** Google can change it without notice, and it returns 204 for anything. The fields follow captured Google tag hits, so they need a recheck over time. See the [notes](docs/measurement-protocol-notes.md#gcollect).
 - **Safari kept the cookie for 7 days in the one run measured.** Safari 26.6.2 stored it for 7.0 days with the tracker on a different IPv4 /16 from the website, the case [WebKit's cap](https://webkit.org/blog/15697/private-browsing-2-0/) describes. A default install runs on a different server, so expect the same. In a return after 8 days the cookie had expired, so Vanilla counted a new user while the regular Google tag counted a returning one. The server renews the cookie on each delivered event; whether that keeps the identity for a visitor who returns within 7 days: Not verified. [Details](docs/technical-overview.md#safari).
 - **Content blockers.** Getting past them is a side benefit, not the purpose of this project. A neutral random subdomain and neutral paths lower the chance of a filter list match, but guarantee nothing: first-party does not mean unblockable. In one run, uBlock Origin Lite with default lists did not stop the tracker. Consent rules stay the same: full events require consent, and a refusal stops regular measurement, apart from cookieless event pings. [Details](docs/technical-overview.md#content-blockers)
-- **Bots.** A short User-Agent filter drops obvious bots before optional [operator verification](#ai-agent-verification-optional). Non-JavaScript fetchers never run the tracker. Browser-looking automation can pass; a missing signature does not establish humanity.
+- **Bots.** Obvious bot User-Agents are labelled and forwarded by default, including through optional [operator verification](#ai-agent-verification-optional). Non-JavaScript fetchers never run the tracker. Browser-looking automation can pass; a missing signature does not establish humanity.
 - **Google accepts at most 16 KiB of event data in one hit, about 130 items.** Like the Google tag, a long event goes in the request body. Above 16 KiB Google refuses the hit (HTTP 413), and the Google tag loses the whole purchase. Vanilla leaves out the last items instead and logs how many, so revenue, transaction ID and the conversion arrive; the item reports miss those items. Raw JSON payloads over 64 KiB are dropped by the browser (or rejected by the collector for direct requests) before the 16 KiB item trimmer; this does not guarantee delivery of arbitrary oversized events.
 - **No cross-domain identity, durable queue or backfill.** If your server is down, its events are lost; the regular tag is unaffected.
 - **Each open tab keeps its own consent state** until it reloads, so a refusal in one tab does not stop a second open tab at once.
@@ -165,11 +166,13 @@ GA4 receives two server-derived classification parameters, `vv_type` and `vv_det
 on every eligible event, even with verification off and no browser detector.
 Without either source they start as `pending` / `none|-|-|-|-|-`. Labels count
 toward the 25-parameter limit after automatic/ecommerce fields and before custom
-site parameters; budget limits can remove them before delivery.
+site parameters. The 16 KiB body trimmer removes trailing items before labels.
 It labels traffic without routing conversions. **unverified ≠ human**.
-Only JavaScript-executing visitors that pass the obvious-bot filter reach this path;
-`bot`/`crawl`/`spider` and `HeadlessChrome` UAs are dropped first, including the full
-ChatGPT-User UA with its `openai.com/bot` URL. Reverse DNS is disabled.
+Only JavaScript-executing visitors normally reach this path. Obvious bot UAs continue
+through verification and delivery by default. UA evidence supplies `bot_automation`
+when no stronger verdict exists. `/health` reports `google.botsLabelled`;
+`botsFiltered` counts only the legacy behavior enabled with `FILTER_OBVIOUS_BOTS=on`
+(default `off`). Reverse DNS is disabled.
 
 Use `/health` → `agentVerification.counters` to **measure your own share of verified agents and bots**.
 It keeps anonymous integer totals in memory since process start (`since`, ISO UTC),
@@ -366,3 +369,20 @@ to restore successful collector responses to 204 and disable the reader in newly
 scripts. An already cached enabled script can retain the flag until refresh (up to 300 s);
 the bundled reader code is still downloaded when disabled, but never started. Deploy the
 collector before refreshing the tracker. Old stored records without `ttl` are ignored.
+
+`KEEP_QUERY_PARAMS` is a comma-separated list of additional, case-sensitive query names
+to retain in sanitized URLs, for example `KEEP_QUERY_PARAMS=vvp` for test markers.
+The default is empty; UTM parameters remain supported. Advertising ID redaction still applies.
+Traffic class updates consume at most the final and agent phases per document across
+both consent transports. An update released after waiting for consent keeps its original
+timestamp and the normal event age bound, without the ordinary queue’s 30-second limit.
+On page exit pending events enter keepalive transport immediately with their bootstrap
+secret; browser keepalive limits and network failure can still prevent delivery.
+
+Denied pings use a fixed allowlist in both the browser and collector: event name,
+`page_location`, `page_referrer`, `value`, `currency`, and Visitor Verdict fields
+(`traffic_class`, `traffic_phase`, `traffic_agent`, `traffic_agent_claim`, server-derived
+`vv_type`/`vv_detail`). Other custom fields, items, transaction IDs and enhanced
+conversion data are omitted. Page title remains context and is sent as before.
+IP (`DENIED_PING_IP=full`), User-Agent (`DENIED_PING_USER_AGENT=on`) and default URL
+cleaning (only `utm_*` query parameters) remain unchanged.

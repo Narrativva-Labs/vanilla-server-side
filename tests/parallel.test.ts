@@ -255,6 +255,7 @@ it("health counts failed Google delivery without logging payloads or secrets", a
       sent: 0,
       errors: 1,
       botsFiltered: 0,
+      botsLabelled: 0,
       lastSuccess: null,
     });
     expect(log.mock.calls).toEqual([["Google delivery failed", { outcome: "retry" }]]);
