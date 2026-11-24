@@ -439,6 +439,7 @@ it("passes raw headers, trusted client IP and the unchanged target to verificati
       host: config.trackerHost,
       headers: expect.any(Array),
       clientIp: "127.0.0.1",
+      ipTrusted: true,
       target: "/e?raw=%2f&x=1",
     },
     { cacheOnly: true },

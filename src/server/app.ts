@@ -40,6 +40,7 @@ export function createApp(
       deniedPingUserAgent?: boolean;
       logEvents?: boolean;
       agentVerification?: boolean;
+      flagSpoofedClaims?: boolean;
       verdictEcho?: boolean;
       trackerHost?: string;
       trustProxy?: string[] | false;
@@ -68,7 +69,10 @@ export function createApp(
     requestTimeout: 10000,
   });
   const labeller = config.agentVerification
-    ? createAgentLabeller(config.trackerHost, verifierOptions)
+    ? createAgentLabeller(config.trackerHost, {
+        ...verifierOptions,
+        flagSpoofedClaims: config.flagSpoofedClaims,
+      })
     : undefined;
   const label = labeller?.label;
   const classify = async (req: Parameters<NonNullable<typeof label>>[0]) => {

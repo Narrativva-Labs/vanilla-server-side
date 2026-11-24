@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Review IP spoofing certainty: require every operator feed to have a known successful source refresh within 2 h; failures/cache reuse do not renew evidence. Uncertain mismatch preserves browser automated; exclusively non-WBA signatures allow IP fallback. Document TRUST_PROXY certainty.
+
+- Bundle visitor-verdict-server 0.7.0. Add FLAG_SPOOFED_CLAIMS (off by default), trusted Fastify client-IP input, IP-feed warm-up and ip_mismatch health counts. Negative range evidence applies only to complete operator lists.
+- Preserve verified session identity over mismatch spoofing (rank 4.5); document proxy configuration, evidence level and deployment checks.
+
 ## 0.3.0
 
 - Keep v1 infrastructure echoes compatible with cached 0.2.0 clients by sending agent_verified + intermediary; internal/GA4 labels remain automation_verified. Freeze the original 0.2.0 reader/schema in a compatibility test fixture.

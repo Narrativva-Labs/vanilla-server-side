@@ -150,6 +150,7 @@ for (const route of ["/e", "/d"]) {
     expect(counts.byVerification).toEqual({
       signature_valid: 2,
       ip_match: 1,
+      ip_mismatch: 0,
       signature_invalid: 1,
       no_signature: 1,
       none: 1,
@@ -261,6 +262,7 @@ it("classifies unavailable reasons while preserving proof outcomes", () => {
     signature_valid: reasons.length,
     signature_invalid: reasons.length,
     ip_match: reasons.length,
+    ip_mismatch: 0,
   });
   expect(counters.events.evidence).toEqual({ signatureHeaders: 0, uaClaim: 0, browserNonHuman: 0 });
 });

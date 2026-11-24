@@ -25,6 +25,9 @@ export function configFromEnv(env = process.env) {
   const agentVerification = env.AGENT_VERIFICATION || "off";
   if (agentVerification !== "on" && agentVerification !== "off")
     throw new Error("AGENT_VERIFICATION must be on or off");
+  const flagSpoofedClaims = env.FLAG_SPOOFED_CLAIMS ?? "off";
+  if (!["on", "off"].includes(flagSpoofedClaims))
+    throw new Error("FLAG_SPOOFED_CLAIMS must be on or off");
   const verdictEcho = env.VERDICT_ECHO || agentVerification;
   if (verdictEcho !== "on" && verdictEcho !== "off")
     throw new Error("VERDICT_ECHO must be on or off");
@@ -72,6 +75,7 @@ export function configFromEnv(env = process.env) {
     deniedPings: deniedPings === "on",
     deniedPingIp: deniedPingIp as "full" | "truncated" | "off",
     deniedPingUserAgent: deniedPingUserAgent === "on",
+    flagSpoofedClaims: flagSpoofedClaims === "on",
     agentVerification: agentVerification === "on",
     verdictEcho: verdictEcho === "on",
     trackerHost,

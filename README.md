@@ -423,3 +423,45 @@ or storage timestamp and proof TTL; after expiry a new platform/crawler proof ca
 accepted. Withdrawal clears the guard with persistence. Browser `dom_host` evidence
 can classify ordinary hits, but the separate `traffic_agent_claim` GA4 parameter is
 sent only on `traffic_class` updates; it remains reserved on ordinary events.
+
+### Unsigned claims and IP mismatch (0.4.0)
+
+`FLAG_SPOOFED_CLAIMS=off` is the default. With `AGENT_VERIFICATION=on`, set it to
+`on` to enable visitor-verdict-server 0.7.0 negative IP evidence. Only UA tokens
+whose operator publishes a complete list qualify; initially these are OpenAI's
+ChatGPT-User, OAI-SearchBot, GPTBot and OAI-AdsBot. A UA claim outside all that
+operator's cached ranges, without WBA signatures, yields
+`ip_mismatch` in segment 2 of `vv_detail`, for example
+`none|ip_mismatch|unknown|ua_token|-|-`. This is IP-level evidence, not a
+cryptographic identity check; no OpenAI identity is asserted. Unknown or missing
+feeds remain unverified. Enabled startup also warms IP feeds; requests never wait
+for the network. After ten minutes a negative check starts background refresh;
+retained evidence is usable only until the library's hard cache age limit.
+
+Fastify establishes `req.ip` using `TRUST_PROXY` and the nearest untrusted hop;
+the collector passes `ipTrusted=true` for this adapter-established address.
+Untrusted direct peers cannot override it with X-Forwarded-For. Trust only actual
+proxies and ensure they set the real client address (nginx:
+`proxy_set_header X-Forwarded-For $remote_addr;`). At deployment verify both the
+proxy overwrite and restricted collector access; broad trust ranges that include
+untrusted clients invalidate this assumption. Adapters with uncertain IPs must
+pass `ipTrusted=false`: mismatch then yields `agent_unverified`, or
+`bot_automation` when browser evidence is `automated`. IP certainty means an IP
+from the trusted proxy path under the collector's `TRUST_PROXY` configuration
+(or an explicitly direct socket connection).
+
+Only a certain mismatch precedes browser `automated`. Certainty requires both a
+trusted IP and a known last successful source refresh at most **2 hours** ago for
+**every** operator IP list (`ipListsFresh=true`). The library records completion
+of successful fetch and validation; reading/downloading a cache or a failed
+refresh does not renew that timestamp. Missing, future or old metadata leaves
+`ip_mismatch` unverified and starts background refresh without waiting. Such an
+uncertain mismatch yields `bot_automation` for browser `automated`, otherwise
+`agent_unverified`. A certain mismatch yields `bot_spoofed` (session rank 4.5),
+below direct verified identity (5) and verified infrastructure (4.75).
+Exclusively non-WBA signatures (another tag, `ignored_non_wba`) behave as absent
+signatures for IP matching and mismatch; mixed WBA, malformed and incomplete
+signature headers still suppress mismatch. Sticky identity stays protected; current-hit detail still
+reports `ip_mismatch`. The flag only labels traffic and does not block it.
+Allow outbound HTTPS to the operator feeds and verify startup warming before
+checking forged and real OpenAI requests.

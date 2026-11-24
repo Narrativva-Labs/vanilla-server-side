@@ -217,15 +217,15 @@ for (const route of ["/d", "/e"])
   });
 it("pins vendor bytes, package version and npm integrity", () => {
   const bytes = readFileSync(
-    new URL("../vendor/visitor-verdict-server-0.6.1.tgz", import.meta.url),
+    new URL("../vendor/visitor-verdict-server-0.7.0.tgz", import.meta.url),
   );
   const digest = createHash("sha512").update(bytes).digest();
   expect(digest.toString("hex")).toBe(
-    "9a333183229b97d7e88bb39b3592529bcc0c1be4de729a7190f54c50989887ea0c72ae89c54c791fa59a15442aa55bd20198a9e501ebc5389d0719493b4f1b23",
+    "aacd6da6a110206b75bd8bbcb20bf6ff655dc59429270cbc8931dd309b9ea6f5cb05ce6e292f6936390ba1961cad534aa6ad2f90c68ba65ba5a99f8c87cf5288",
   );
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  expect(pkg.version).toBe("0.3.0");
+  expect(pkg.version).toBe("0.4.0");
   expect(lock.version).toBe(pkg.version);
   expect(lock.packages[""].version).toBe(pkg.version);
   expect(lock.packages["node_modules/visitor-verdict-server"].integrity).toBe(

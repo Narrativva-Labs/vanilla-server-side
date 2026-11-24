@@ -1,6 +1,28 @@
 # Visitor Verdict server package
 
-## 0.6.1 (current)
+## 0.7.0 (current)
+
+- Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/42e1582/server (branch `ip-mismatch`, base commit `42e1582`; uncommitted review changes dated 2026-11-24: source-refresh certainty, automation precedence and non-WBA fallback).
+- Archive: `visitor-verdict-server-0.7.0.tgz`.
+- SHA-512 (hex): `aacd6da6a110206b75bd8bbcb20bf6ff655dc59429270cbc8931dd309b9ea6f5cb05ce6e292f6936390ba1961cad534aa6ad2f90c68ba65ba5a99f8c87cf5288`
+- npm integrity: `sha512-qs1tpqEQIGt1vYu8sgv2/2VdxZQpJwy8iTHdMJuepvXLBc5uKS9pNjkLoZYcrVNKpq0vkMaLplulqZ+Mh89SiA==`
+
+Verify with `shasum -a 512 vendor/visitor-verdict-server-0.7.0.tgz`.
+Install with `npm install --offline ./vendor/visitor-verdict-server-0.7.0.tgz`.
+Rebuild from the source worktree including the review changes with `cd server && npm ci && npm run build && npm pack`.
+
+Review revision: `bot_spoofed` requires trusted IP plus known successful refresh
+of every operator feed within 2 h. Uncertain mismatch preserves browser automated;
+exclusively non-WBA signatures allow IP fallback.
+
+Adds opt-in unsigned UA `ip_mismatch`, explicit OpenAI feed completeness,
+`ipTrusted`, and memory-only negative checks with ten-minute background refresh.
+See README/INSTALL for FLAG_SPOOFED_CLAIMS and trusted proxy deployment checks.
+Older archives are retained for provenance; only 0.7.0 is selected by the manifest
+and lockfile.
+
+
+## Previous archive: 0.6.1
 
 - Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/455e248/server (branch `phase2-verifier`, commit `455e248`).
 - Version: 0.6.1; archive: `visitor-verdict-server-0.6.1.tgz`.

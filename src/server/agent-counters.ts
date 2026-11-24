@@ -15,6 +15,7 @@ const types = [
 const verification = [
   "signature_valid",
   "ip_match",
+  "ip_mismatch",
   "signature_invalid",
   "no_signature",
   "none",

@@ -9,7 +9,7 @@ import type { FastifyRequest } from "fastify";
 
 export type AgentFields = AgentVerdict & { obviousBot?: boolean; proofExpiresAt?: number };
 // Test dependencies are supplied in code, never from the environment or a request.
-export type AgentVerifierOptions = Pick<VerifierOptions, "fetcher" | "now">;
+export type AgentVerifierOptions = Pick<VerifierOptions, "fetcher" | "now" | "flagSpoofedClaims">;
 // Key directories and IP lists load in the background; a slow operator endpoint (about 0.9 s
 // from a European VPS for chatgpt.com) must not be aborted by the per-hit deadline.
 const FETCH_TIMEOUT_MS = 3000;
@@ -48,7 +48,12 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
     // Fetch the operator key directories now and refresh them shortly before they expire, so the
     // first signed hit and hits during a refresh do not wait for a slow directory. Startup never
     // waits for this; cache misses only start background loads.
-    void Promise.resolve(verifier.warm({ refreshAhead: true })).catch(() => {});
+    void Promise.resolve(
+      verifier.warm({
+        refreshAhead: true,
+        ...(options.flagSpoofedClaims ? { ipLists: true } : {}),
+      }),
+    ).catch(() => {});
   } catch {
     // Warm-up is optional.
   }
@@ -61,6 +66,9 @@ export function createAgentLabeller(host: string | undefined, options: AgentVeri
           // Preserve original client hints/fetch metadata as well as signed fields.
           headers: req.raw.rawHeaders,
           clientIp: req.ip,
+          // Fastify selects the nearest untrusted hop using the configured trustProxy rules;
+          // forwarded headers from an untrusted socket peer cannot replace its IP.
+          ipTrusted: true,
           target: req.url,
         },
         { cacheOnly: true },
