@@ -221,7 +221,7 @@ it("pins vendor bytes, package version and npm integrity", () => {
   );
   const digest = createHash("sha512").update(bytes).digest();
   expect(digest.toString("hex")).toBe(
-    "aacd6da6a110206b75bd8bbcb20bf6ff655dc59429270cbc8931dd309b9ea6f5cb05ce6e292f6936390ba1961cad534aa6ad2f90c68ba65ba5a99f8c87cf5288",
+    "e661759919bda4ab2a593dd73196fb7e83425ba9e2ab35e5764a5a29969dce97e419f2482e95e277c308d570289a9261973ba928f6e90f538ba428a6ee051463",
   );
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));

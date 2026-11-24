@@ -125,7 +125,7 @@ it("Kernel key validity and rotation do not report spoofing during a fresh HTTP 
   }
 });
 
-it("keeps mutable kid mismatch indeterminate in cache-only and refreshes in request mode", async () => {
+it("keeps mutable kid mismatch indeterminate while cache-only refreshes in background", async () => {
   const operator = defaultRegistry.find((o) => o.operator === "google")!;
   const clock = 1800000000;
   const kid = "rotating-key";
@@ -166,10 +166,11 @@ it("keeps mutable kid mismatch indeterminate in cache-only and refreshes in requ
     expect(rotating.verification).toBe("none");
     expect(visitorLabels({ verdict: rotating }).vv_type).not.toBe("bot_spoofed");
     expect(rotating.reason).toBe("insufficient_context");
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect((await hit(false)).verification).toBe("signature_valid");
     expect(fetcher).toHaveBeenCalledTimes(2);
+    await new Promise((resolve) => setImmediate(resolve));
     expect((await hit()).verification).toBe("signature_valid");
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect((await hit(false)).verification).toBe("signature_valid");
   } finally {
     verifier.close();
   }

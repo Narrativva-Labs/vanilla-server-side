@@ -2,14 +2,17 @@
 
 ## 0.7.0 (current)
 
-- Source: https://github.com/Narrativva-Labs/visitor-verdict/tree/42e1582/server (branch `ip-mismatch`, base commit `42e1582`; uncommitted review changes dated 2026-11-24: source-refresh certainty, automation precedence and non-WBA fallback).
+- Source: local `visitor-verdict-ipmismatch/server`, base commit `8836df627d3bfe9eee468677985510701cdd2596` plus K2 review changes dated 2026-11-25. Same archive as visitor-verdict-service; no post-pack patches.
 - Archive: `visitor-verdict-server-0.7.0.tgz`.
-- SHA-512 (hex): `aacd6da6a110206b75bd8bbcb20bf6ff655dc59429270cbc8931dd309b9ea6f5cb05ce6e292f6936390ba1961cad534aa6ad2f90c68ba65ba5a99f8c87cf5288`
-- npm integrity: `sha512-qs1tpqEQIGt1vYu8sgv2/2VdxZQpJwy8iTHdMJuepvXLBc5uKS9pNjkLoZYcrVNKpq0vkMaLplulqZ+Mh89SiA==`
+- SHA-512 (hex): `e661759919bda4ab2a593dd73196fb7e83425ba9e2ab35e5764a5a29969dce97e419f2482e95e277c308d570289a9261973ba928f6e90f538ba428a6ee051463`
+- npm integrity: `sha512-5mF1mRm9pKsqWT3XMZb7foNCW6niqzXldkpaKZadzpfkGfJILpXid8MI1XAompJhlzupKPbpD1OLpCim7gUUYw==`
 
 Verify with `shasum -a 512 vendor/visitor-verdict-server-0.7.0.tgz`.
 Install with `npm install --offline ./vendor/visitor-verdict-server-0.7.0.tgz`.
 Rebuild from the source worktree including the review changes with `cd server && npm ci && npm run build && npm pack`.
+
+K2 revision includes shared cache ownership, atomic per-signature replay admission,
+cache-only mutable-kid background refresh, and the shared service/feed CONTRACT.md.
 
 Review revision: `bot_spoofed` requires trusted IP plus known successful refresh
 of every operator feed within 2 h. Uncertain mismatch preserves browser automated;
