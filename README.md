@@ -235,7 +235,11 @@ Upgrade the collector before the tracker and remove any old manual `traffic_clas
 for one following document; a brief tab switch ends behaviour observation. Use
 `finalOnHidden: false` when async probes or resumed SPA behaviour must remain observable.
 
-GTM-only sites keep traffic_class for now.
+Two GA4 columns per site. With Vanilla or the server-side GTM template, register only `vv_type` and
+`vv_detail`: the server's verdict. A site with only the browser detector in web GTM registers
+`traffic_class` and `traffic_detail` (`agent|claim|phase|replay`, missing parts `-`; a final class
+contains `|final|`): browser observations. The traffic_class event still carries the individual
+traffic_* parameters for the collector, server containers and BigQuery; they need no dimensions.
 
 A detector loaded after Vanilla (for example from GTM) can miss the first hit, which then stays
 `pending`. Opt in with `data-vv-wait-ms="1000"` on the script tag to hold the first hits until the

@@ -483,7 +483,11 @@ Without stronger server evidence, browser classes map as follows:
 | declared_agent | agent_unverified |
 | none / missing | pending |
 
-GTM-only sites keep traffic_class for now.
+Two GA4 columns per site. With Vanilla or the server-side GTM template, register only `vv_type` and
+`vv_detail`: the server's verdict. A site with only the browser detector in web GTM registers
+`traffic_class` and `traffic_detail` (`agent|claim|phase|replay`, missing parts `-`; a final class
+contains `|final|`): browser observations. The traffic_class event still carries the individual
+traffic_* parameters for the collector, server containers and BigQuery; they need no dimensions.
 
 Filter GA4 by vv_type **begins with** `agent_` for agents, or `bot_` for automation,
 suspicion and spoofed signatures. Include `crawler_verified` separately when needed.
