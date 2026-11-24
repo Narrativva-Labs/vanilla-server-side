@@ -153,7 +153,7 @@ Related: [Visitor Verdict](https://github.com/Narrativva-Labs/visitor-verdict) â
 - [Cookie banners](docs/cookie-banners.md): what consent banners really send
 - [Design decisions](docs/decisions.md): each decision with its alternative and source
 - [Verification](docs/verification.md): what is tested against real Google Analytics, how, and what is still open
-- Related: [Visitor Verdict](https://github.com/Narrativva-Labs/visitor-verdict), privacy-minimal browser detector of clear automation; its labels and server-side agent verification are in development here on the [`agent-verification`](https://github.com/Narrativva-Labs/vanilla-server-side/tree/main) branch ([roadmap](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/ROADMAP.md))
+- [AI agent verification](#ai-agent-verification-optional): optional server-side verification of agents and crawlers, part of `main` since 0.3.0 ([Visitor Verdict roadmap](https://github.com/Narrativva-Labs/visitor-verdict/blob/main/ROADMAP.md))
 
 For development on Node 26: `npm ci && npm test && npm run typecheck && npm run build`. `npx playwright install chromium webkit && npm run test:e2e` runs the consent flow in real browsers. `tests/fuzz.test.ts` runs random sequences against rules that must always hold.
 
