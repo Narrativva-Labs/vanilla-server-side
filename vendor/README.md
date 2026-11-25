@@ -1,6 +1,17 @@
 # Visitor Verdict server package
 
-## 0.7.0 (current)
+## 0.7.1 (current)
+
+- Source: `visitor-verdict-ipmismatch/server`, branch `ip-mismatch`, base `dc2b15d40ea620b7f57e16dbec7409270eb37308` plus the preserved K3 working-tree changes (2026-11-25). The sandbox denied source commits (`index.lock`); no post-pack patches.
+- Archive: `visitor-verdict-server-0.7.1.tgz`, packed once and copied unchanged into this repository and visitor-verdict-service.
+- SHA-512: `8c426785a01bdc1a74d74b2d9a5b581284ec2fa34098609abd10b8a05ccb1bbf4b0354013537a950ac240323ff755183d07689d79a88aebc7583de989deaf057`
+- npm integrity: `sha512-jEJnhaAb3Bp010stmltYEoTsL6NAmGCavRC4oFzLG79LA1QBNTepUKwkAyP/dVGD0HaJ15qIrrx1g96YnerwVw==`
+- Verify: `shasum -a 512 vendor/visitor-verdict-server-0.7.1.tgz`.
+
+Per-source last-refresh certainty, 60-second clock tolerance, empty/shrunk complete-list guards, shared SAIL union and transport candidate filtering. This repository only updates the pinned package; collector code is unchanged. Manifest and lockfile select 0.7.1. Older sections below describe historical packages.
+
+
+## Previous archive: 0.7.0
 
 - Source: local `visitor-verdict-ipmismatch/server`, base commit `8836df627d3bfe9eee468677985510701cdd2596` plus K2 review changes dated 2026-11-25. Same archive as visitor-verdict-service; no post-pack patches.
 - Archive: `visitor-verdict-server-0.7.0.tgz`.
