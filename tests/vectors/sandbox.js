@@ -903,7 +903,8 @@ if(usable) {
 // callLater has no delay argument. The 2 s wall-clock deadline governs; the
 // callback cap only guards a frozen clock (live sGTM 25. 11.: ~37 us per
 // callback, so a 2048 cap expired after ~76 ms, before a 123 ms GET).
-// Storage reads stay exponentially spaced (4..32 ms).
+// Storage reads stay exponentially spaced (4..32 ms); every 512th callback
+// reads anyway so a frozen clock still observes completion (live pace: ~19 ms).
 var flight=storage.getItemCopy(flightKey);
 if(flight && flight.url===url) {
   var callLater=require('callLater'), timestamp=require('getTimestampMillis');
@@ -911,7 +912,7 @@ if(flight && flight.url===url) {
   return require('Promise').create(function(resolve) {
     function settled() {
       var t=timestamp();polls++;
-      if(t<flight.until && polls<MAX_CALLBACKS && t<checkAt && polls%8!==0) {callLater(settled);return;}
+      if(t<flight.until && polls<MAX_CALLBACKS && t<checkAt && polls%512!==0) {callLater(settled);return;}
       var current=storage.getItemCopy(flightKey);
       if(current && current.attempt===flight.attempt && t<flight.until && polls<MAX_CALLBACKS) {
         checkAt=t+step;step=Math.min(32,step*2);callLater(settled);return;
