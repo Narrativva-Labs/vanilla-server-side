@@ -55,7 +55,7 @@ function retrySeconds(raw) {
   var wait=((days*24+hour)*60+minute)*60000+second*1000-require('getTimestampMillis')();
   return Math.max(0,Math.floor((wait+999)/1000));
 }
-var TEMPLATE_VERSION = '2.1.4';
+var TEMPLATE_VERSION = '2.1.5';
 // Request APIs can fail during sGTM internal evaluations with no incoming request.
 // This fixed phase lets Preview distinguish a source failure from a malformed pair.
 debug('request_context_read');
@@ -900,18 +900,20 @@ if(usable) {
   if(due && (!cached.forceRefresh || cached.forcedAt===undefined || now-cached.forcedAt>=600000) && now>=(cached.retryAt || 0) && now>=(cached.nextFetchAt || 0)) begin(true);
   return finish(cached.rules,true);
 }
-// callLater has no delay argument. Bound callbacks, and exponentially space
-// storage reads (4..32 ms); never pretend a second argument provides a timer.
+// callLater has no delay argument. The 2 s wall-clock deadline governs; the
+// callback cap only guards a frozen clock (live sGTM 25. 11.: ~37 us per
+// callback, so a 2048 cap expired after ~76 ms, before a 123 ms GET).
+// Storage reads stay exponentially spaced (4..32 ms).
 var flight=storage.getItemCopy(flightKey);
 if(flight && flight.url===url) {
   var callLater=require('callLater'), timestamp=require('getTimestampMillis');
-  var polls=0, checkAt=0, step=4;
+  var polls=0, checkAt=0, step=4, MAX_CALLBACKS=262144;
   return require('Promise').create(function(resolve) {
     function settled() {
       var t=timestamp();polls++;
-      if(t<flight.until && polls<2048 && t<checkAt && polls%8!==0) {callLater(settled);return;}
+      if(t<flight.until && polls<MAX_CALLBACKS && t<checkAt && polls%8!==0) {callLater(settled);return;}
       var current=storage.getItemCopy(flightKey);
-      if(current && current.attempt===flight.attempt && t<flight.until && polls<2048) {
+      if(current && current.attempt===flight.attempt && t<flight.until && polls<MAX_CALLBACKS) {
         checkAt=t+step;step=Math.min(32,step*2);callLater(settled);return;
       }
       if(current && current.attempt===flight.attempt) {resolve('deadline');return;}
