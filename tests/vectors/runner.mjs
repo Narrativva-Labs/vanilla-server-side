@@ -8,8 +8,8 @@ const sha=s=>createHash('sha256').update(s).digest('hex');
 export function sandbox(v,post){
  const store=new Map(),logs=[],requests=[];
  const api={getType:v=>v===null?'null':Array.isArray(v)?'array':typeof v,JSON:{stringify:JSON.stringify,parse:s=>{try{return JSON.parse(s);}catch{return undefined;}}},Math,makeNumber:Number,
- getTimestampMillis:()=>corpus.start,getRemoteAddress:()=>v.ip,getRequestHeader:k=>v.headers[k]||'',getRequestMethod:()=>v.method,getRequestPath:()=>v.path,getEventData:k=>v.event[k],logToConsole:s=>logs.push(s),sha256Sync:sha,
- templateDataStorage:{getItemCopy:k=>structuredClone(store.get(k)),setItemCopy:(k,x)=>store.set(k,structuredClone(x))},sendHttpGet:async()=>({statusCode:200,body:JSON.stringify(v.feed)}),
+ getTimestampMillis:()=>corpus.start,getRemoteAddress:()=>v.ip,getRequestHeader:k=>v.headers[k],getRequestMethod:()=>v.method,getRequestPath:()=>v.path,getEventData:k=>v.event[k],logToConsole:s=>logs.push(s),sha256Sync:sha,
+ templateDataStorage:{getItemCopy:k=>structuredClone(store.get(k) ?? null),setItemCopy:(k,x)=>store.set(k,structuredClone(x))},sendHttpGet:async()=>({statusCode:200,body:JSON.stringify(v.feed)}),
  sendHttpRequest:async(url,opts,raw)=>{requests.push(JSON.parse(raw));if(v.axes.response==='timeout')throw Error('fixture timeout');if(v.axes.response==='tolerated')return {statusCode:200,body:'{"v":2}'};if(v.axes.response!=='200')return {statusCode:Number(v.axes.response),body:'{"error":"fixture"}'};return post(JSON.parse(raw),v);}};
  return {logs,requests,run:async()=>JSON.parse(JSON.stringify(await vm.runInNewContext('(function(data){'+code+'\n})(data)',{data:{apiKey:'corpus-key',...v.config},require:k=>{assert.ok(k in api,k);return api[k];}})))};
 }
@@ -48,14 +48,15 @@ export async function runCorpus({packageUrl,post,onlySandbox=false}={}){
   };
   let answer;
   const tpl=sandbox(v,post||(async body=>{
-   if(!lib){const [operator,verification,purpose,claim]=v.expected.vv_detail.split('|');return {statusCode:200,body:JSON.stringify({v:1,operator,verification:['signature_valid','signature_invalid'].includes(verification)?verification:'none',purpose,claim,expires_at:null})};}const verdict=await core(body);answer=verdict;return {statusCode:200,body:JSON.stringify({v:1,verification:['signature_valid','signature_invalid'].includes(verdict.verification)?verdict.verification:'none',operator:verdict.verified?.operator||'none',purpose:verdict.agent_purpose,claim:'signature_agent',expires_at:verdict.verified?.expiresAt??null})};}));
+   if(!lib){const [operator,verification,purpose,claim]=v.expected.vv_detail.split('|');return {statusCode:200,body:JSON.stringify({v:1,operator,...(verification==='config_suspect'?{diagnostic:'config_suspect'}:{}),verification:['signature_valid','signature_invalid'].includes(verification)?verification:'none',purpose,claim,expires_at:null})};}const verdict=await core(body);answer=verdict;return {statusCode:200,body:JSON.stringify({v:1,...(v.axes.crypto==='config_suspect'?{diagnostic:'config_suspect'}:{}),verification:['signature_valid','signature_invalid'].includes(verdict.verification)?verdict.verification:'none',operator:verdict.verified?.operator||'none',purpose:verdict.agent_purpose,claim:'signature_agent',expires_at:verdict.verified?.expiresAt??null})};}));
   try{
    const actual=await tpl.run();assert.deepEqual(actual,v.expected,'sandbox '+v.id+' '+JSON.stringify(v.axes));
    if(verifier&&!onlySandbox){
     const pathOk=v.config.pathMode==='root'||(v.config.pathMode==='prefix'&&v.config.publicPath==='/metrics');
     const body={signature:v.headers.signature,signature_input:v.headers['signature-input'],signature_agent:v.headers['signature-agent'],...(pathOk?{path:(v.config.pathMode==='prefix'?'/metrics':'')+v.path}:{})};
     const verdict=await core(body,false);
-    const pair=lib.visitorLabels({verdict,browserClass:v.event.traffic_class,browserAgent:v.event.traffic_agent,browserAgentClaim:v.event.traffic_agent_claim});
+    const diagnostic=tpl.requests.length ? (v.axes.response==='200'&&v.axes.crypto==='config_suspect'?'config_suspect':['400','401','403','429'].includes(v.axes.response)?'rejected':['500','timeout'].includes(v.axes.response)?'service_unavailable':undefined) : undefined;
+    const pair=lib.visitorLabels({verdict,diagnostic,browserClass:v.event.traffic_class,browserAgent:v.event.traffic_agent,browserAgentClaim:v.event.traffic_agent_claim});
     assert.deepEqual(pair,v.expected,'library '+v.id+' '+JSON.stringify(v.axes)+' reason='+verdict.reason);
    }
    if(!['none','custom'].includes(v.axes.proxy) && v.expected.vv_detail.includes('|ip_mismatch|') && v.expected.vv_type==='bot_spoofed')throw Error('uncertain IP invariant');

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.3 — 2026-11-25
+
+- Vendor visitor-verdict-server 0.7.4 and synchronize K6 boundary vectors and diagnostics.
+
 ## 0.4.2 — 2026-11-25
 
 - Vendor visitor-verdict-server 0.7.3 with SAIL cache recovery and malformed-header fixes; refresh the shared differential corpus.

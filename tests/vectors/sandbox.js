@@ -1,19 +1,20 @@
 var getType = require('getType');
 // Selectors read a supplied pair; variable reevaluation is bounded by the short cache.
-if(data.labelPair!==undefined && data.labelPair!=='') {
-  if(validPair(data.labelPair)) return select(data.labelPair);
-  require('logToConsole')('Visitor Verdict: invalid_label_pair pair_unavailable');
+if(data.role==='selector' || (data.role!=='result' && data.labelPair!==undefined && data.labelPair!=='')) {
+  if(validPair(data.labelPair)) {require('logToConsole')('Visitor Verdict: selector_pair_ready');return select(data.labelPair);}
+  require('logToConsole')('Visitor Verdict: pair_unavailable source_'+getType(data.labelPair));
   return select({vv_type:'pending',vv_detail:'none|pair_unavailable|unknown|none|-|-'});
 }
 var getEventData = require('getEventData');
 var readRequestHeader = require('getRequestHeader');
-var headerNames=[], headerValues=[];
+var headerNames=[], headerValues=[], headerPresent=[];
 function getRequestHeader(name) {
   var index=headerNames.indexOf(name);
   if(index>=0) return headerValues[index];
   var value=readRequestHeader(name);
-  if(getType(value)!=='string') value='';
-  headerNames.push(name); headerValues.push(value); return value;
+  var present=getType(value)==='string';
+  if(!present) value='';
+  headerNames.push(name); headerValues.push(value); headerPresent.push(present); return value;
 }
 var getRemoteAddress = require('getRemoteAddress');
 var sendHttpGet = require('sendHttpGet');
@@ -27,7 +28,10 @@ var service = data.serviceUrl || SERVICE_URL;
 var apiKey = getType(data.apiKey)==='string' ? data.apiKey.trim() : '';
 var url = data.rulesUrl || service+'/rules.json';
 function debug(message) { require('logToConsole')('Visitor Verdict: '+message); }
-var TEMPLATE_VERSION = '2.1.2';
+var TEMPLATE_VERSION = '2.1.3';
+// Request APIs can fail during sGTM internal evaluations with no incoming request.
+// This fixed phase lets Preview distinguish a source failure from a malformed pair.
+debug('request_context_read');
 var requestIp=getRemoteAddress();
 if(getType(requestIp)!=='string') requestIp='';
 var empty = {schema:2,operators:[],tokens:["ChatGPT-User","OAI-SearchBot","OAI-AdsBot","GPTBot","Claude-Agent","Claude-User","Claude-SearchBot","ClaudeBot","Perplexity-User","PerplexityBot","Google-Agent","Google-CloudVertexBot","Google-GeminiNotebook","Google-NotebookLM","Gemini-Deep-Research","MistralAI-User","MistralAI-Index","MistralAI-Training","DuckAssistBot","Applebot","Bytespider","meta-externalagent","meta-externalfetcher","meta-webindexer","CCBot","Amazonbot","Amzn-SearchBot","KimiBot","Kimi-SearchBot","Kimi-User","SeznamBot","Yeti","Ads-Naver","Blueno","Kagibot","Baiduspider","PetalBot","YandexBot","YandexAdditional","Amzn-User","AmazonAdBot","YouBot","Sogou","TikTokSpider","DeepSeekBot","ChatGLM-Spider","YisouSpider","360Spider","Diffbot","Timpibot","bingbot","AdIdxBot","BingPreview","MicrosoftPreview","BingVideoPreview","Googlebot","Googlebot-Image","Googlebot-Video","Storebot-Google","Google-InspectionTool","GoogleOther","GoogleOther-Image","GoogleOther-Video","Google-Pinpoint","Google-Read-Aloud","GoogleProducer","Google-Site-Verification","Google-CWS","FeedFetcher-Google"],groups:[]};
@@ -255,6 +259,26 @@ function presentUnion(r,operator) {
   }
   return count>0;
 }
+function hasHeader(name) {getRequestHeader(name);return headerPresent[headerNames.indexOf(name)];}
+function validSignatureEnvelope() {
+  var names=['signature','signature-input','signature-agent'], bytes=0;
+  for(var i=0;i<names.length;i++) {
+    var raw=getRequestHeader(names[i]);
+    if(!hasHeader(names[i])) continue;
+    bytes+=names[i].length+4;
+    for(var j=0;j<raw.length;j++) {var c=raw.charAt(j);bytes+=c<='\u007f' ? 1 : 2;}
+  }
+  return bytes<=16384;
+}
+function eligibleUnavailable(rules,matches) {
+  if(getType(rules.sources)!=='array') return false;
+  for(var i=0;i<rules.sources.length;i++) {
+    var source=rules.sources[i];if(source.available) continue;
+    if(source.tokens===null) return true;
+    if(getType(source.tokens)==='array') for(var j=0;j<source.tokens.length;j++) if(matches.indexOf(source.tokens[j])>=0) return true;
+  }
+  return false;
+}
 function validUa() {
   var raw=getRequestHeader('user-agent') || '';var bytes=0;
   for(var i=0;i<raw.length;i++) {
@@ -270,7 +294,7 @@ function contentFresh(r) {
   return timestamp(at) && at<=now+300000 && now-at<1209600000;
 }
 function timestamp(at) {return getType(at)==='number' && at%1===0 && at>=0 && at<=9007199254740991;}
-function freshAt(at) {var t=require('getTimestampMillis')();return timestamp(at) && at<=t+60000 && t-at<=7200000;}
+function freshAt(at) {var t=require('getTimestampMillis')();return timestamp(at) && at<=t && t-at<=7200000;}
 // Negative proof needs every list, including unavailable/omitted peer lists.
 // Return its absolute reuse deadline, or zero when certainty is unavailable.
 function negativeWindow(r,operator) {
@@ -308,7 +332,7 @@ function sharedSlot() {
   var stateKey='vv_service_'+require('sha256Sync')(service+'\n'+apiKey,{outputEncoding:'hex'});
   // Feed changes must not split recipients of the same result during its reuse window.
   // Its version is stored once on download; never serialize/hash the feed on a hit.
-  var context=[getRequestHeader('signature'),getRequestHeader('signature-input'),getRequestHeader('signature-agent'),getRequestHeader('user-agent'),requestIp,getRequestHeader('x-forwarded-for'),require('getRequestMethod')(),getRequestHeader('host'),require('getRequestPath')(),url,data.pathMode || '',data.publicPath || '',data.proxyMode || 'none',data.proxyCount || '',!!data.flagSpoofed,getEventData('traffic_class'),getEventData('traffic_phase'),getEventData('traffic_agent'),getEventData('traffic_agent_claim')];
+  var context=[getRequestHeader('signature'),getRequestHeader('signature-input'),getRequestHeader('signature-agent'),hasHeader('signature'),hasHeader('signature-input'),hasHeader('signature-agent'),getRequestHeader('user-agent'),requestIp,getRequestHeader('x-forwarded-for'),require('getRequestMethod')(),getRequestHeader('host'),require('getRequestPath')(),url,data.pathMode || '',data.publicPath || '',data.proxyMode || 'none',data.proxyCount || '',!!data.flagSpoofed,getEventData('traffic_class'),getEventData('traffic_phase'),getEventData('traffic_agent'),getEventData('traffic_agent_claim')];
   resultSlot={cacheKey:stateKey+'_results',hash:require('sha256Sync')(JSON.stringify(context),{outputEncoding:'hex'})};
   return resultSlot;
 }
@@ -321,7 +345,7 @@ function validPair(pair) {
   if(getType(pair)!=='object' || ['pending','human','agent_verified','crawler_verified','automation_verified','agent_unverified','bot_spoofed','bot_automation','bot_suspicious'].indexOf(pair.vv_type)<0 || getType(pair.vv_detail)!=='string' || pair.vv_detail.length>100) return false;
   var parts=pair.vv_detail.split('|');
   return parts.length===6 && safeOperator(parts[0])===parts[0] &&
-    ['-','none','no_signature','ip_match','ip_mismatch','signature_valid','signature_invalid','pair_unavailable'].indexOf(parts[1])>=0 &&
+    ['-','none','no_signature','ip_match','ip_mismatch','signature_valid','signature_invalid','pair_unavailable','feed_unavailable','service_unavailable','config_suspect','rejected'].indexOf(parts[1])>=0 &&
     ['-','unknown','crawler','user_directed','intermediary'].indexOf(parts[2])>=0 &&
     ['-','none','signature_agent','ua_token','dom_host','dom_marker','poppy_session'].indexOf(parts[3])>=0 &&
     ['-','human','suspicious','automated','declared_agent'].indexOf(parts[4])>=0 && ['-','initial','final','agent'].indexOf(parts[5])>=0;
@@ -356,6 +380,7 @@ function publish(rules,available,verdict,until) {
   for(var i=0;i<keep.length && completedCount>=100;i++) if(!(keep[i].active>0 && keep[i].lease>t)) {keep.splice(i,1);i--;completedCount--;}
   if(entry.until>t || (entry.active>0 && entry.lease>t)) keep.push(entry);
   storage.setItemCopy(slot.cacheKey,keep);
+  debug('result_done ms='+(t-now));
   return select(pair);
 }
 function classify(rules, available, verdict) {return publish(rules,available,verdict);}
@@ -363,7 +388,7 @@ function labels(rules, available, verdict) {
   var browser=oneOf(getEventData('traffic_class'),['human','suspicious','automated','declared_agent'],'-');
   var phase=oneOf(getEventData('traffic_phase'),['initial','final','agent'],'-');
   var marker=browser==='declared_agent' ? oneOf(getEventData('traffic_agent'),['openai','anthropic'],'none') : 'none';
-  var validInput=validUa();
+  var validInput=validUa() && validSignatureEnvelope();
   var ua=validInput ? (getRequestHeader('user-agent') || '').toLowerCase() : '';
   var agent=validInput ? getRequestHeader('signature-agent').trim() : '';
   if(!validInput) verdict=undefined;
@@ -374,7 +399,7 @@ function labels(rules, available, verdict) {
   var ipAllowed=validInput && !signed && (!signature || !!identity || ignored);
   var matches=[];
   for(var i=0;i<rules.tokens.length;i++) if(uaHas(ua,rules.tokens[i])) matches.push(i);
-  var verification= !ipAllowed || !available ? 'none' : 'no_signature', purpose='unknown', operator='none';
+  var verification= !ipAllowed || !available || eligibleUnavailable(rules,matches) ? 'none' : 'no_signature', purpose='unknown', operator='none';
   var claim=signature ? 'signature_agent' : (matches.length ? 'ua_token' : 'none');
   var source=clientIp();
   var ip=source.ip;
@@ -434,7 +459,9 @@ function labels(rules, available, verdict) {
   else if(verification==='ip_mismatch' || browser==='declared_agent' || claim==='ua_token' || claim==='signature_agent') type='agent_unverified';
   else if(browser==='suspicious') type='bot_suspicious';
   else if(browser==='human') type='human';
-  var suffix=[verification,purpose,claim,browser,phase].join('|');
+  var diagnostic=verdict && verdict.diagnostic;
+  if(!available && !diagnostic) diagnostic='feed_unavailable';
+  var suffix=[diagnostic || verification,purpose,claim,browser,phase].join('|');
   if(operator.length+1+suffix.length>100) operator='none';
   return {vv_type:type,vv_detail:operator+'|'+suffix};
 }
@@ -464,7 +491,11 @@ function valid(r) {
     if(getType(sources)!=='array' || sources.length>256) return false;
     for(var i=0;i<sources.length;i++) {
       var source=sources[i];
-      if(getType(source)!=='object' || safeOperator(source.operator)==='none' || getType(source.list)!=='string' || !(source.fetched_at_ms===null || (timestamp(source.fetched_at_ms) && source.fetched_at_ms<=now+60000)) || (source.available && source.fetched_at_ms===null) || getType(source.available)!=='boolean' || getType(source.refresh_ok)!=='boolean' || [undefined,null,'fetch','limit','shrink'].indexOf(source.reason)<0) return false;
+      if(getType(source)!=='object' || safeOperator(source.operator)==='none' || getType(source.list)!=='string' || !(source.fetched_at_ms===null || (timestamp(source.fetched_at_ms) && source.fetched_at_ms<=now+300000)) || (source.available && source.fetched_at_ms===null) || getType(source.available)!=='boolean' || getType(source.refresh_ok)!=='boolean' || [undefined,null,'fetch','limit','shrink'].indexOf(source.reason)<0) return false;
+      if(source.tokens!==undefined && source.tokens!==null) {
+        if(getType(source.tokens)!=='array') return false;
+        for(var j=0;j<source.tokens.length;j++) if(getType(source.tokens[j])!=='number' || source.tokens[j]%1!==0 || source.tokens[j]<0 || source.tokens[j]>=r.tokens.length) return false;
+      }
       var known=false;
       for(var j=0;j<r.operators.length;j++) if(r.operators[j].id===source.operator) known=true;
       if(!known) return false;
@@ -475,7 +506,7 @@ function valid(r) {
   for(var i=0;i<r.groups.length;i++) {
     var g=r.groups[i];
     if(getType(g)!=='object' || getType(g.operator)!=='number' || g.operator%1!==0 || g.operator<0 || g.operator>=r.operators.length || getType(g.list)!=='string' || getType(g.v4)!=='array' || getType(g.v6)!=='array' || !(g.tokens===null || getType(g.tokens)==='array')) return false;
-    if((getType(g.complete)!=='boolean' && !(r.schema===1 && g.complete===undefined)) || (!timestamp(g.fetched_at_ms) && !(r.schema===1 && g.fetched_at_ms===undefined)) || g.fetched_at_ms>now+60000) return false;
+    if((getType(g.complete)!=='boolean' && !(r.schema===1 && g.complete===undefined)) || (!timestamp(g.fetched_at_ms) && !(r.schema===1 && g.fetched_at_ms===undefined)) || g.fetched_at_ms>now+300000) return false;
     for(var j=0;j<i;j++) if(r.groups[j].operator===g.operator && r.groups[j].list===g.list) return false;
     if(g.tokens) for(var j=0;j<g.tokens.length;j++) if(getType(g.tokens[j])!=='number' || g.tokens[j]%1!==0 || g.tokens[j]<0 || g.tokens[j]>=r.tokens.length) return false;
     var blocks=[g];
@@ -543,8 +574,12 @@ function prefilter(rules) {
   if(sig.length>16384 || input.length>16384 || rawAgent.length>8192 || sig.length+input.length+rawAgent.length>24000) return {reason:'header_limit'};
   var headers=[sig,input,rawAgent];
   for(var i=0;i<headers.length;i++) for(var j=0;j<headers[i].length;j++) if(!printable(headers[i].charAt(j)) && headers[i].charAt(j)!=='\t') return {reason:'header_encoding'};
-  var members=signatureInputs(), agent=agents(rawAgent);
-  if(!members || !agent) return {reason:'parameters'};
+  var members=signatureInputs(), agent=agents(rawAgent), signatures=sf(sig,false);
+  if(!members || !agent || !signatures) return {reason:'parameters'};
+  var union=[];
+  for(var i=0;i<members.length;i++) if(union.indexOf(members[i].name)<0) union.push(members[i].name);
+  for(var i=0;i<signatures.length;i++) if(union.indexOf(signatures[i].name)<0) union.push(signatures[i].name);
+  if(union.length>4) return {reason:'signature_count'};
   var wba=false, path=false;
   var supported=[];
   for(var i=0;i<members.length;i++) {
@@ -664,6 +699,7 @@ function validAuthority(host) {
 }
 function finish(rules,available) {
   var shared=completed(); if(shared) return publish(rules,available);
+  if(!validSignatureEnvelope()) {debug('prefilter: header_limit');return classify(rules,available);}
   if(!apiKey || !validUa()) return classify(rules,available);
   var filter=prefilter(rules);
   if(filter.reason) {debug('prefilter: '+filter.reason); return classify(rules,available);}
@@ -699,17 +735,18 @@ function finish(rules,available) {
     storage.setItemCopy(stateKey,latest);
     debug(status===400 ? '400 bad_request' : (status===401 ? 'rejected 401 invalid_key' : (status===403 ? 'rejected 403 host_not_allowed' : (status===429 ? 'rejected 429 rate_limited' : status))));
     // Check a completed result even on failure; never split type/detail on timeout.
-    return result(none,t+5000);
+    return result({verification:'none',operator:'none',purpose:'unknown',claim:'signature_agent',diagnostic:configError || status===429 ? 'rejected' : 'service_unavailable'},t+5000);
   }
   return require('sendHttpRequest')(service+'/verify',{method:'POST',timeout:500,headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json','X-VV-Template':TEMPLATE_VERSION}},json).then(function(response) {
     if(response.statusCode!==200) return failed(response.statusCode,makeNumber(((response.headers || {})['retry-after'] || (response.headers || {})['Retry-After'])));
-    var verdict=getType(response.body)==='string' && response.body.length<=4096 ? serviceVerdict(JSON.parse(response.body),rules) : undefined;
+    var parsed=getType(response.body)==='string' && response.body.length<=4096 ? JSON.parse(response.body) : undefined;
+    var verdict=serviceVerdict(parsed,rules);
     if(!verdict) return failed('invalid_response',0);
     var t=require('getTimestampMillis')();
     var latest=storage.getItemCopy(stateKey) || {errors:0,until:0};
     storage.setItemCopy(stateKey,{errors:0,until:latest.until>t ? latest.until : 0});
     if(verdict.tolerated) {debug('200 unsupported_contract'); return result(none,t+5000);}
-    if(JSON.parse(response.body).diagnostic==='config_suspect') debug('config_suspect');
+    if(parsed.diagnostic==='config_suspect') {debug('config_suspect');verdict.diagnostic='config_suspect';}
     var until=t+5000;
     // An older service without the absolute deadline can answer this evaluation,
     // but its evidence must never start another local replay window.
@@ -731,24 +768,31 @@ reserve();
 if(url!==service+'/rules.json' && !allowedUrl(url)) return finish(empty,false);
 if(!serviceAllowed()) return finish(empty,false);
 var usable=cached && cached.rules && now-cached.at<86400000 && usableRules(cached.rules);
-function fallback(background) {
+function settleFlight() {
+  var flight=storage.getItemCopy('vv_rules_flight');
+  if(flight && flight.url===url && flight.attempt===attempt) storage.setItemCopy('vv_rules_flight',null);
+}
+function fallback(background,unsupported) {
+  settleFlight();
   var latest=storage.getItemCopy('vv_rules_v1');
   if(latest && latest.url!==url) return background ? undefined : finish(usable ? cached.rules : empty,!!usable);
   var current=latest && latest.url===url && latest.rules && now-latest.at<86400000 && usableRules(latest.rules);
   if(current && latest.attempt!==attempt) return background ? undefined : finish(latest.rules,true);
   var keep=current ? latest : (usable ? cached : {url:url,at:0});
-  keep.refreshFailed=true;keep.retryAt=require('getTimestampMillis')()+(data.flagSpoofed || keep.forceRefresh ? 600000 : 300000);
+  if(unsupported) keep.unsupported=true;
+  keep.refreshFailed=true;keep.retryAt=require('getTimestampMillis')()+(data.flagSpoofed || keep.forceRefresh || keep.unsupported ? 600000 : 300000);
   storage.setItemCopy('vv_rules_v1',keep);cached=keep;
   return background ? undefined : finish(keep.rules || empty,!!keep.rules);
 }
 var attempt;
 function refresh(background) {
-  var headers={};if(cached && cached.etag) headers['If-None-Match']=cached.etag;
+  var headers={'X-VV-Template':TEMPLATE_VERSION};if(cached && cached.etag) headers['If-None-Match']=cached.etag;
   return sendHttpGet(url,{timeout:800,headers:headers}).then(function(response) {
     var latest=storage.getItemCopy('vv_rules_v1');
     // Both success and failure must own the reservation. Late old URLs cannot evict a newer slot.
     var owned=latest && latest.url===url && latest.attempt===attempt;
     var t=require('getTimestampMillis')();
+    debug('get_done status='+response.statusCode+' ms='+(t-now));
     var rules;
     if(response.statusCode===304 && cached && cached.rules) rules=cached.rules;
     else {
@@ -757,15 +801,15 @@ function refresh(background) {
       if(rules && getType(rules.schema)==='number' && rules.schema!==2 && rules.schema!==1) {
         if(owned) {latest.unsupported=true;latest.retryAt=t+600000;storage.setItemCopy('vv_rules_v1',latest);}
         debug('200 unsupported_rules_schema');
-        return background ? undefined : finish(empty,false);
+        return fallback(background,true);
       }
-      if(!valid(rules)) return fallback(background);
     }
     if(!valid(rules)) return fallback(background);
     var etag=(response.headers || {}).etag || (response.headers || {}).ETag || (cached && cached.etag);
     var next={url:url,rules:rules,at:t,retryAt:0,refreshFailed:false,etag:etag,version:etag || rules.generated_at_ms,
       nextFetchAt:t+(data.flagSpoofed ? 600000 : 60000),unknownAt:latest && latest.url===url ? latest.unknownAt : cached && cached.unknownAt};
     if(owned) storage.setItemCopy('vv_rules_v1',next);
+    settleFlight();
     cached=next;
     return background ? undefined : finish(rules,true);
   }).then(undefined,function() {return fallback(background);});
@@ -787,6 +831,7 @@ function begin(background) {
   if(next.forceRefresh) next.forcedAt=now;
   next.retryAt=now+(data.flagSpoofed || next.forceRefresh ? 600000 : 300000);
   storage.setItemCopy('vv_rules_v1',next);
+  storage.setItemCopy('vv_rules_flight',{url:url,attempt:attempt,until:now+2000});
   return refresh(background);
 }
 // Every successful GET, even an unchanged/still-incomplete feed, has a minimum interval.
@@ -795,7 +840,30 @@ if(usable) {
     (data.flagSpoofed && (now-cached.at>=600000 || needsNegativeRefresh(cached.rules))) ||
     (now-cached.at>=600000 && unavailableSources(cached.rules));
   if(due && (!cached.forceRefresh || cached.forcedAt===undefined || now-cached.forcedAt>=600000) && now>=(cached.retryAt || 0) && now>=(cached.nextFetchAt || 0)) begin(true);
-  return finish(cached.unsupported ? empty : cached.rules,!cached.unsupported);
+  return finish(cached.rules,true);
+}
+// Followers wait for the cold owner; no empty pair can win the result slot.
+// callLater is the documented asynchronous scheduler. Only a small marker is
+// polled, with a wall-clock deadline below the sandbox Promise timeout.
+var flight=storage.getItemCopy('vv_rules_flight');
+if(flight && flight.url===url && now<flight.until) {
+  return require('Promise').create(function(resolve) {
+    function settled() {
+      var current=storage.getItemCopy('vv_rules_flight');
+      if(current && current.url===url && current.attempt===flight.attempt && require('getTimestampMillis')()<flight.until) {
+        require('callLater')(settled);return;
+      }
+      if(current && current.url===url && current.attempt===flight.attempt) {
+        debug('cold_join_deadline');
+        resolve(select({vv_type:'pending',vv_detail:'none|pair_unavailable|unknown|none|-|-'}));return;
+      }
+      cached=storage.getItemCopy('vv_rules_v1');
+      var ready=cached && cached.url===url && cached.rules && require('getTimestampMillis')()-cached.at<86400000 && usableRules(cached.rules);
+      debug(ready ? 'cold_join_ready' : 'cold_join_unavailable');
+      resolve(finish(ready ? cached.rules : empty,!!ready));
+    }
+    require('callLater')(settled);
+  });
 }
 if(cached && now<cached.retryAt) return finish(empty,false);
 return begin(false);
