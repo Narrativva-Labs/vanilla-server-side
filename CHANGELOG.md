@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 — 2026-11-25
+
+- Pin Visitor Verdict server 0.7.2 with shared parity vectors.
+- Shared differential corpus and regression coverage for K4.
+
 ## 0.4.0
 
 - Review IP spoofing certainty: require every operator feed to have a known successful source refresh within 2 h; failures/cache reuse do not renew evidence. Uncertain mismatch preserves browser automated; exclusively non-WBA signatures allow IP fallback. Document TRUST_PROXY certainty.

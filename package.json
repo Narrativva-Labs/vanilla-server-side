@@ -1,6 +1,6 @@
 {
   "name": "vanilla-server-side",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
   "description": "Independent, self-hosted parallel web analytics",
   "license": "MIT",
@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "fastify": "^5.6.2",
-    "visitor-verdict-server": "file:vendor/visitor-verdict-server-0.7.1.tgz"
+    "visitor-verdict-server": "file:vendor/visitor-verdict-server-0.7.2.tgz"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",

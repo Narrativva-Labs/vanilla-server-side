@@ -217,16 +217,16 @@ for (const route of ["/d", "/e"])
   });
 it("pins vendor bytes, package version and npm integrity", () => {
   const bytes = readFileSync(
-    new URL("../vendor/visitor-verdict-server-0.7.1.tgz", import.meta.url),
+    new URL("../vendor/visitor-verdict-server-0.7.2.tgz", import.meta.url),
   );
   const digest = createHash("sha512").update(bytes).digest();
   expect(digest.toString("hex")).toBe(
-    "8c426785a01bdc1a74d74b2d9a5b581284ec2fa34098609abd10b8a05ccb1bbf4b0354013537a950ac240323ff755183d07689d79a88aebc7583de989deaf057",
+    "980b1557ea4bd889665f60ad7cc48cfcc5037394f021da5127c49e66ffe7ea3d69e205ac81b165b6af3d5f84741b6fc8fb213f249311ad8dda745e67c5cda62c",
   );
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  expect(pkg.version).toBe("0.4.0");
-  expect(lock.packages["node_modules/visitor-verdict-server"].version).toBe("0.7.1");
+  expect(pkg.version).toBe("0.4.1");
+  expect(lock.packages["node_modules/visitor-verdict-server"].version).toBe("0.7.2");
   expect(lock.version).toBe(pkg.version);
   expect(lock.packages[""].version).toBe(pkg.version);
   expect(lock.packages["node_modules/visitor-verdict-server"].integrity).toBe(
