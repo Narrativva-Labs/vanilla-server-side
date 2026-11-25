@@ -26,8 +26,7 @@ export async function runCorpus({packageUrl,post,onlySandbox=false}={}){
      const name=url.endsWith('/peer')?'peer':'one',g=v.feed.groups.find(g=>g.list===name),source=v.feed.sources?.find(s=>s.list===name);
      if(!g||source && !source.available)throw Error('fixture missing source');
      if(trace){trace.successfulRefreshAt=source?.fetched_at_ms/1000;trace.refreshOk=source?.refresh_ok===true;}
-     const hidden=v.axes.proxy==='cloudflare'&&mode!=='claim';
-     const prefixes=!hidden&&g.v4.length?[{ipv4Prefix:name==='one'?'192.0.2.0/24':'198.51.100.0/24'}]:[];
+     const prefixes=g.v4.length?[{ipv4Prefix:name==='one'?'192.0.2.0/24':'198.51.100.0/24'}]:[];
      const block=compilePrefixes(prefixes);
      if(kind==='sail'){block.shared=compilePrefixes(g.shared_v4?.length?[{ipv4Prefix:'203.0.113.0/24'}]:[]);return new Map([['peer',block]]);}
      return block;
@@ -41,6 +40,9 @@ export async function runCorpus({packageUrl,post,onlySandbox=false}={}){
   // The API context/transport adapter applies the same public contract as sGTM.
   // It supplies absent path rather than guessing a public prefix. Core crypto,
   // candidate policy, IP union, certainty and label selection remain real code.
+  // Raw method/host context is also exercised below. The native API accepts HTTP
+  // token methods (M-SEARCH); the service profile accepts only A-Z. Local unsigned
+  // IP evidence does not depend on that service reconstruction policy.
   const core=async(body,remote=true)=>{
    const validContext=v.axes.context==='valid',remoteOk=v.axes.response==='200';
    return verifier.verify({host:'example.com',method:'GET',target:body?.path,secure:true,headerDiagnostics:false,clientIp:remote?undefined:v.axes.proxy==='custom_short'?undefined:v.ip,ipTrusted:['none','custom'].includes(v.axes.proxy),headers:remote?{signature:body.signature,'signature-input':body.signature_input,'signature-agent':body.signature_agent}:v.headers},
@@ -50,6 +52,11 @@ export async function runCorpus({packageUrl,post,onlySandbox=false}={}){
   const tpl=sandbox(v,post||(async body=>{
    if(!lib){const [operator,verification,purpose,claim]=v.expected.vv_detail.split('|');return {statusCode:200,body:JSON.stringify({v:1,operator,...(verification==='config_suspect'?{diagnostic:'config_suspect'}:{}),verification:['signature_valid','signature_invalid'].includes(verification)?verification:'none',purpose,claim,expires_at:null})};}const verdict=await core(body);answer=verdict;return {statusCode:200,body:JSON.stringify({v:1,...(v.axes.crypto==='config_suspect'?{diagnostic:'config_suspect'}:{}),verification:['signature_valid','signature_invalid'].includes(verdict.verification)?verdict.verification:'none',operator:verdict.verified?.operator||'none',purpose:verdict.agent_purpose,claim:'signature_agent',expires_at:verdict.verified?.expiresAt??null})};}));
   try{
+   if(verifier && v.axes.context!=='valid') {
+    const raw=await verifier.verify({host:v.headers.host,method:v.method,headers:v.headers,secure:true,headerDiagnostics:false,clientIp:v.ip,ipTrusted:['none','custom'].includes(v.axes.proxy)});
+    if(v.axes.context==='bad_host'){assert.equal(raw.verification,'none','raw invalid host '+v.id);assert.equal(raw.verified,undefined);}
+    else if(!['unsigned','nonwba'].includes(v.axes.signatures))assert.notEqual(raw.verification,'signature_valid','M-SEARCH cannot verify a signature over GET '+v.id);
+   }
    const actual=await tpl.run();assert.deepEqual(actual,v.expected,'sandbox '+v.id+' '+JSON.stringify(v.axes));
    if(verifier&&!onlySandbox){
     const pathOk=v.config.pathMode==='root'||(v.config.pathMode==='prefix'&&v.config.publicPath==='/metrics');

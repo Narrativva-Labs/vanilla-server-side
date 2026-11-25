@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.5 — 2026-11-25
+
+Vendor visitor-verdict-server 0.7.6 with startup directory revalidation and untrusted IP evidence protection.
+
 ## 0.4.4 — 2026-11-25
 
 - Vendor visitor-verdict-server 0.7.5 with cold-directory recovery and complete per-verifier SAIL readiness.

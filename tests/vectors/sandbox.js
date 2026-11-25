@@ -40,7 +40,7 @@ function retrySeconds(raw) {
     return makeNumber(value);
   }
   var delta=decimal(raw);
-  if(delta>=0) return delta;
+  if(delta>=0) return Math.min(300,delta);
   var parts=raw.split(' ');
   if(parts.length!==6 || ['Mon,','Tue,','Wed,','Thu,','Fri,','Sat,','Sun,'].indexOf(parts[0])<0 || parts[5]!=='GMT') return 0;
   var month=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(parts[2]);
@@ -49,13 +49,14 @@ function retrySeconds(raw) {
   var hour=decimal(time[0]),minute=decimal(time[1]),second=decimal(time[2]);
   var leap=year%4===0 && (year%100!==0 || year%400===0);
   var lengths=[31,leap ? 29 : 28,31,30,31,30,31,31,30,31,30,31];
-  if(day<1 || day>lengths.slice(month,month+1)[0] || hour<0 || hour>23 || minute<0 || minute>59 || second<0 || second>59) return 0;
+  if(day<1 || day>lengths[month] || hour<0 || hour>23 || minute<0 || minute>59 || second<0 || second>59) return 0;
   var days=365*(year-1970)+Math.floor((year-1)/4)-492-Math.floor((year-1)/100)+19+Math.floor((year-1)/400)-4;
-  days+=lengths.slice(0,month).reduce(function(sum,n) {return sum+n;},0)+day-1;
+  for(var i=0;i<month;i++) days+=lengths[i];
+  days+=day-1;
   var wait=((days*24+hour)*60+minute)*60000+second*1000-require('getTimestampMillis')();
-  return Math.max(0,Math.floor((wait+999)/1000));
+  return Math.min(300,Math.max(0,Math.floor((wait+999)/1000)));
 }
-var TEMPLATE_VERSION = '2.1.5';
+var TEMPLATE_VERSION = '2.1.6';
 // Request APIs can fail during sGTM internal evaluations with no incoming request.
 // This fixed phase lets Preview distinguish a source failure from a malformed pair.
 debug('request_context_read');
@@ -217,7 +218,7 @@ function parameter(member,name) {
 }
 function agents(raw) {
   if(getType(raw)!=='string' || raw.length>16384) return undefined;
-  var legacy=raw.trim().charAt(0)==='"';
+  var legacy=trimOws(raw).charAt(0)==='"';
   var parsed=sf(raw,legacy);
   return parsed ? {legacy:legacy ? parsed : undefined,members:legacy ? [] : parsed} : undefined;
 }
@@ -252,7 +253,7 @@ function signatureInputs() {
   return members;
 }
 function nonWbaOnly() {
-  var rawAgent=getRequestHeader('signature-agent').trim();
+  var rawAgent=trimOws(getRequestHeader('signature-agent'));
   if(rawAgent) {
     var parsedAgent=agents(rawAgent);
     if(!parsedAgent || (parsedAgent.legacy && (parsedAgent.legacy.kind!=='string' || parsedAgent.legacy.params.length))) return false;
@@ -287,6 +288,12 @@ function presentUnion(r,operator) {
   return count>0;
 }
 function hasHeader(name) {getRequestHeader(name);return headerPresent[headerNames.indexOf(name)];}
+function trimOws(value) {
+  var start=0,end=value.length;
+  while(start<end && (value.charAt(start)===' ' || value.charAt(start)==='\t')) start++;
+  while(end>start && (value.charAt(end-1)===' ' || value.charAt(end-1)==='\t')) end--;
+  return value.slice(start,end);
+}
 function validSignatureEnvelope() {
   var names=['signature','signature-input','signature-agent'], bytes=0;
   for(var i=0;i<names.length;i++) {
@@ -300,6 +307,11 @@ function validSignatureEnvelope() {
       if(c!=='\t' && (c<' ' || c==='\u007f' || c>'\u00ff')) return false;
       bytes+=c<='\u007f' ? 1 : 2;
     }
+  }
+  var rawAgent=trimOws(getRequestHeader('signature-agent'));
+  if(rawAgent) {
+    var parsedAgent=agents(rawAgent);
+    if(!parsedAgent || (parsedAgent.legacy && (parsedAgent.legacy.kind!=='string' || parsedAgent.legacy.params.length))) return false;
   }
   return bytes<=16384;
 }
@@ -390,7 +402,7 @@ function reserve() {
   var entry;
   for(var i=0;i<current.length;i++) if(current[i].key===slot.hash) entry=current[i];
   if(!entry) {entry={key:slot.hash,until:0,active:0};current.push(entry);}
-  if(!(entry.lease>t)) {entry.active=0;entry.generation=(entry.generation || 0)+1;}
+  if(!(entry.lease>t)) {entry.active=0;entry.generation=Math.max(storage.getItemCopy('vv_result_generation') || 0,t,entry.generation || 0)+1;storage.setItemCopy('vv_result_generation',entry.generation);}
   else if(!entry.generation) entry.generation=1;
   entry.active=(entry.active || 0)+1;entry.lease=t+10000;
   reservationGeneration=entry.generation;
@@ -427,7 +439,7 @@ function labels(rules, available, verdict) {
   var marker=browser==='declared_agent' ? oneOf(getEventData('traffic_agent'),['openai','anthropic'],'none') : 'none';
   var validInput=validUa() && validSignatureEnvelope();
   var ua=validInput ? (getRequestHeader('user-agent') || '').toLowerCase() : '';
-  var agent=validInput ? getRequestHeader('signature-agent').trim() : '';
+  var agent=validInput ? trimOws(getRequestHeader('signature-agent')) : '';
   if(!validInput) verdict=undefined;
   var signature=!!agent;
   var ignored=nonWbaOnly();
@@ -768,7 +780,7 @@ function finish(rules,available) {
     if(configError) latest.errors=0;
     else latest.errors++;
     var end=0;
-    if(status===429) end=t+(retry>0 && retry%1===0 ? retry*1000 : 30000);
+    if(status===429) end=t+(retry>0 && retry%1===0 ? Math.min(60,retry)*1000 : 30000);
     else if(!configError && latest.errors>=3) end=t+60000;
     if(end>=latest.until && end>t) {latest.until=end;latest.reason=status===429 ? 'rejected' : 'service_unavailable';}
     storage.setItemCopy(stateKey,latest);
@@ -785,8 +797,8 @@ function finish(rules,available) {
     var latest=storage.getItemCopy(stateKey) || {errors:0,until:0};
     storage.setItemCopy(stateKey,{errors:0,until:latest.until>t ? latest.until : 0,reason:latest.reason});
     if(verdict.tolerated) {debug('200 unsupported_contract'); return result(none,t+5000);}
-    if(parsed.diagnostic==='config_suspect') {debug('config_suspect');verdict.diagnostic='config_suspect';}
-    if(['directory_unavailable','capacity','evidence_unavailable'].indexOf(parsed.diagnostic)>=0) {debug(parsed.diagnostic);verdict.diagnostic='service_unavailable';}
+    if(verdict.verification==='none' && parsed.diagnostic==='config_suspect') {debug('config_suspect');verdict.diagnostic='config_suspect';}
+    if(verdict.verification==='none' && ['directory_unavailable','capacity','evidence_unavailable'].indexOf(parsed.diagnostic)>=0) {debug(parsed.diagnostic);verdict.diagnostic='service_unavailable';}
     var until=t+5000;
     // An older service without the absolute deadline can answer this evaluation,
     // but its evidence must never start another local replay window.
@@ -795,7 +807,7 @@ function finish(rules,available) {
     if(getType(verdict.expires)==='number') until=Math.min(until,verdict.expires*1000);
     debug('200 '+verdict.verification);
     if(until<=t) return result(verdict,t);
-    return result(verdict,reusable ? until : t);
+    return result(verdict,reusable || (verdict.verification==='none' && ['directory_unavailable','capacity','evidence_unavailable'].indexOf(parsed.diagnostic)>=0) ? until : t);
   }).then(undefined,function() {return failed('timeout',0);});
 }
 // One feed copy per evaluation. Result cache lookup does not copy or hash the feed.
@@ -850,7 +862,7 @@ function refresh(background) {
     var owned=latest && latest.url===url && latest.attempt===attempt;
     var t=require('getTimestampMillis')();
     debug('get_done status='+response.statusCode+' ms='+(t-now));
-    if(!owned) return retiredFlight(background,latest);
+    if(!owned && !(latest && latest.url===url && latest.attempt===0 && !latest.rules && response.statusCode===200)) return retiredFlight(background,latest);
     var rules;
     if(response.statusCode===304 && cached && cached.rules) rules=cached.rules;
     else {
@@ -866,7 +878,8 @@ function refresh(background) {
     var etag=(response.headers || {}).etag || (response.headers || {}).ETag || (cached && cached.etag);
     var next={url:url,rules:rules,at:t,retryAt:0,refreshFailed:false,etag:etag,version:etag || rules.generated_at_ms,
       nextFetchAt:t+(data.flagSpoofed ? 600000 : 60000),unknownAt:latest && latest.url===url ? latest.unknownAt : cached && cached.unknownAt};
-    if(owned) storage.setItemCopy(rulesKey,next);
+    storage.setItemCopy(rulesKey,next);
+    if(!owned) return retiredFlight(background,next);
     settleFlight();
     cached=next;
     return background ? undefined : finish(rules,true);
@@ -887,9 +900,9 @@ function begin(background) {
   var next=cached || {url:url,at:0};
   next.attempt=attempt;
   if(next.forceRefresh) next.forcedAt=now;
-  next.retryAt=now+2000;
+  next.retryAt=now+(background ? (data.flagSpoofed || next.forceRefresh ? 600000 : 300000) : 2000);
   storage.setItemCopy(rulesKey,next);
-  storage.setItemCopy(flightKey,{url:url,attempt:attempt,until:now+2000});
+  if(!background) storage.setItemCopy(flightKey,{url:url,attempt:attempt,until:now+2000});
   return refresh(background);
 }
 // Every successful GET, even an unchanged/still-incomplete feed, has a minimum interval.
@@ -906,6 +919,10 @@ if(usable) {
 // Storage reads stay exponentially spaced (4..32 ms); every 512th callback
 // reads anyway so a frozen clock still observes completion (live pace: ~19 ms).
 var flight=storage.getItemCopy(flightKey);
+if(flight && flight.url===url && now>=flight.until+5000) {
+  storage.setItemCopy(flightKey,null);flight=undefined;
+  if(cached) {cached.attempt=0;cached.retryAt=0;storage.setItemCopy(rulesKey,cached);}
+}
 if(flight && flight.url===url) {
   var callLater=require('callLater'), timestamp=require('getTimestampMillis');
   var polls=0, checkAt=0, step=4, MAX_CALLBACKS=262144;
