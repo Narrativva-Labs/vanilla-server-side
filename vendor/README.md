@@ -1,11 +1,11 @@
-# Připnutá knihovna 0.7.2
+# Připnutá knihovna 0.7.3
 
-Služba i Vanilla používají stejný archiv `visitor-verdict-server-0.7.2.tgz`, vytvořený jednou přes npm pack --offline ve worktree knihovny (větev ip-mismatch, základ c594e44 + necommitnuté opravy K4). Žádné úpravy balíčku po zabalení.
+Služba i Vanilla používají totožný archiv `visitor-verdict-server-0.7.3.tgz`, jednou vytvořený přes `npm pack --offline` z worktree ip-mismatch (základ 2715bbd + opravy K5). Balíček se po zabalení neupravuje. Starší archivy jsou historické.
 
 SHA-512:
 
 ```
-980b1557ea4bd889665f60ad7cc48cfcc5037394f021da5127c49e66ffe7ea3d69e205ac81b165b6af3d5f84741b6fc8fb213f249311ad8dda745e67c5cda62c
+5202fa6e4ac94e291c439938f6ecd1eef61d69e878674d0179ced6002fa287ffdfead4bdd59989522deef3050fefc950c5c678d07a6d42196842fd0590255190
 ```
 
-K4: jednotná atribuce holého Signature-Agent, jistota celé neprázdné IP unie, potvrzení shrink po 2 h a stav po logických SAIL službách. CONTRACT.md v balíčku je přesnou kopií služby. Manifest a lockfile vybírají 0.7.2; starší archivy jsou historické. Zdrojové změny nechány k revizi bez commitu podle zadání.
+K5: krátké retry a poctivý warm/status pro SAIL shrink, odebrání neúplné služby bez falešného shrink, validace ne-listového ne-WBA, pevný marker místo syrového neřetězcového Signature-Agent. CONTRACT.md je bajtově shodný se službou. Manifesty a lockfily vybírají 0.7.3.

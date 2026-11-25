@@ -17,7 +17,7 @@ test('K4 actual collector labeller accepts the shared corpus direct-ingress slic
     flagSpoofedClaims: true,
     fetcher: async url => urls.has(String(url))
       ? Response.json({ prefixes: [{ ipv4Prefix: '192.0.2.0/24' }] })
-      : Response.json({ keys: [corpus.owners[0].jwk] }),
+      : Response.json({ keys: [corpus.owners.find((o: {signatureAgent:string}) => o.signatureAgent === defaultRegistry.find(r => r.directoryUrl === String(url))?.signatureAgent)?.jwk ?? corpus.owners[0].jwk] }),
   });
   try {
     for (let i=0;i<100;i++) {
@@ -27,13 +27,13 @@ test('K4 actual collector labeller accepts the shared corpus direct-ingress slic
     }
     let count=0;
     for (const v of corpus.vectors) {
-      if (v.axes.context!=='valid'||v.axes.response!=='200'||v.axes.lists!=='fresh'||v.axes.shared||v.axes.proxy!=='none'||v.axes.path||v.axes.agent!=='bare') continue;
+      if (v.axes.context!=='valid'||v.axes.response!=='200'||v.axes.lists!=='fresh'||v.axes.shared||v.axes.proxy!=='none'||v.axes.path||!['bare','dictionary'].includes(v.axes.agent)||v.axes.schema!==2||!v.axes.flagSpoofed||v.axes.crypto!=='valid'||v.axes.ua!=='token') continue;
       const verdict = await labeller.label({ method:v.method, url:v.path, ip:v.ip, raw:{ rawHeaders:Object.entries(v.headers).flat() } } as never);
-      const actual = visitorLabels({ verdict, browserClass:v.event.traffic_class });
+      const actual = visitorLabels({ verdict, browserClass:v.event.traffic_class, browserAgent:v.event.traffic_agent, browserAgentClaim:v.event.traffic_agent_claim });
       const { expect } = await import('vitest');
       expect(actual, v.id).toEqual(v.expected);count++;
     }
     const { expect } = await import('vitest');
-    expect(count).toBeGreaterThanOrEqual(60);
+    expect(count).toBeGreaterThanOrEqual(60);console.log('K5 actual labeller slice',count);
   } finally { labeller.close(); }
 });

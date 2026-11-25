@@ -1,6 +1,10 @@
 var getType = require('getType');
 // Selectors read a supplied pair; variable reevaluation is bounded by the short cache.
-if(getType(data.labelPair)==='object' && getType(data.labelPair.vv_type)==='string' && getType(data.labelPair.vv_detail)==='string') return select(data.labelPair);
+if(data.labelPair!==undefined && data.labelPair!=='') {
+  if(validPair(data.labelPair)) return select(data.labelPair);
+  require('logToConsole')('Visitor Verdict: invalid_label_pair pair_unavailable');
+  return select({vv_type:'pending',vv_detail:'none|pair_unavailable|unknown|none|-|-'});
+}
 var getEventData = require('getEventData');
 var readRequestHeader = require('getRequestHeader');
 var headerNames=[], headerValues=[];
@@ -8,6 +12,7 @@ function getRequestHeader(name) {
   var index=headerNames.indexOf(name);
   if(index>=0) return headerValues[index];
   var value=readRequestHeader(name);
+  if(getType(value)!=='string') value='';
   headerNames.push(name); headerValues.push(value); return value;
 }
 var getRemoteAddress = require('getRemoteAddress');
@@ -22,9 +27,9 @@ var service = data.serviceUrl || SERVICE_URL;
 var apiKey = getType(data.apiKey)==='string' ? data.apiKey.trim() : '';
 var url = data.rulesUrl || service+'/rules.json';
 function debug(message) { require('logToConsole')('Visitor Verdict: '+message); }
-if(data.labelPair!==undefined && data.labelPair!=='') debug('invalid_label_pair');
-var TEMPLATE_VERSION = '2.1.1';
-var requestIp=getRemoteAddress() || '';
+var TEMPLATE_VERSION = '2.1.2';
+var requestIp=getRemoteAddress();
+if(getType(requestIp)!=='string') requestIp='';
 var empty = {schema:2,operators:[],tokens:["ChatGPT-User","OAI-SearchBot","OAI-AdsBot","GPTBot","Claude-Agent","Claude-User","Claude-SearchBot","ClaudeBot","Perplexity-User","PerplexityBot","Google-Agent","Google-CloudVertexBot","Google-GeminiNotebook","Google-NotebookLM","Gemini-Deep-Research","MistralAI-User","MistralAI-Index","MistralAI-Training","DuckAssistBot","Applebot","Bytespider","meta-externalagent","meta-externalfetcher","meta-webindexer","CCBot","Amazonbot","Amzn-SearchBot","KimiBot","Kimi-SearchBot","Kimi-User","SeznamBot","Yeti","Ads-Naver","Blueno","Kagibot","Baiduspider","PetalBot","YandexBot","YandexAdditional","Amzn-User","AmazonAdBot","YouBot","Sogou","TikTokSpider","DeepSeekBot","ChatGLM-Spider","YisouSpider","360Spider","Diffbot","Timpibot","bingbot","AdIdxBot","BingPreview","MicrosoftPreview","BingVideoPreview","Googlebot","Googlebot-Image","Googlebot-Video","Storebot-Google","Google-InspectionTool","GoogleOther","GoogleOther-Image","GoogleOther-Video","Google-Pinpoint","Google-Read-Aloud","GoogleProducer","Google-Site-Verification","Google-CWS","FeedFetcher-Google"],groups:[]};
 // GTM sandbox strings have no char-code methods: printable ASCII is checked against this list (24. 11.).
 var PRINTABLE = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~';
@@ -213,11 +218,10 @@ function signatureInputs() {
   var raw=getRequestHeader('signature-input');
   var members=sf(raw,false);
   if(!members || members.length>4) return undefined;
-  for(var i=0;i<members.length;i++) if(members[i].kind!=='list') return undefined;
   return members;
 }
 function nonWbaOnly() {
-  var rawAgent=getRequestHeader('signature-agent');
+  var rawAgent=getRequestHeader('signature-agent').trim();
   if(rawAgent) {
     var parsedAgent=agents(rawAgent);
     if(!parsedAgent || (parsedAgent.legacy && (parsedAgent.legacy.kind!=='string' || parsedAgent.legacy.params.length))) return false;
@@ -225,6 +229,7 @@ function nonWbaOnly() {
   var members=signatureInputs(), signatures=sf(getRequestHeader('signature'),false);
   if(!members || !signatures) return false;
   for(var i=0;i<members.length;i++) {
+    if(members[i].kind!=='list') return false;
     var tag=parameter(members[i],'tag');
     if(tag && tag.kind==='string' && tag.value==='web-bot-auth') return false;
   }
@@ -312,7 +317,16 @@ function completed() {
   for(var i=0;i<results.length;i++) if(results[i].key===slot.hash && t<results[i].until && results[i].pair) return results[i].pair;
   return undefined;
 }
-function select(pair) {return data.outputField==='pair' ? pair : data.outputField==='vv_detail' ? pair.vv_detail : pair.vv_type;}
+function validPair(pair) {
+  if(getType(pair)!=='object' || ['pending','human','agent_verified','crawler_verified','automation_verified','agent_unverified','bot_spoofed','bot_automation','bot_suspicious'].indexOf(pair.vv_type)<0 || getType(pair.vv_detail)!=='string' || pair.vv_detail.length>100) return false;
+  var parts=pair.vv_detail.split('|');
+  return parts.length===6 && safeOperator(parts[0])===parts[0] &&
+    ['-','none','no_signature','ip_match','ip_mismatch','signature_valid','signature_invalid','pair_unavailable'].indexOf(parts[1])>=0 &&
+    ['-','unknown','crawler','user_directed','intermediary'].indexOf(parts[2])>=0 &&
+    ['-','none','signature_agent','ua_token','dom_host','dom_marker','poppy_session'].indexOf(parts[3])>=0 &&
+    ['-','human','suspicious','automated','declared_agent'].indexOf(parts[4])>=0 && ['-','initial','final','agent'].indexOf(parts[5])>=0;
+}
+function select(pair) {if(data.outputField==='pair') return pair; if(data.outputField==='vv_detail') return pair.vv_detail; return pair.vv_type;}
 // Pin ongoing evaluations independently of completed-result LRU. Leases bound abandoned work.
 function reserve() {
   var slot=sharedSlot(), current=storage.getItemCopy(slot.cacheKey) || [], t=require('getTimestampMillis')();
@@ -351,7 +365,7 @@ function labels(rules, available, verdict) {
   var marker=browser==='declared_agent' ? oneOf(getEventData('traffic_agent'),['openai','anthropic'],'none') : 'none';
   var validInput=validUa();
   var ua=validInput ? (getRequestHeader('user-agent') || '').toLowerCase() : '';
-  var agent=validInput ? getRequestHeader('signature-agent') : '';
+  var agent=validInput ? getRequestHeader('signature-agent').trim() : '';
   if(!validInput) verdict=undefined;
   var signature=!!agent;
   var ignored=nonWbaOnly();
@@ -361,7 +375,7 @@ function labels(rules, available, verdict) {
   var matches=[];
   for(var i=0;i<rules.tokens.length;i++) if(uaHas(ua,rules.tokens[i])) matches.push(i);
   var verification= !ipAllowed || !available ? 'none' : 'no_signature', purpose='unknown', operator='none';
-  var claim=signature ? 'signature_agent' : matches.length ? 'ua_token' : 'none';
+  var claim=signature ? 'signature_agent' : (matches.length ? 'ua_token' : 'none');
   var source=clientIp();
   var ip=source.ip;
   var n=ipv4(ip), hex=ip.indexOf(':')>=0 ? ipv6(ip) : '';
@@ -415,7 +429,7 @@ function labels(rules, available, verdict) {
   var type='pending';
   if(verification==='signature_invalid') type='bot_spoofed';
   else if(verification==='ip_mismatch' && source.certain && mismatchFresh) type='bot_spoofed';
-  else if(verified) type=purpose==='crawler' ? 'crawler_verified' : purpose==='intermediary' ? 'automation_verified' : 'agent_verified';
+  else if(verified) type=purpose==='crawler' ? 'crawler_verified' : (purpose==='intermediary' ? 'automation_verified' : 'agent_verified');
   else if(browser==='automated') type='bot_automation';
   else if(verification==='ip_mismatch' || browser==='declared_agent' || claim==='ua_token' || claim==='signature_agent') type='agent_unverified';
   else if(browser==='suspicious') type='bot_suspicious';
@@ -437,15 +451,7 @@ function jsonBytes(r) {
   return size;
 }
 function valid(r) {
-  // N-1 feeds can lack certainty metadata. Preserve positive evidence, never
-  // infer completeness or refresh success from the schema number.
-  if(getType(r)==='object' && r.schema===1 && getType(r.groups)==='array') {
-    if(r.sources===undefined) r.sources=[];
-    for(var old=0;old<r.groups.length;old++) if(getType(r.groups[old])==='object') {
-      if(r.groups[old].complete===undefined) r.groups[old].complete=false;
-      if(r.groups[old].fetched_at_ms===undefined) r.groups[old].fetched_at_ms=0;
-    }
-  }
+  // N-1 defaults are read locally: validation never mutates the wire object.
   if(getType(r)!=='object' || (r.schema!==2 && r.schema!==1) || r.complete!==true || getType(r.missing)!=='array' || r.missing.length!==0 || !contentFresh(r) || getType(r.operators)!=='array' || getType(r.tokens)!=='array' || getType(r.groups)!=='array' || r.operators.length>128 || r.tokens.length>512 || r.groups.length>256 || jsonBytes(r)>200000) return false;
   for(var i=0;i<r.operators.length;i++) {
     if(getType(r.operators[i])!=='object' || safeOperator(r.operators[i].id)==='none' || getType(r.operators[i].purposes)!=='object') return false;
@@ -453,21 +459,23 @@ function valid(r) {
   }
   for(var i=0;i<r.tokens.length;i++) if(getType(r.tokens[i])!=='string' || !r.tokens[i] || r.tokens[i].length>128) return false;
   {
-    if(getType(r.sources)!=='array' || r.sources.length>256) return false;
-    for(var i=0;i<r.sources.length;i++) {
-      var source=r.sources[i];
+    var sources=r.sources;
+    if(r.schema===1 && sources===undefined) sources=[];
+    if(getType(sources)!=='array' || sources.length>256) return false;
+    for(var i=0;i<sources.length;i++) {
+      var source=sources[i];
       if(getType(source)!=='object' || safeOperator(source.operator)==='none' || getType(source.list)!=='string' || !(source.fetched_at_ms===null || (timestamp(source.fetched_at_ms) && source.fetched_at_ms<=now+60000)) || (source.available && source.fetched_at_ms===null) || getType(source.available)!=='boolean' || getType(source.refresh_ok)!=='boolean' || [undefined,null,'fetch','limit','shrink'].indexOf(source.reason)<0) return false;
       var known=false;
       for(var j=0;j<r.operators.length;j++) if(r.operators[j].id===source.operator) known=true;
       if(!known) return false;
-      for(var j=0;j<i;j++) if(r.sources[j].operator===source.operator && r.sources[j].list===source.list) return false;
+      for(var j=0;j<i;j++) if(sources[j].operator===source.operator && sources[j].list===source.list) return false;
     }
   }
   var total=0;
   for(var i=0;i<r.groups.length;i++) {
     var g=r.groups[i];
     if(getType(g)!=='object' || getType(g.operator)!=='number' || g.operator%1!==0 || g.operator<0 || g.operator>=r.operators.length || getType(g.list)!=='string' || getType(g.v4)!=='array' || getType(g.v6)!=='array' || !(g.tokens===null || getType(g.tokens)==='array')) return false;
-    if(getType(g.complete)!=='boolean' || !timestamp(g.fetched_at_ms) || g.fetched_at_ms>now+60000) return false;
+    if((getType(g.complete)!=='boolean' && !(r.schema===1 && g.complete===undefined)) || (!timestamp(g.fetched_at_ms) && !(r.schema===1 && g.fetched_at_ms===undefined)) || g.fetched_at_ms>now+60000) return false;
     for(var j=0;j<i;j++) if(r.groups[j].operator===g.operator && r.groups[j].list===g.list) return false;
     if(g.tokens) for(var j=0;j<g.tokens.length;j++) if(getType(g.tokens[j])!=='number' || g.tokens[j]%1!==0 || g.tokens[j]<0 || g.tokens[j]>=r.tokens.length) return false;
     var blocks=[g];
@@ -521,8 +529,10 @@ function serviceAllowed() {
   return service.length>8 && service.slice(-1)!=='/';
 }
 function pathContext() {
-  var path=(require('getRequestPath')() || '').split('?')[0];
-  var prefix=data.pathMode==='unset' ? '' : data.pathMode==='root' ? '/' : data.publicPath || '';
+  var path=require('getRequestPath')();
+  if(getType(path)!=='string') return undefined;
+  path=path.split('?')[0];
+  var prefix=data.pathMode==='unset' ? '' : (data.pathMode==='root' ? '/' : data.publicPath || '');
   var full=(prefix==='/' ? '' : prefix)+path;
   return validPrefix(prefix) && validPath(path) && validPath(full) ? {path:full,prefix:prefix} : undefined;
 }
@@ -539,6 +549,7 @@ function prefilter(rules) {
   var supported=[];
   for(var i=0;i<members.length;i++) {
     var member=members[i], tag=parameter(member,'tag');
+    if(member.kind!=='list') {supported.push({member:member,safe:false,identity:false,path:false,refs:[]});continue;}
     if(!tag || tag.kind!=='string' || tag.value!=='web-bot-auth') {supported.push({member:member,safe:true,identity:false,path:false,refs:[]});continue;}
     wba=true;
     var seen=[], refs=[], agentKeys=[]; var identity=false, bareAgent=false, safe=true, memberPath=false;
@@ -552,7 +563,7 @@ function prefilter(rules) {
       if(seen.indexOf(id)>=0) safe=false;
       seen.push(id);
       if(name==='@path') memberPath=true;
-      if((name==='signature-input' || name==='signature') && params.length) refs.push(params[0].value);
+      if(name==='signature-input' && params.length) refs.push(params[0].value);
       if(name==='signature-agent') {
         if(!params.length) bareAgent=true;
         else if(params.length===1 && params[0].name==='key' && params[0].kind==='string' && agentKeys.indexOf(params[0].value)<0) agentKeys.push(params[0].value);
@@ -560,9 +571,10 @@ function prefilter(rules) {
     }
     // Match the verifier's attribution: own dictionary label wins; otherwise
     // exactly one covered key is required. An ambiguous peer cannot demand @path.
-    var candidate=agent.legacy ? bareAgent ? identityAt(agent) : undefined :
-      agentKeys.indexOf(member.name)>=0 ? identityAt(agent,member.name) :
-      agentKeys.length===1 ? identityAt(agent,agentKeys[0]) : undefined;
+    var candidate=undefined;
+    if(agent.legacy) {if(bareAgent) candidate=identityAt(agent);}
+    else if(agentKeys.indexOf(member.name)>=0) candidate=identityAt(agent,member.name);
+    else if(agentKeys.length===1) candidate=identityAt(agent,agentKeys[0]);
     identity=safe && knownIdentity(candidate,rules) && (!memberPath || !!context);
     supported.push({member:member,safe:safe,identity:identity,path:memberPath,refs:refs});
   }
@@ -574,7 +586,7 @@ function prefilter(rules) {
     for(var j=0;j<candidate.refs.length;j++) {
       var found=false;
       for(var k=0;k<supported.length;k++) if(supported[k].member.name===candidate.refs[j]) found=true;
-      if(!found) candidate.safe=false;
+      if(!found) {candidate.safe=false;candidate.identity=false;}
     }
   }
   // Independent unknown WBA peers are not verification candidates. Retain one
@@ -659,7 +671,7 @@ function finish(rules,available) {
   var state=storage.getItemCopy(stateKey) || {errors:0,until:0};
   var none={verification:'none',operator:'none',purpose:'unknown',claim:'signature_agent'};
   var method=require('getRequestMethod')();
-  var authority=(getRequestHeader('host') || '').toLowerCase();
+  var authority=getRequestHeader('host').toLowerCase();
   if(authority.slice(-4)===':443') authority=authority.slice(0,-4);
   if(!validMethod(method) || !validAuthority(authority)) {debug('prefilter: request_context'); return classify(rules,available,none);}
   var body={method:method,authority:authority,signature:getRequestHeader('signature'),signature_input:filter.input,signature_agent:getRequestHeader('signature-agent')};
@@ -685,7 +697,7 @@ function finish(rules,available) {
     if(status===429) latest.until=Math.max(latest.until,t+(retry>0 && retry%1===0 ? retry*1000 : 30000));
     else if(!configError && latest.errors>=3) latest.until=Math.max(latest.until,t+60000);
     storage.setItemCopy(stateKey,latest);
-    debug(status===400 ? '400 bad_request' : status===401 ? 'rejected 401 invalid_key' : status===403 ? 'rejected 403 host_not_allowed' : status===429 ? 'rejected 429 rate_limited' : status);
+    debug(status===400 ? '400 bad_request' : (status===401 ? 'rejected 401 invalid_key' : (status===403 ? 'rejected 403 host_not_allowed' : (status===429 ? 'rejected 429 rate_limited' : status))));
     // Check a completed result even on failure; never split type/detail on timeout.
     return result(none,t+5000);
   }
@@ -724,7 +736,7 @@ function fallback(background) {
   if(latest && latest.url!==url) return background ? undefined : finish(usable ? cached.rules : empty,!!usable);
   var current=latest && latest.url===url && latest.rules && now-latest.at<86400000 && usableRules(latest.rules);
   if(current && latest.attempt!==attempt) return background ? undefined : finish(latest.rules,true);
-  var keep=current ? latest : usable ? cached : {url:url,at:0};
+  var keep=current ? latest : (usable ? cached : {url:url,at:0});
   keep.refreshFailed=true;keep.retryAt=require('getTimestampMillis')()+(data.flagSpoofed || keep.forceRefresh ? 600000 : 300000);
   storage.setItemCopy('vv_rules_v1',keep);cached=keep;
   return background ? undefined : finish(keep.rules || empty,!!keep.rules);
@@ -759,6 +771,7 @@ function refresh(background) {
   }).then(undefined,function() {return fallback(background);});
 }
 function unavailableSources(r) {
+  if(getType(r.sources)!=='array') return false;
   for(var i=0;i<r.sources.length;i++) if(!r.sources[i].available) return true;
   return false;
 }
@@ -780,7 +793,7 @@ function begin(background) {
 if(usable) {
   var due=cached.forceRefresh || cached.unsupported || now-cached.at>=21600000 ||
     (data.flagSpoofed && (now-cached.at>=600000 || needsNegativeRefresh(cached.rules))) ||
-    unavailableSources(cached.rules) && now-cached.at>=600000;
+    (now-cached.at>=600000 && unavailableSources(cached.rules));
   if(due && (!cached.forceRefresh || cached.forcedAt===undefined || now-cached.forcedAt>=600000) && now>=(cached.retryAt || 0) && now>=(cached.nextFetchAt || 0)) begin(true);
   return finish(cached.unsupported ? empty : cached.rules,!cached.unsupported);
 }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2 — 2026-11-25
+
+- Vendor visitor-verdict-server 0.7.3 with SAIL cache recovery and malformed-header fixes; refresh the shared differential corpus.
+
 ## 0.4.1 — 2026-11-25
 
 - Pin Visitor Verdict server 0.7.2 with shared parity vectors.

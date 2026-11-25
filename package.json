@@ -1,6 +1,6 @@
 {
   "name": "vanilla-server-side",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "Independent, self-hosted parallel web analytics",
   "license": "MIT",
@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "fastify": "^5.6.2",
-    "visitor-verdict-server": "file:vendor/visitor-verdict-server-0.7.2.tgz"
+    "visitor-verdict-server": "file:vendor/visitor-verdict-server-0.7.3.tgz"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
@@ -31,7 +31,7 @@
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
   },
-  "author": "František Bujnovský",
+  "author": "Franti\u0161ek Bujnovsk\u00fd",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Narrativva-Labs/vanilla-server-side.git"
