@@ -391,7 +391,7 @@ for (const enabled of [false, true])
         ).statusCode,
       ).toBe(204);
       expect(detail(hit(), 1)).toBe(enabled ? "no_signature" : null);
-      expect(hit().get("ep.vv_type")).toBe("pending");
+      expect(hit().get("ep.vv_type")).toBe("unclassified");
       expect(hit().get("ep.vv_detail")).not.toContain("spoofed");
       expect(detail(hit(), 0)).toBe("none");
       expect(detail(hit(), 3)).toBe(enabled ? "none" : null);

@@ -80,7 +80,7 @@ For an undecided visitor, full events still wait in memory even after their ping
 | Exit engagement | Denied `user_engagement` | Not sent |
 | `vv_type`, `vv_detail` | Not sent | **Sent** (see below) |
 
-The two labels classify the hit, not the person: `vv_type` is one of `pending`, `human`, `bot_suspicious`, `agent_unverified`, `bot_automation`, `crawler_verified`, `agent_verified`, `bot_spoofed`; `vv_detail` is `operator|verification|purpose|claim|browser_class|phase`, for example `openai|signature_valid|user_directed|signature_agent|human|initial`, `none|no_signature|unknown|none|-|-` or, for an in-browser agent recognised by its page marker, `openai|no_signature|unknown|dom_marker|declared_agent|agent`. They contain no identifier, IP, cookie or URL. The other difference is the route: the hits pass through your collector, so your server (and whoever operates it for you) also processes the IP and the hit data.
+The two labels classify the hit, not the person: `vv_type` is one of `unclassified`, `human`, `bot_suspicious`, `crawler_unverified`, `agent_unverified`, `bot_automation`, `bot_spoofed`, `automation_verified`, `crawler_verified`, `agent_verified`; `vv_detail` is `operator|verification|purpose|claim|browser_class|phase`, for example `openai|signature_valid|user_directed|signature_agent|human|initial`, `none|no_signature|unknown|none|-|-` or, for an in-browser agent recognised by its page marker, `openai|no_signature|unknown|dom_marker|declared_agent|agent`. They contain no identifier, IP, cookie or URL. The other difference is the route: the hits pass through your collector, so your server (and whoever operates it for you) also processes the IP and the hit data.
 
 **Basic Consent Mode:** if the site blocks the Google tag until consent, Google normally receives nothing before a decision. Vanilla's default pings would then send more than your Google tag does. Set `DENIED_PINGS=off` on such sites.
 
@@ -164,7 +164,7 @@ Want to change something? See [CONTRIBUTING.md](CONTRIBUTING.md). Found a securi
 `AGENT_VERIFICATION=on` adds verified operator evidence to `/e` and `/d`; default off.
 GA4 receives two server-derived classification parameters, `vv_type` and `vv_detail`,
 on every eligible event, even with verification off and no browser detector.
-Without either source they start as `pending` / `none|-|-|-|-|-`. Labels count
+Without either source they start as `unclassified` / `none|-|-|-|-|-`. Labels count
 toward the 25-parameter limit after automatic/ecommerce fields and before custom
 site parameters. The 16 KiB body trimmer removes trailing items before labels.
 It labels traffic without routing conversions. **unverified ≠ human**.
@@ -176,7 +176,7 @@ when no stronger verdict exists. `/health` reports `google.botsLabelled`;
 
 Use `/health` → `agentVerification.counters` to **measure your own share of verified agents and bots**.
 It keeps anonymous integer totals in memory since process start (`since`, ISO UTC),
-with separate `events` and `pings` groups. Each has `total`, `byType` (all nine
+with separate `events` and `pings` groups. Each has `total`, `byType` (all ten
 `vv_type` values), `byVerification`, and overlapping `evidence` counts for signature
 headers, known UA claim tokens and non-human browser classes. No visitor data is
 retained in these counters; restart resets them. They count labelled hits, including
@@ -185,9 +185,16 @@ visitors or successful deliveries. Rejected, duplicate and obvious-bot-filtered 
 are excluded. Browser labels and evidence presence remain measurable with verification
 off. See [counter definitions](INSTALL.md#anonymous-hit-counters) before comparing shares.
 
-Register both as **event-scoped custom dimensions**. `vv_type` is human, pending,
-agent_verified, automation_verified, agent_unverified, crawler_verified, bot_automation, bot_suspicious or
-bot_spoofed. Verified unknown purpose maps to agent_verified with unknown retained in vv_detail; no user-directed role is inferred.
+Register both as **event-scoped custom dimensions**. `vv_type` is `human`, `unclassified`,
+`agent_verified`, `automation_verified`, `agent_unverified`, `crawler_verified`, `crawler_unverified`,
+`bot_automation`, `bot_suspicious` or `bot_spoofed`. Verified browser agents (Web Bot Auth signatures
+or IP-verified agent tokens such as `Claude-Agent` and `Google-Agent`) map to `agent_verified`;
+IP-verified user-directed fetchers (`ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`,
+`Kimi-User`, Google user-triggered fetchers) and crawlers map to `crawler_verified` while retaining
+`user_directed` or `crawler` in `vv_detail`. Unverified crawler and fetcher UA claims map to
+`crawler_unverified`; unverified agent tokens, unmapped UA tokens (such as `Blueno`), unverified WBA
+signatures and browser `declared_agent` markers map to `agent_unverified`. Verified unknown purpose
+maps to `agent_verified` with `unknown` retained in `vv_detail`; no user-directed role is inferred.
 `vv_detail` is `operator|verification|purpose|claim|browser_class|browser_phase`,
 maximum 100 characters, missing parts `-`, unknown operator `none`.
 Example: `openai|signature_valid|user_directed|signature_agent|human|final`.
@@ -214,7 +221,7 @@ later hits in a bounded memory-only session (denied pings: page only); no delays
 | suspicious | bot_suspicious |
 | automated | bot_automation |
 | declared_agent | agent_unverified |
-| none / missing | pending |
+| none / missing | unclassified |
 
 With the optional browser detector, Vanilla sends up to two `traffic_class` updates per document:
 one `final` when its class differs from the first ordinary hit's class or is not `human`, and
@@ -242,16 +249,18 @@ contains `|final|`): browser observations. The traffic_class event still carries
 traffic_* parameters for the collector, server containers and BigQuery; they need no dimensions.
 
 A detector loaded after Vanilla (for example from GTM) can miss the first hit, which then stays
-`pending`. Opt in with `data-vv-wait-ms="1000"` on the script tag to hold the first hits until the
+`unclassified`. Opt in with `data-vv-wait-ms="1000"` on the script tag to hold the first hits until the
 detector's initial class or at most that many milliseconds; default 0, no wait
 ([trade-off](INSTALL.md#waiting-for-the-first-class)).
 
-In GA4 use **begins with** `agent_` or `bot_` on vv_type; use **begins with** `openai|`
-on vv_detail for OpenAI, and require vv_type `agent_verified` or `crawler_verified` to count only verified operators
+In GA4 use **begins with** `agent_` for browser agents, `crawler_` for crawlers and page fetchers,
+or `bot_` for automation/suspicion/spoofing on `vv_type`; use **begins with** `openai|`
+on `vv_detail` for OpenAI, and require `vv_type` `agent_verified` or `crawler_verified` to count only verified operators
 (an operator with `agent_unverified` comes from a page marker; a UA token never names one). Verified purpose
 is carried with the operator across unsigned hits; intermediaries have lower session priority
 than direct verified agents. Purpose `intermediary` (for example `browserbase|signature_valid|intermediary|…`) marks verified signing
-infrastructure, not the agent. Leave out purpose `intermediary` when counting agents. Looker Studio operator dimension:
+infrastructure, not the agent. Leave out purpose `intermediary` when counting agents. For historical BigQuery
+data collected before 0.5.0, see the [migration query](INSTALL.md#migrating-historical-bigquery-data-before-050). Looker Studio operator dimension:
 `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`. Data API names are `customEvent:vv_type`
 and `customEvent:vv_detail`. The old six field names are no longer forwarded.
 
@@ -266,7 +275,8 @@ The [field observations](https://github.com/Narrativva-Labs/visitor-verdict/blob
 include five badge runs across personal and business accounts, an unsigned masked-headless
 negative control and two unsigned Grok runs; these are separate samples.
 
-The bundled verifier is 0.6.1. Upgrading from 0.3.5 adds provisional Meta Muse at
+The bundled verifier is 0.8.0 (see [CHANGELOG.md](CHANGELOG.md) for the 0.5.0 taxonomy changes
+and [vendor/README.md](vendor/README.md) for integrity). Upgrading from 0.3.5 adds provisional Meta Muse at
 muse.ai: allow outbound HTTPS for its key directory; startup health now expects nine
 directories (six before 0.5.0). A blocked Muse fetch can leave 8/9 loaded and a failed
 refresh. Muse's signing identity is third-party-observed, not confirmed by Meta or a
@@ -457,7 +467,7 @@ of successful fetch and validation; reading/downloading a cache or a failed
 refresh does not renew that timestamp. Missing, future or old metadata leaves
 `ip_mismatch` unverified and starts background refresh without waiting. Such an
 uncertain mismatch yields `bot_automation` for browser `automated`, otherwise
-`agent_unverified`. A certain mismatch yields `bot_spoofed` (session rank 4.5),
+`crawler_unverified` for crawler/fetcher UA tokens or `agent_unverified` for agent/unmapped tokens. A certain mismatch yields `bot_spoofed` (session rank 4.5),
 below direct verified identity (5) and verified infrastructure (4.75).
 Exclusively non-WBA signatures (another tag, `ignored_non_wba`) behave as absent
 signatures for IP matching and mismatch; mixed WBA, malformed and incomplete
@@ -465,3 +475,14 @@ signature headers still suppress mismatch. Sticky identity stays protected; curr
 reports `ip_mismatch`. The flag only labels traffic and does not block it.
 Allow outbound HTTPS to the operator feeds and verify startup warming before
 checking forged and real OpenAI requests.
+
+### 10-value vv_type taxonomy (0.5.0)
+
+Vanilla 0.5.0 bundles `visitor-verdict-server` 0.8.0 and adopts the updated 10-value `vv_type`
+taxonomy:
+
+- **`unclassified`** replaces `pending` when neither browser nor server evidence classifies a hit (session rank 0, never stored in session memory).
+- **`crawler_verified`** now covers both IP-verified crawlers and IP-verified user-directed fetchers (`ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`, `Kimi-User`, Google user-triggered fetchers), while keeping `purpose = user_directed` in `vv_detail`. Verified Web Bot Auth browser agents and IP-verified agent tokens (`Claude-Agent`, `Google-Agent`) remain `agent_verified`.
+- **`crawler_unverified`** (session rank 3) separates unverified crawler and fetcher UA claims (including `meta-externalagent` and uncertain IP mismatches on crawler/fetcher tokens) from **`agent_unverified`** (unverified agent tokens, unmapped tokens such as `Blueno`, unverified WBA signatures, and browser `declared_agent` markers).
+- **B7 Verdict Echo compatibility:** wire schema v1 continues to send `type: "crawler_verified", purpose: "crawler"` for IP-verified fetchers so cached Vanilla 0.2.0 scripts keep accepting responses without error and never publish fetchers to `dataLayer`, while GA4 `vv_detail` retains `user_directed`. Unverified types (`unclassified`, `crawler_unverified`, `agent_unverified`) never emit an echo.
+- **`/health` counters:** `agentVerification.counters.{events,pings}.byType` reports all 10 `vv_type` values (`unclassified` and `crawler_unverified` replace `pending`).

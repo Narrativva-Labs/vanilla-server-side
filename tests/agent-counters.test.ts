@@ -101,7 +101,7 @@ function hit(route: string, browser?: string) {
 }
 const cases = [
   ["human", "human", verdict("no_signature"), "no_signature"],
-  ["pending", undefined, verdict("none"), "none"],
+  ["unclassified", undefined, verdict("none"), "none"],
   ["bot_suspicious", "suspicious", verdict("none", "cache_miss"), "cache_miss/unavailable"],
   ["bot_automation", "automated", undefined, "cache_miss/unavailable"],
   [
@@ -109,6 +109,16 @@ const cases = [
     "declared_agent",
     verdict("none", "ip_evidence_unavailable"),
     "cache_miss/unavailable",
+  ],
+  [
+    "crawler_unverified",
+    "human",
+    {
+      ...verdict("no_signature"),
+      verified: undefined,
+      claimed: { uaTokens: ["GPTBot"], signatureAgents: [] },
+    } as library.AgentVerdict,
+    "no_signature",
   ],
   ["agent_verified", "human", verdict("signature_valid"), "signature_valid"],
   [
@@ -121,7 +131,7 @@ const cases = [
   ["bot_spoofed", "human", verdict("signature_invalid"), "signature_invalid"],
 ] as const;
 for (const route of ["/e", "/d"]) {
-  it(`counts all nine final labels and verification outcomes for ${route}, without visitor data`, async () => {
+  it(`counts all ten final labels and verification outcomes for ${route}, without visitor data`, async () => {
     const { app, set } = setup();
     const before = (await app.inject("/health")).json().agentVerification.counters;
     for (const [type, browser, evidence] of cases) {
@@ -145,18 +155,18 @@ for (const route of ["/e", "/d"]) {
     expect(counters.since).toBe(before.since);
     expect(new Date(counters.since).toISOString()).toBe(counters.since);
     const counts = counters[route === "/e" ? "events" : "pings"];
-    expect(counts.total).toBe(9);
-    expect(Object.values(counts.byType)).toEqual(Array(9).fill(1));
+    expect(counts.total).toBe(10);
+    expect(Object.values(counts.byType)).toEqual(Array(10).fill(1));
     expect(counts.byVerification).toEqual({
       signature_valid: 2,
       ip_match: 1,
       ip_mismatch: 0,
       signature_invalid: 1,
-      no_signature: 1,
+      no_signature: 2,
       none: 1,
       "cache_miss/unavailable": 3,
     });
-    expect(counts.evidence).toEqual({ signatureHeaders: 9, uaClaim: 9, browserNonHuman: 3 });
+    expect(counts.evidence).toEqual({ signatureHeaders: 10, uaClaim: 10, browserNonHuman: 3 });
     expect(counters[route === "/e" ? "pings" : "events"].total).toBe(0);
     const numeric = (value: unknown): void => {
       if (typeof value === "object" && value !== null) Object.values(value).forEach(numeric);
@@ -234,7 +244,7 @@ it("counts each signature header independently, including empty values, and reje
   }
   const counts = (await app.inject("/health")).json().agentVerification.counters.pings;
   expect(counts.total).toBe(3);
-  expect(counts.byType.pending).toBe(3);
+  expect(counts.byType.unclassified).toBe(3);
   expect(counts.evidence).toEqual({ signatureHeaders: 3, uaClaim: 0, browserNonHuman: 0 });
 });
 
@@ -270,7 +280,7 @@ it("uses duplicate raw UA headers and server-only tokens, case insensitively", (
   const { observe, counters } = createAgentCounters();
   for (const token of ["ChatGPT-User", "Google-NotebookLM", "Yeti"])
     observe("pings", ["User-Agent", "Mozilla/5.0", "USER-AGENT", token, "SIGNATURE", ""])({
-      vv_type: "pending",
+      vv_type: "unclassified",
       vv_detail: "none",
     });
   expect(counters.pings.evidence).toEqual({ signatureHeaders: 3, uaClaim: 3, browserNonHuman: 0 });

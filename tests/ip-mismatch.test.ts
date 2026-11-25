@@ -46,7 +46,7 @@ for (const proxy of [false, true]) {
         const result = (await app.inject(request)).json();
         expect(result.ip).toBe(proxy ? "192.0.2.7" : "127.0.0.1");
         expect(result.verdict.verification).toBe(proxy ? "ip_match" : "ip_mismatch");
-        expect(result.vv_type).toBe(proxy ? "agent_verified" : "bot_spoofed");
+        expect(result.vv_type).toBe(proxy ? "crawler_verified" : "bot_spoofed");
       });
       const forged = (
         await app.inject({
@@ -104,7 +104,9 @@ it("uncertain IP mismatch preserves browser automation and cannot raise session 
         signatures: [],
       };
       const certain = ipTrusted && ipListsFresh === true;
-      expect(visitorLabels({ verdict }).vv_type).toBe(certain ? "bot_spoofed" : "agent_unverified");
+      expect(visitorLabels({ verdict }).vv_type).toBe(
+        certain ? "bot_spoofed" : "crawler_unverified",
+      );
       const labels = visitorLabels({ verdict, browserClass: "automated" });
       expect(labels.vv_type).toBe(certain ? "bot_spoofed" : "bot_automation");
       expect(labels.vv_detail.split("|")[1]).toBe("ip_mismatch");

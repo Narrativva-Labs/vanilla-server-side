@@ -256,7 +256,7 @@ Optional Node listener settings are PORT (default 3000, integer 1–65535) and H
 
 With `AGENT_VERIFICATION=on`, /e and /d label verified operator evidence from
 Visitor Verdict. The default is off. Every eligible event gets vv_type/vv_detail,
-even with verification off and no browser detector: pending / none|-|-|-|-|-.
+even with verification off and no browser detector: `unclassified` / `none|-|-|-|-|-`.
 They count toward the 25-parameter limit after automatic/ecommerce fields and before
 custom site parameters; the 16 KiB body trimmer preserves both labels while trimming items. This labels traffic; it does not itself
 withhold anything or change consent. **unverified ≠ human**.
@@ -278,7 +278,7 @@ only the operator; purpose comes from the claimed UA token selecting the feed
 and its purpose mapping. It does not independently verify that product role.
 
 
-Capabilities below describe the bundled 0.6.1 registry, before
+Capabilities below describe the bundled 0.8.0 registry, before
 Vanilla's filter and cache requirements. Reverse DNS is off in Vanilla.
 A published IP match is network evidence, not cryptographic request authentication.
 
@@ -411,7 +411,7 @@ following document without promoting or renewing itself. Early hits may lack a b
 ### Waiting for the first class
 
 By default (no attribute, or `0`) nothing waits: a hit sent before the detector has run reaches
-GA4 as `pending`, and later hits cannot change it. When the detector loads after s.js, typically
+GA4 as `unclassified`, and later hits cannot change it. When the detector loads after s.js, typically
 from a GTM tag, add `data-vv-wait-ms` to the script tag:
 
 ```html
@@ -444,20 +444,25 @@ Data API names: `customEvent:vv_type` and `customEvent:vv_detail`.
 | vv_type | Meaning |
 |---|---|
 | human | Human-looking browser, without stronger evidence; masked automation can look the same |
-| pending | No browser class or qualifying server evidence yet |
-| agent_verified | Verified direct agent identity with user_directed or unknown purpose |
+| unclassified | No browser class or qualifying server evidence yet (replaces `pending` from 0.5.0) |
+| agent_verified | Verified browser agent: Web Bot Auth signature (`user_directed` or `unknown` purpose) or IP-verified agent token (`Claude-Agent`, `Google-Agent`) |
 | automation_verified | Verified intermediary platform; operator identifies infrastructure, not the downstream agent |
-| crawler_verified | Verified signature/IP evidence with documented crawler purpose |
+| crawler_verified | Verified IP/signature crawler or IP-verified user-directed page fetcher (`ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`, `Kimi-User`, Google user-triggered fetchers; `user_directed` is preserved in `vv_detail`) |
 | bot_automation | Hard browser automation evidence |
-| agent_unverified | Browser declared_agent (also with a page-marker operator) or an unverified UA/signature-agent claim |
+| crawler_unverified | Unverified crawler or fetcher UA claim (including `meta-externalagent` and uncertain IP mismatch on a crawler/fetcher token) |
+| agent_unverified | Browser `declared_agent` (also with a page-marker operator), unverified WBA `Signature-Agent`, unverified agent UA token (`Claude-Agent`, `Google-Agent`), or unmapped UA token (such as `Blueno`) |
 | bot_suspicious | Soft browser evidence |
-| bot_spoofed | Invalid server signature; active verified sticky evidence can take precedence |
+| bot_spoofed | Definitive invalid server signature or certain IP mismatch; active verified sticky evidence can take precedence |
 
-Derivation uses the first matching rule: definitive crypto mismatch; verified user_directed /
-crawler / intermediary / unknown purpose; automated browser; declared browser or server claim;
-suspicious browser; human browser; pending. Verified unknown purpose yields agent_verified:
-identity is established and unknown is preserved in vv_detail, without inferring
-a user-directed role. A verified operator may still submit spam.
+Derivation uses the first matching rule: definitive crypto mismatch or certain IP mismatch (`bot_spoofed`);
+verified intermediary (`automation_verified`); verified direct signature (`agent_verified`, or `crawler_verified`
+if documented crawler purpose); verified IP match (`crawler_verified` for documented crawler/fetcher tokens,
+`agent_verified` for documented agent tokens); automated browser (`bot_automation`); declared browser or
+unverified WBA/agent/unmapped claim (`agent_unverified`) vs unverified crawler/fetcher UA claim
+(`crawler_unverified`); suspicious browser (`bot_suspicious`); human browser (`human`); `unclassified`.
+Token classes come from an explicit operator-documented registry (never suffix guessing). Verified unknown
+purpose yields `agent_verified`: identity is established and `unknown` is preserved in `vv_detail`, without
+inferring a user-directed role. A verified operator may still submit spam.
 
 `vv_detail` is an operator-first string, at most 100 characters:
 `operator|verification|purpose|claim|browser_class|browser_phase`.
@@ -481,7 +486,7 @@ Without stronger server evidence, browser classes map as follows:
 | suspicious | bot_suspicious |
 | automated | bot_automation |
 | declared_agent | agent_unverified |
-| none / missing | pending |
+| none / missing | unclassified |
 
 Two GA4 columns per site. With Vanilla or the server-side GTM template, register only `vv_type` and
 `vv_detail`: the server's verdict. A site with only the browser detector in web GTM registers
@@ -489,9 +494,9 @@ Two GA4 columns per site. With Vanilla or the server-side GTM template, register
 contains `|final|`): browser observations. The traffic_class event still carries the individual
 traffic_* parameters for the collector, server containers and BigQuery; they need no dimensions.
 
-Filter GA4 by vv_type **begins with** `agent_` for agents, or `bot_` for automation,
-suspicion and spoofed signatures. Include `crawler_verified` separately when needed.
-Filter vv_detail **begins with** `openai|` for OpenAI evidence.
+Filter GA4 by `vv_type` **begins with** `agent_` for browser agents, `crawler_` for crawlers and
+page fetchers, or `bot_` for automation, suspicion and spoofed signatures.
+Filter `vv_detail` **begins with** `openai|` for OpenAI evidence.
 
 Operator precedence: a verified signature or IP match (`signature_valid`, `ip_match`)
 always supplies the operator; a page marker naming another operator is ignored, and the
@@ -508,15 +513,16 @@ operators, require vv_type `agent_verified` or `crawler_verified` (per hit: veri
 `intermediary` when counting the agents themselves. In Looker Studio create
 an operator dimension with `REGEXP_EXTRACT(vv_detail, '^([^|]+)')`.
 
-Every later hit retains the strongest vv_type observed in that session. Ranks are
-pending=0, human=1, bot_suspicious=2, agent_unverified=3, bot_automation=4,
-bot_spoofed=4.5, automation_verified=4.75 (also legacy intermediary agent_verified), direct crawler_verified=agent_verified=5;
+Every later hit retains the strongest `vv_type` observed in that session. Ranks are
+`unclassified=0`, `human=1`, `bot_suspicious=2`, `crawler_unverified=3`, `agent_unverified=3`,
+`bot_automation=4`, `bot_spoofed=4.5`, `automation_verified=4.75` (also legacy intermediary
+`agent_verified`), direct `crawler_verified=agent_verified=5`;
 fresh equal-rank evidence replaces the earlier type, operator and verified purpose.
 A later intermediary cannot replace an active direct verified identity. Verified purpose
 travels with the inherited operator, so unsigned Browserbase hits retain intermediary.
 Verification, claim and browser segments still describe the current hit.
 This is immediate memory-only state with separate 10,000-entry LRU budgets for
-full events (client_id + session_id) and denied pings (page_id + client_id). Pending
+full events (client_id + session_id) and denied pings (page_id + client_id). `unclassified`
 never enters memory. Fresh evidence gets at most 30 minutes, capped to proof expiry
 for verified evidence; same-type/same-operator/same-purpose renewal never shortens active expiry.
 A different verified operator gets only its own proof lifetime. Inherited lower-ranked
@@ -609,7 +615,9 @@ Each group contains:
   delivery attempt. Google delivery failures count; retries that reach this point count
   again. Duplicate events, rejected requests, disabled pings, obvious bots filtered
   before labelling, oversized dropped hits and hits whose vv_type was trimmed do not count.
-- `byType`: one counter for each of the nine `vv_type` values, after sticky session/page
+- `byType`: one counter for each of the ten `vv_type` values (`unclassified`, `human`,
+  `bot_suspicious`, `crawler_unverified`, `agent_unverified`, `bot_automation`, `bot_spoofed`,
+  `automation_verified`, `crawler_verified`, `agent_verified`), after sticky session/page
   evidence is applied. These sum to `total`.
 - `byVerification`: signature_valid, ip_match, signature_invalid, no_signature, none,
   and `cache_miss/unavailable`. The last bucket covers unavailable verification (including
@@ -741,7 +749,7 @@ of successful fetch and validation; reading/downloading a cache or a failed
 refresh does not renew that timestamp. Missing, future or old metadata leaves
 `ip_mismatch` unverified and starts background refresh without waiting. Such an
 uncertain mismatch yields `bot_automation` for browser `automated`, otherwise
-`agent_unverified`. A certain mismatch yields `bot_spoofed` (session rank 4.5),
+`crawler_unverified` for crawler/fetcher UA tokens or `agent_unverified` for agent/unmapped tokens. A certain mismatch yields `bot_spoofed` (session rank 4.5),
 below direct verified identity (5) and verified infrastructure (4.75).
 Exclusively non-WBA signatures (another tag, `ignored_non_wba`) behave as absent
 signatures for IP matching and mismatch; mixed WBA, malformed and incomplete
@@ -749,3 +757,40 @@ signature headers still suppress mismatch. Sticky identity stays protected; curr
 reports `ip_mismatch`. The flag only labels traffic and does not block it.
 Allow outbound HTTPS to the operator feeds and verify startup warming before
 checking forged and real OpenAI requests.
+
+### Migrating historical BigQuery data (before 0.5.0)
+
+GA4 BigQuery rows exported before deploying Vanilla 0.5.0 (verifier 0.8.0) still contain legacy
+`vv_type` values (`pending`, `agent_verified` for IP-verified fetchers, and `agent_unverified` for
+unverified crawler/fetcher UA claims). Normalise historical rows alongside 0.5.0+ rows with a
+cutover-gated `CASE`:
+
+```sql
+-- Set cutover_suffix to the YYYYMMDD date when Vanilla 0.5.0 (verifier 0.8.0) went live.
+DECLARE cutover_suffix STRING DEFAULT '20261126';
+
+SELECT
+  CASE
+    WHEN _TABLE_SUFFIX >= cutover_suffix THEN vv_type
+    WHEN vv_type = 'pending' THEN 'unclassified'
+    -- Pre-0.5.0 IP-verified fetchers logged agent_verified with ip_match|user_directed.
+    -- OpenAI, Perplexity, Mistral and Kimi only had fetcher tokens on IP lists;
+    -- Anthropic (Claude-User vs Claude-Agent) and Google (user-triggered fetchers vs Google-Agent)
+    -- shared ip_match|user_directed and cannot be separated from vv_detail alone without raw UA logs.
+    WHEN vv_type = 'agent_verified'
+      AND SPLIT(vv_detail, '|')[SAFE_OFFSET(1)] = 'ip_match'
+      AND SPLIT(vv_detail, '|')[SAFE_OFFSET(2)] = 'user_directed'
+      AND SPLIT(vv_detail, '|')[SAFE_OFFSET(0)] IN ('openai', 'perplexity', 'mistral', 'kimi')
+      THEN 'crawler_verified'
+    -- Pre-0.5.0 unverified UA claims logged agent_unverified with claim=ua_token and no browser declared_agent.
+    -- Nearly all UA tokens are crawlers/fetchers (66 of 69); only Claude-Agent, Google-Agent and Blueno
+    -- stay agent_unverified (historical vv_detail does not store the raw UA token string).
+    WHEN vv_type = 'agent_unverified'
+      AND SPLIT(vv_detail, '|')[SAFE_OFFSET(3)] = 'ua_token'
+      AND SPLIT(vv_detail, '|')[SAFE_OFFSET(4)] != 'declared_agent'
+      THEN 'crawler_unverified'
+    ELSE vv_type
+  END AS vv_type_normalized,
+  vv_detail
+FROM `project.analytics_PROPERTY_ID.events_*`;
+```

@@ -1,17 +1,18 @@
-import { defaultRegistry, serverAgentTokens } from "visitor-verdict-server";
+import { defaultRegistry, serverAgentTokens, type VisitorType } from "visitor-verdict-server";
 import type { LabelObserver } from "./labels.js";
 
 const types = [
   "human",
-  "pending",
+  "unclassified",
   "agent_verified",
   "automation_verified",
   "agent_unverified",
   "crawler_verified",
+  "crawler_unverified",
   "bot_automation",
   "bot_suspicious",
   "bot_spoofed",
-] as const;
+] as const satisfies readonly VisitorType[];
 const verification = [
   "signature_valid",
   "ip_match",

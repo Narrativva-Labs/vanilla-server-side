@@ -122,7 +122,7 @@ it("uses a valid marker as the unverified operator and strips traffic_agent", ()
     });
   // Reserved even without a valid class, like the other browser inputs.
   expect(withLabels({ traffic_agent: "openai" })).toEqual({
-    vv_type: "pending",
+    vv_type: "unclassified",
     vv_detail: "none|-|-|-|-|-",
   });
   // A marker on any other class names no operator.
@@ -182,7 +182,7 @@ const transitions: [string, Record<string, unknown>, object | undefined, object]
     "ua_token",
     human,
     uaClaim,
-    { vv_type: "agent_unverified", vv_detail: "none|no_signature|unknown|ua_token|human|final" },
+    { vv_type: "crawler_unverified", vv_detail: "none|no_signature|unknown|ua_token|human|final" },
   ],
   [
     "another marker",

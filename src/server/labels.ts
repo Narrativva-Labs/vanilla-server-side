@@ -18,9 +18,10 @@ const reserved = new Set([
 type Labels = ReturnType<typeof visitorLabels>;
 export type LabelObserver = (labels: Labels, verdict?: AgentFields, browserClass?: string) => void;
 const rank: Record<Labels["vv_type"], number> = {
-  pending: 0,
+  unclassified: 0,
   human: 1,
   bot_suspicious: 2,
+  crawler_unverified: 3,
   agent_unverified: 3,
   bot_automation: 4,
   crawler_verified: 5,
@@ -121,7 +122,7 @@ export function createLabelMemory(capacity = 10000, ttlMs = 30 * 60 * 1000, now 
       // Operator segments validated by visitorLabels; replacing none cannot exceed its limit.
       const vv_detail = detail.join("|");
       if (vv_detail.length > 100) throw new RangeError("vv_detail exceeds 100 characters");
-      if (type === "pending") return labels;
+      if (type === "unclassified") return labels;
       if (commit) {
         sweep(time);
         const existing = sessions.get(key);
@@ -172,7 +173,7 @@ export function withLabels(
     browserAgent: browser.traffic_agent,
     browserAgentClaim: browser.traffic_agent_claim,
   });
-  if (verdict?.obviousBot && ["pending", "human", "bot_suspicious"].includes(labels.vv_type)) {
+  if (verdict?.obviousBot && ["unclassified", "human", "bot_suspicious"].includes(labels.vv_type)) {
     const detail = labels.vv_detail.split("|");
     detail[3] = "ua_token";
     labels = { vv_type: "bot_automation", vv_detail: detail.join("|") };
@@ -227,10 +228,11 @@ export function verdictEcho(verdict?: AgentFields, now = Date.now() / 1000) {
   return serverVerdict({
     v: 1,
     ttl,
-    // Keep schema v1 readable by cached 0.2.0 clients; GA4 keeps the native type.
+    // Keep schema v1 readable by cached 0.2.0 clients; GA4 keeps the native type and purpose.
+    // Cached 0.2.0 requires (type === "crawler_verified") === (purpose === "crawler").
     type: labels.vv_type === "automation_verified" ? "agent_verified" : labels.vv_type,
     operator: verdict.verified.operator,
     verification: verdict.verification,
-    purpose: labels.vv_detail.split("|")[2],
+    purpose: labels.vv_type === "crawler_verified" ? "crawler" : labels.vv_detail.split("|")[2],
   });
 }

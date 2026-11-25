@@ -105,7 +105,7 @@ it("labels precede other recommended site params after ecommerce fields, with re
       () => {},
     );
     expect(Object.keys(result)).toHaveLength(25);
-    expect(result.vv_type).toBe(labels ? "agent_verified" : "pending");
+    expect(result.vv_type).toBe(labels ? "agent_verified" : "unclassified");
     expect(result).toHaveProperty("vv_detail");
     expect(result).not.toHaveProperty("agent_operator");
     expect(result).toMatchObject({ transaction_id: 1, value: 1, currency: 1, items: [] });

@@ -1,4 +1,4 @@
-/** Wire vocabulary from visitor-verdict-server 0.6.1 defaultRegistry. */
+/** Wire vocabulary from visitor-verdict-server 0.8.0 defaultRegistry. */
 export const verdictOperators = [
   "kimi",
   "commoncrawl",
@@ -57,7 +57,9 @@ export function serverVerdict(value: unknown): ServerVerdict | undefined {
     !verdictOperators.includes(x.operator) ||
     !["signature_valid", "ip_match"].includes(x.verification) ||
     !["user_directed", "crawler", "intermediary", "unknown"].includes(x.purpose) ||
-    (x.type === "crawler_verified") !== (x.purpose === "crawler") ||
+    (x.type === "crawler_verified"
+      ? x.purpose !== "crawler" && x.purpose !== "user_directed"
+      : x.purpose === "crawler") ||
     (x.type === "automation_verified" && x.purpose !== "intermediary")
   )
     return;

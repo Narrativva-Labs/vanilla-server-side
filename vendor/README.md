@@ -1,12 +1,12 @@
-# Vendored Visitor Verdict server 0.7.6
+# Vendored Visitor Verdict server 0.8.0
 
-Source: visitor-verdict-ipmismatch/server, branch ip-mismatch. Locally built K8 worktree; no commit or tag was created. Both consumers use the identical unpatched npm archive.
+Source: visitor-verdict-ipmismatch/server, branch ip-mismatch. Locally built taxonomy 0.8.0 worktree; no commit or tag was created. Service and Vanilla use the identical unpatched npm archive.
 
 SHA-512:
 
 ```text
-651f78087361afe2fbf56b0f6271b0e369e94e8fef050bd16ea64b42da6ec42a1c03b9906875043d5b6f19a5da9470df80697a13ca0229e537ba10b25abd6a1c
-sha512-ZR94CHNhr+L79WsPYnGw42npTo/vBQvRbqZLQtpuxCocA7mQaHUEPVtvGaXalHDfgGl6E8oCKeU3uhCyWr1qHA==
+3ff27ac30b463906cdf0e52fe25ccb9311bea89434e1cd81469d22aa431fb9da65fd59021b10a6fdca4ef1595b22c04835e8eb37e1d1e872de9f16adc16e47b3
+sha512-P/J6wwtGOQbN8OUv4lzLkxG+qJQ04c2BRp0iqkMfudpl/VkCGxCm/cpO8VlbIsBINejrN+HR6HLenxatwW5Hsw==
 ```
 
-Build: npm run build; npm pack from server/. Dependencies remain pinned in package-lock.json; the service vendor/npm-cache supports an offline Docker build. No new registry dependency was introduced in K8.
+Build: npm run build; npm pack from server/. Dependencies remain pinned in package-lock.json.

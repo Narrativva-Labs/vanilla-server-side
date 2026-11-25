@@ -26,13 +26,13 @@ it.each([NaN, Infinity, -Infinity, 0])("invalid expiry %s cannot enter memory", 
   m.apply("s", proof, true, expiry);
   expect(m.size).toBe(0);
 });
-it("pending churn does not evict proof and expired entries go before live entries", () => {
+it("unclassified churn does not evict proof and expired entries go before live entries", () => {
   let now = 0;
   const m = createLabelMemory(2, 100, () => now);
   m.apply("live", proof, true, 100);
   m.apply("expired", proof, true, 10);
   for (let i = 0; i < 10; i++)
-    m.apply(String(i), { vv_type: "pending", vv_detail: "none|-|-|-|-|-" });
+    m.apply(String(i), { vv_type: "unclassified", vv_detail: "none|-|-|-|-|-" });
   now = 20;
   m.apply("new", human);
   expect(m.apply("live", human).vv_type).toBe("agent_verified");

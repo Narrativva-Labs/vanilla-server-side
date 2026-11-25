@@ -60,9 +60,13 @@ test("K4 actual collector labeller accepts the shared corpus direct-ingress slic
         v.axes.ua !== "token"
       )
         continue;
-      // Long dictionary variants intentionally reuse the signed keyed member.
+      // Long dictionary and taxonomy signed variants intentionally reuse the signed keyed member.
       // Compare them with independent replay histories, as the shared runner does.
-      const isolated = v.boundary?.kind === "k7_long_agent" ? makeLabeller() : undefined;
+      const isolated =
+        v.boundary?.kind === "k7_long_agent" ||
+        v.boundary?.kind === "taxonomy_wba_browser_agent_with_fetcher_ua"
+          ? makeLabeller()
+          : undefined;
       if (isolated) await warm(isolated);
       const verdict = await (isolated ?? labeller).label({
         method: v.method,

@@ -3,7 +3,7 @@ var getType = require('getType');
 if(data.role==='selector' || (data.role!=='result' && data.labelPair!==undefined && data.labelPair!=='')) {
   if(validPair(data.labelPair)) {require('logToConsole')('Visitor Verdict: selector_pair_ready');return select(data.labelPair);}
   require('logToConsole')('Visitor Verdict: pair_unavailable source_'+getType(data.labelPair));
-  return select({vv_type:'pending',vv_detail:'none|pair_unavailable|unknown|none|-|-'});
+  return select({vv_type:'unclassified',vv_detail:'none|pair_unavailable|unknown|none|-|-'});
 }
 var getEventData = require('getEventData');
 var readRequestHeader = require('getRequestHeader');
@@ -56,13 +56,13 @@ function retrySeconds(raw) {
   var wait=((days*24+hour)*60+minute)*60000+second*1000-require('getTimestampMillis')();
   return Math.min(300,Math.max(0,Math.floor((wait+999)/1000)));
 }
-var TEMPLATE_VERSION = '2.1.6';
+var TEMPLATE_VERSION = '2.2.0';
 // Request APIs can fail during sGTM internal evaluations with no incoming request.
 // This fixed phase lets Preview distinguish a source failure from a malformed pair.
 debug('request_context_read');
 var requestIp=getRemoteAddress();
 if(getType(requestIp)!=='string') requestIp='';
-var empty = {schema:2,operators:[],tokens:["ChatGPT-User","OAI-SearchBot","OAI-AdsBot","GPTBot","Claude-Agent","Claude-User","Claude-SearchBot","ClaudeBot","Perplexity-User","PerplexityBot","Google-Agent","Google-CloudVertexBot","Google-GeminiNotebook","Google-NotebookLM","Gemini-Deep-Research","MistralAI-User","MistralAI-Index","MistralAI-Training","DuckAssistBot","Applebot","Bytespider","meta-externalagent","meta-externalfetcher","meta-webindexer","CCBot","Amazonbot","Amzn-SearchBot","KimiBot","Kimi-SearchBot","Kimi-User","SeznamBot","Yeti","Ads-Naver","Blueno","Kagibot","Baiduspider","PetalBot","YandexBot","YandexAdditional","Amzn-User","AmazonAdBot","YouBot","Sogou","TikTokSpider","DeepSeekBot","ChatGLM-Spider","YisouSpider","360Spider","Diffbot","Timpibot","bingbot","AdIdxBot","BingPreview","MicrosoftPreview","BingVideoPreview","Googlebot","Googlebot-Image","Googlebot-Video","Storebot-Google","Google-InspectionTool","GoogleOther","GoogleOther-Image","GoogleOther-Video","Google-Pinpoint","Google-Read-Aloud","GoogleProducer","Google-Site-Verification","Google-CWS","FeedFetcher-Google"],groups:[]};
+var empty = {schema:2,operators:[],tokens:["ChatGPT-User","OAI-SearchBot","OAI-AdsBot","GPTBot","Claude-Agent","Claude-User","Claude-SearchBot","ClaudeBot","Perplexity-User","PerplexityBot","Google-Agent","Google-CloudVertexBot","Google-GeminiNotebook","Google-NotebookLM","Gemini-Deep-Research","MistralAI-User","MistralAI-Index","MistralAI-Training","DuckAssistBot","Applebot","Bytespider","meta-externalagent","meta-externalfetcher","meta-webindexer","CCBot","Amazonbot","Amzn-SearchBot","KimiBot","Kimi-SearchBot","Kimi-User","SeznamBot","Yeti","Ads-Naver","Blueno","Kagibot","Baiduspider","PetalBot","YandexBot","YandexAdditional","Amzn-User","AmazonAdBot","YouBot","Sogou","TikTokSpider","DeepSeekBot","ChatGLM-Spider","YisouSpider","360Spider","Diffbot","Timpibot","bingbot","AdIdxBot","BingPreview","MicrosoftPreview","BingVideoPreview","Googlebot","Googlebot-Image","Googlebot-Video","Storebot-Google","Google-InspectionTool","GoogleOther","GoogleOther-Image","GoogleOther-Video","Google-Pinpoint","Google-Read-Aloud","GoogleProducer","Google-Site-Verification","Google-CWS","FeedFetcher-Google"],token_classes:["fetcher","crawler","crawler","crawler","agent","fetcher","crawler","crawler","fetcher","crawler","agent","crawler","fetcher","fetcher","fetcher","fetcher","crawler","crawler","crawler","crawler","crawler","crawler","fetcher","crawler","crawler","crawler","crawler","crawler","crawler","fetcher","crawler","crawler","crawler",null,"crawler","crawler","crawler","crawler","crawler","fetcher","crawler","crawler","crawler","crawler","crawler","crawler","crawler","crawler","crawler","crawler","crawler","crawler","fetcher","fetcher","fetcher","crawler","crawler","crawler","crawler","crawler","crawler","crawler","crawler","fetcher","fetcher","fetcher","fetcher","fetcher","fetcher"],groups:[]};
 // GTM sandbox strings have no char-code methods: printable ASCII is checked against this list (24. 11.).
 var PRINTABLE = ' !"#$%&\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~';
 function printable(c) { return c.length===1 && PRINTABLE.indexOf(c)>=0; }
@@ -387,7 +387,7 @@ function completed() {
   return undefined;
 }
 function validPair(pair) {
-  if(getType(pair)!=='object' || ['pending','human','agent_verified','crawler_verified','automation_verified','agent_unverified','bot_spoofed','bot_automation','bot_suspicious'].indexOf(pair.vv_type)<0 || getType(pair.vv_detail)!=='string' || pair.vv_detail.length>100) return false;
+  if(getType(pair)!=='object' || ['unclassified','human','agent_verified','crawler_verified','automation_verified','agent_unverified','crawler_unverified','bot_spoofed','bot_automation','bot_suspicious'].indexOf(pair.vv_type)<0 || getType(pair.vv_detail)!=='string' || pair.vv_detail.length>100) return false;
   var parts=pair.vv_detail.split('|');
   return parts.length===6 && safeOperator(parts[0])===parts[0] &&
     ['-','none','no_signature','ip_match','ip_mismatch','signature_valid','signature_invalid','pair_unavailable','feed_unavailable','service_unavailable','config_suspect','rejected'].indexOf(parts[1])>=0 &&
@@ -433,6 +433,25 @@ function publish(rules,available,verdict,until) {
   return select(pair);
 }
 function classify(rules, available, verdict) {return publish(rules,available,verdict);}
+function tokenClassAt(rules,idx) {
+  if(getType(rules.token_classes)==='array' && idx>=0 && idx<rules.token_classes.length) return rules.token_classes[idx] || '';
+  var pos=empty.tokens.indexOf(rules.tokens[idx]);
+  return pos>=0 ? (empty.token_classes[pos] || '') : '';
+}
+function classifyTokenIndices(rules,indices) {
+  if(!indices.length) return 'unknown';
+  var kind='';
+  for(var i=0;i<indices.length;i++) {
+    var next=tokenClassAt(rules,indices[i]);
+    if(!next) return 'unknown';
+    if(!kind) kind=next;
+    else if(kind!==next) {
+      if((kind==='crawler' || kind==='fetcher') && (next==='crawler' || next==='fetcher')) kind='crawler';
+      else return 'unknown';
+    }
+  }
+  return kind || 'unknown';
+}
 function labels(rules, available, verdict) {
   var browser=oneOf(getEventData('traffic_class'),['human','suspicious','automated','declared_agent'],'-');
   var phase=oneOf(getEventData('traffic_phase'),['initial','final','agent'],'-');
@@ -457,6 +476,7 @@ function labels(rules, available, verdict) {
   if(hex && hex.slice(0,24)==='00000000000000000000ffff') {
     n=0; for(var i=24;i<32;i++) n=n*16+'0123456789abcdef'.indexOf(hex.charAt(i));
   }
+  var matchedClass='unknown';
   if(available && ipAllowed && source.promote) for(var i=0;i<rules.groups.length;i++) {
     var group=rules.groups[i]; var eligible=group.tokens===null;
     if(group.tokens) for(var j=0;j<group.tokens.length;j++) if(matches.indexOf(group.tokens[j])>=0) eligible=true;
@@ -464,12 +484,15 @@ function labels(rules, available, verdict) {
     var op=rules.operators[group.operator];
     if(identity && !ignored && op.signatureAgent!==identity) continue;
     operator=safeOperator(op.id); verification='ip_match';
+    var matchedIndices=[];
+    for(var j=0;j<matches.length;j++) if(group.tokens===null || group.tokens.indexOf(matches[j])>=0) matchedIndices.push(matches[j]);
+    matchedClass=classifyTokenIndices(rules,matchedIndices);
     var policy=op.purposes;
     if(policy.ipLists && policy.ipLists[group.list]) purpose=policy.ipLists[group.list];
     else {
       var roles=[];
-      for(var j=0;j<matches.length;j++) if(group.tokens===null || group.tokens.indexOf(matches[j])>=0) {
-        var token=rules.tokens[matches[j]], role=policy.uaTokens && policy.uaTokens[token] || 'unknown';
+      for(var j=0;j<matchedIndices.length;j++) {
+        var token=rules.tokens[matchedIndices[j]], role=policy.uaTokens && policy.uaTokens[token] || 'unknown';
         if(roles.indexOf(role)<0) roles.push(role);
       }
       purpose=roles.length===1 ? roles[0] : 'unknown';
@@ -500,12 +523,18 @@ function labels(rules, available, verdict) {
   }
   var verified=verification==='ip_match' || verification==='signature_valid';
   if(!verified && verification!=='signature_invalid' && marker!=='none') {operator=marker; claim=getEventData('traffic_agent_claim')==='dom_host' ? 'dom_host' : 'dom_marker';}
-  var type='pending';
+  var tokenClass=verification==='ip_match' ? matchedClass : classifyTokenIndices(rules,matches);
+  var crawlerOrFetcher=tokenClass==='crawler' || tokenClass==='fetcher';
+  var type='unclassified';
   if(verification==='signature_invalid') type='bot_spoofed';
   else if(verification==='ip_mismatch' && source.certain && mismatchFresh) type='bot_spoofed';
-  else if(verified) type=purpose==='crawler' ? 'crawler_verified' : (purpose==='intermediary' ? 'automation_verified' : 'agent_verified');
+  else if(verified) {
+    if(purpose==='intermediary') type='automation_verified';
+    else if(purpose==='crawler' || (verification==='ip_match' && crawlerOrFetcher)) type='crawler_verified';
+    else type='agent_verified';
+  }
   else if(browser==='automated') type='bot_automation';
-  else if(verification==='ip_mismatch' || browser==='declared_agent' || claim==='ua_token' || claim==='signature_agent') type='agent_unverified';
+  else if(verification==='ip_mismatch' || browser==='declared_agent' || claim==='ua_token' || claim==='signature_agent') type=browser!=='declared_agent' && claim==='ua_token' && crawlerOrFetcher ? 'crawler_unverified' : 'agent_unverified';
   else if(browser==='suspicious') type='bot_suspicious';
   else if(browser==='human') type='human';
   var diagnostic=verdict && verdict.diagnostic;
@@ -534,6 +563,10 @@ function valid(r) {
     for(var j=0;j<i;j++) if(r.operators[j].id===r.operators[i].id) return false;
   }
   for(var i=0;i<r.tokens.length;i++) if(getType(r.tokens[i])!=='string' || !r.tokens[i] || r.tokens[i].length>128) return false;
+  if(r.token_classes!==undefined) {
+    if(getType(r.token_classes)!=='array' || r.token_classes.length!==r.tokens.length) return false;
+    for(var i=0;i<r.token_classes.length;i++) if([null,'agent','fetcher','crawler','intermediary'].indexOf(r.token_classes[i])<0) return false;
+  }
   {
     var sources=r.sources;
     if(r.schema===1 && sources===undefined) sources=[];

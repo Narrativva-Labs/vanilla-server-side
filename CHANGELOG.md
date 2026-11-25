@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.0 — 2026-11-25
+
+- Bundle `visitor-verdict-server` 0.8.0 (see `vendor/README.md` for SHA-512) and synchronize the 998-vector differential corpus and `CONTRACT.md`.
+- Adopt the 10-value `vv_type` taxonomy:
+  - `pending` → `unclassified` (session rank 0, never stored in session memory).
+  - IP-verified user-directed fetchers (`ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`, `Kimi-User`, Google user-triggered fetchers) → `crawler_verified` while retaining `purpose = user_directed` in `vv_detail`. Verified Web Bot Auth browser agents and IP-verified agent tokens (`Claude-Agent`, `Google-Agent`) stay `agent_verified`.
+  - Unverified crawler and fetcher UA claims (including `meta-externalagent` and uncertain `ip_mismatch` on crawler/fetcher tokens) → `crawler_unverified` (session rank 3). Unverified agent tokens, unmapped tokens (`Blueno`), unverified WBA signatures, and browser `declared_agent` markers stay `agent_unverified` (rank 3).
+- Keep B7 Verdict Echo wire schema v1 backward compatible with cached 0.2.0 clients: IP-verified fetchers emit `type: "crawler_verified", purpose: "crawler"` on the wire (while GA4 `vv_detail` keeps `user_directed`) and are never pushed to `dataLayer`; current `serverVerdict()` also tolerates `crawler_verified` with `purpose: "user_directed"`. Unverified types never emit an echo.
+- Expose all 10 `vv_type` buckets in `/health` `agentVerification.counters.{events,pings}.byType` (`unclassified` and `crawler_unverified` replace `pending`).
+- Document the new value dictionary and a historical BigQuery migration `CASE` for pre-0.5.0 data in `README.md` and `INSTALL.md`.
+
+### Label migration (0.4.x → 0.5.0)
+
+| Situation | 0.4.x `vv_type` | 0.5.0 `vv_type` |
+|---|---|---|
+| No browser signal and no qualifying server claim | `pending` | `unclassified` |
+| IP-verified user-directed fetcher (`ChatGPT-User`, `Claude-User`, `Perplexity-User`, `MistralAI-User`, `Kimi-User`, Google user-triggered fetchers) | `agent_verified` | `crawler_verified` (`purpose=user_directed` kept in `vv_detail`) |
+| Unverified crawler or fetcher UA claim (incl. `meta-externalagent`, uncertain `ip_mismatch`) | `agent_unverified` | `crawler_unverified` |
+| Verified WBA browser agent / IP-verified agent (`Claude-Agent`, `Google-Agent`) | `agent_verified` | `agent_verified` |
+| Unverified agent token / unmapped token (`Blueno`) / unverified WBA / DOM marker | `agent_unverified` | `agent_unverified` |
+
 ## 0.4.5 — 2026-11-25
 
 Vendor visitor-verdict-server 0.7.6 with startup directory revalidation and untrusted IP evidence protection.

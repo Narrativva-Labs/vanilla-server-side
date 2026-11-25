@@ -209,7 +209,7 @@ it("reserves both new and old names even without verification", () => {
     ordinary: 1,
   };
   expect(withLabels(params)).toEqual({
-    vv_type: "pending",
+    vv_type: "unclassified",
     vv_detail: "none|-|-|-|-|-",
     ordinary: 1,
   });
