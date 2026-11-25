@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.4 — 2026-11-25
+
+- Vendor visitor-verdict-server 0.7.5 with cold-directory recovery and complete per-verifier SAIL readiness.
+- Synchronize the K7 contract, guard snapshots and 894 parity vectors.
+
 ## 0.4.3 — 2026-11-25
 
 - Vendor visitor-verdict-server 0.7.4 and synchronize K6 boundary vectors and diagnostics.

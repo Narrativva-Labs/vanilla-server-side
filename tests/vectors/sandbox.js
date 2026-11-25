@@ -27,8 +27,35 @@ var SERVICE_URL = 'https://visitor-verdict.narrativva.com/v1';
 var service = data.serviceUrl || SERVICE_URL;
 var apiKey = getType(data.apiKey)==='string' ? data.apiKey.trim() : '';
 var url = data.rulesUrl || service+'/rules.json';
+var rulesKey=url===SERVICE_URL+'/rules.json' ? 'vv_rules_v1' : 'vv_rules_v1_'+require('sha256Sync')(url,{outputEncoding:'hex'});
+var flightKey=url===SERVICE_URL+'/rules.json' ? 'vv_rules_flight' : rulesKey+'_flight';
 function debug(message) { require('logToConsole')('Visitor Verdict: '+message); }
-var TEMPLATE_VERSION = '2.1.3';
+// Retry-After permits delta-seconds or an IMF-fixdate, without a calendar API.
+function retrySeconds(raw) {
+  if(getType(raw)!=='string' || raw.length>128) return 0;
+  raw=raw.trim();
+  function decimal(value) {
+    if(!value) return -1;
+    for(var i=0;i<value.length;i++) if('0123456789'.indexOf(value.charAt(i))<0) return -1;
+    return makeNumber(value);
+  }
+  var delta=decimal(raw);
+  if(delta>=0) return delta;
+  var parts=raw.split(' ');
+  if(parts.length!==6 || ['Mon,','Tue,','Wed,','Thu,','Fri,','Sat,','Sun,'].indexOf(parts[0])<0 || parts[5]!=='GMT') return 0;
+  var month=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'].indexOf(parts[2]);
+  var year=decimal(parts[3]),day=decimal(parts[1]),time=parts[4].split(':');
+  if(month<0 || parts[3].length!==4 || year<1970 || time.length!==3) return 0;
+  var hour=decimal(time[0]),minute=decimal(time[1]),second=decimal(time[2]);
+  var leap=year%4===0 && (year%100!==0 || year%400===0);
+  var lengths=[31,leap ? 29 : 28,31,30,31,30,31,31,30,31,30,31];
+  if(day<1 || day>lengths.slice(month,month+1)[0] || hour<0 || hour>23 || minute<0 || minute>59 || second<0 || second>59) return 0;
+  var days=365*(year-1970)+Math.floor((year-1)/4)-492-Math.floor((year-1)/100)+19+Math.floor((year-1)/400)-4;
+  days+=lengths.slice(0,month).reduce(function(sum,n) {return sum+n;},0)+day-1;
+  var wait=((days*24+hour)*60+minute)*60000+second*1000-require('getTimestampMillis')();
+  return Math.max(0,Math.floor((wait+999)/1000));
+}
+var TEMPLATE_VERSION = '2.1.4';
 // Request APIs can fail during sGTM internal evaluations with no incoming request.
 // This fixed phase lets Preview distinguish a source failure from a malformed pair.
 debug('request_context_read');
@@ -189,7 +216,7 @@ function parameter(member,name) {
   return undefined;
 }
 function agents(raw) {
-  if(getType(raw)!=='string' || raw.length>8192) return undefined;
+  if(getType(raw)!=='string' || raw.length>16384) return undefined;
   var legacy=raw.trim().charAt(0)==='"';
   var parsed=sf(raw,legacy);
   return parsed ? {legacy:legacy ? parsed : undefined,members:legacy ? [] : parsed} : undefined;
@@ -266,7 +293,13 @@ function validSignatureEnvelope() {
     var raw=getRequestHeader(names[i]);
     if(!hasHeader(names[i])) continue;
     bytes+=names[i].length+4;
-    for(var j=0;j<raw.length;j++) {var c=raw.charAt(j);bytes+=c<='\u007f' ? 1 : 2;}
+    for(var j=0;j<raw.length;j++) {
+      var c=raw.charAt(j);
+      // The common header profile is HTAB/SP/VCHAR/obs-text. Reject controls
+      // and U+0100+ before any claim, matching the library headers reader.
+      if(c!=='\t' && (c<' ' || c==='\u007f' || c>'\u00ff')) return false;
+      bytes+=c<='\u007f' ? 1 : 2;
+    }
   }
   return bytes<=16384;
 }
@@ -326,7 +359,7 @@ function negativeWindow(r,operator) {
   }
   return count>0 ? until : 0;
 }
-var resultSlot, reserved=false, mismatchUntil=0;
+var resultSlot, reserved=false, mismatchUntil=0, reservationGeneration=0;
 function sharedSlot() {
   if(resultSlot) return resultSlot;
   var stateKey='vv_service_'+require('sha256Sync')(service+'\n'+apiKey,{outputEncoding:'hex'});
@@ -357,13 +390,17 @@ function reserve() {
   var entry;
   for(var i=0;i<current.length;i++) if(current[i].key===slot.hash) entry=current[i];
   if(!entry) {entry={key:slot.hash,until:0,active:0};current.push(entry);}
-  entry.active=(entry.lease>t ? entry.active || 0 : 0)+1;entry.lease=t+10000;
+  if(!(entry.lease>t)) {entry.active=0;entry.generation=(entry.generation || 0)+1;}
+  else if(!entry.generation) entry.generation=1;
+  entry.active=(entry.active || 0)+1;entry.lease=t+10000;
+  reservationGeneration=entry.generation;
   reserved=true;storage.setItemCopy(slot.cacheKey,current);
 }
 function publish(rules,available,verdict,until) {
   var existing=completed(), pair=existing || labels(rules,available,verdict), t=require('getTimestampMillis')();
   var slot=sharedSlot(), current=storage.getItemCopy(slot.cacheKey) || [], keep=[];
   if(until===undefined) until=t+5000;
+  if(!available && cached && cached.retryAt>t) until=Math.min(until,cached.retryAt);
   if(mismatchUntil) until=Math.min(until,mismatchUntil);
   var entry;
   for(var i=0;i<current.length;i++) {
@@ -372,7 +409,7 @@ function publish(rules,available,verdict,until) {
     else if(row.until>t || (row.active>0 && row.lease>t)) keep.push(row);
   }
   if(!entry) entry={key:slot.hash,active:0,until:0};
-  if(reserved) {entry.active=Math.max(0,(entry.active || 0)-1);reserved=false;}
+  if(reserved) {if(entry.generation===reservationGeneration) entry.active=Math.max(0,(entry.active || 0)-1);reserved=false;}
   if(!existing && until>t) {entry.pair=pair;entry.until=until;}
   // Evict only completed entries; a slow peer retains the first pair under pressure.
   var completedCount=0;
@@ -394,7 +431,7 @@ function labels(rules, available, verdict) {
   if(!validInput) verdict=undefined;
   var signature=!!agent;
   var ignored=nonWbaOnly();
-  var signed=(!!getRequestHeader('signature') || !!getRequestHeader('signature-input')) && !ignored;
+  var signed=(hasHeader('signature') || hasHeader('signature-input')) && !ignored;
   var identity=signature ? trustedAgent(agent,rules) : false;
   var ipAllowed=validInput && !signed && (!signature || !!identity || ignored);
   var matches=[];
@@ -571,7 +608,7 @@ function prefilter(rules) {
   var context=pathContext();
   var sig=getRequestHeader('signature'), input=getRequestHeader('signature-input'), rawAgent=getRequestHeader('signature-agent');
   if(!sig || !input || !rawAgent) return {reason:'missing_headers'};
-  if(sig.length>16384 || input.length>16384 || rawAgent.length>8192 || sig.length+input.length+rawAgent.length>24000) return {reason:'header_limit'};
+  if(sig.length>16384 || input.length>16384 || rawAgent.length>16384 || sig.length+input.length+rawAgent.length>24000) return {reason:'header_limit'};
   var headers=[sig,input,rawAgent];
   for(var i=0;i<headers.length;i++) for(var j=0;j<headers[i].length;j++) if(!printable(headers[i].charAt(j)) && headers[i].charAt(j)!=='\t') return {reason:'header_encoding'};
   var members=signatureInputs(), agent=agents(rawAgent), signatures=sf(sig,false);
@@ -658,11 +695,11 @@ function serviceVerdict(body,rules) {
   if(body.verification==='signature_valid' && (!known || safeOperator(body.operator)==='none')) {
     // A newer service registry can lead the local feed. Schedule its renewal;
     // registry skew is not an HTTP/transport failure and must not open the breaker.
-    var cached=storage.getItemCopy('vv_rules_v1');
+    var cached=storage.getItemCopy(rulesKey);
     if(cached && cached.url===url) {
       var t=require('getTimestampMillis')();
       if(cached.unknownAt===undefined || t-cached.unknownAt>=600000) {
-        cached.forceRefresh=true;cached.unknownAt=t;storage.setItemCopy('vv_rules_v1',cached);
+        cached.forceRefresh=true;cached.unknownAt=t;storage.setItemCopy(rulesKey,cached);
       }
     }
     return none;
@@ -723,30 +760,33 @@ function finish(rules,available) {
   if(bytes>32768) {debug('prefilter: body_limit'); return classify(rules,available,none);}
   // First completed pair wins, including cold-feed and transport fallbacks.
   function result(verdict,until) {return publish(rules,available,verdict,until);}
-  if(require('getTimestampMillis')()<state.until) {debug('breaker_open'); return result(none,require('getTimestampMillis')()+5000);}
+  if(require('getTimestampMillis')()<state.until) {debug('breaker_open');none.diagnostic=oneOf(state.reason,['service_unavailable','rejected'],'service_unavailable');return result(none,require('getTimestampMillis')()+5000);}
   function failed(status,retry) {
     var t=require('getTimestampMillis')();
     var latest=storage.getItemCopy(stateKey) || {errors:0,until:0};
     var configError=status>=400 && status<500 && status!==429;
     if(configError) latest.errors=0;
     else latest.errors++;
-    if(status===429) latest.until=Math.max(latest.until,t+(retry>0 && retry%1===0 ? retry*1000 : 30000));
-    else if(!configError && latest.errors>=3) latest.until=Math.max(latest.until,t+60000);
+    var end=0;
+    if(status===429) end=t+(retry>0 && retry%1===0 ? retry*1000 : 30000);
+    else if(!configError && latest.errors>=3) end=t+60000;
+    if(end>=latest.until && end>t) {latest.until=end;latest.reason=status===429 ? 'rejected' : 'service_unavailable';}
     storage.setItemCopy(stateKey,latest);
     debug(status===400 ? '400 bad_request' : (status===401 ? 'rejected 401 invalid_key' : (status===403 ? 'rejected 403 host_not_allowed' : (status===429 ? 'rejected 429 rate_limited' : status))));
     // Check a completed result even on failure; never split type/detail on timeout.
     return result({verification:'none',operator:'none',purpose:'unknown',claim:'signature_agent',diagnostic:configError || status===429 ? 'rejected' : 'service_unavailable'},t+5000);
   }
   return require('sendHttpRequest')(service+'/verify',{method:'POST',timeout:500,headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json','X-VV-Template':TEMPLATE_VERSION}},json).then(function(response) {
-    if(response.statusCode!==200) return failed(response.statusCode,makeNumber(((response.headers || {})['retry-after'] || (response.headers || {})['Retry-After'])));
+    if(response.statusCode!==200) return failed(response.statusCode,retrySeconds(((response.headers || {})['retry-after'] || (response.headers || {})['Retry-After'])));
     var parsed=getType(response.body)==='string' && response.body.length<=4096 ? JSON.parse(response.body) : undefined;
     var verdict=serviceVerdict(parsed,rules);
     if(!verdict) return failed('invalid_response',0);
     var t=require('getTimestampMillis')();
     var latest=storage.getItemCopy(stateKey) || {errors:0,until:0};
-    storage.setItemCopy(stateKey,{errors:0,until:latest.until>t ? latest.until : 0});
+    storage.setItemCopy(stateKey,{errors:0,until:latest.until>t ? latest.until : 0,reason:latest.reason});
     if(verdict.tolerated) {debug('200 unsupported_contract'); return result(none,t+5000);}
     if(parsed.diagnostic==='config_suspect') {debug('config_suspect');verdict.diagnostic='config_suspect';}
+    if(['directory_unavailable','capacity','evidence_unavailable'].indexOf(parsed.diagnostic)>=0) {debug(parsed.diagnostic);verdict.diagnostic='service_unavailable';}
     var until=t+5000;
     // An older service without the absolute deadline can answer this evaluation,
     // but its evidence must never start another local replay window.
@@ -762,44 +802,62 @@ function finish(rules,available) {
 var cached;
 var prior=completed();
 if(prior) return select(prior);
-cached=storage.getItemCopy('vv_rules_v1');
+cached=storage.getItemCopy(rulesKey);
+// Upgrade the former single custom-URL slot without losing its LKG or cooldown.
+if(!cached && rulesKey!=='vv_rules_v1') {
+  var legacyRules=storage.getItemCopy('vv_rules_v1');
+  if(legacyRules && legacyRules.url===url) {cached=legacyRules;storage.setItemCopy(rulesKey,cached);}
+}
 if(cached && cached.url!==url) cached=undefined;
 reserve();
 if(url!==service+'/rules.json' && !allowedUrl(url)) return finish(empty,false);
 if(!serviceAllowed()) return finish(empty,false);
 var usable=cached && cached.rules && now-cached.at<86400000 && usableRules(cached.rules);
 function settleFlight() {
-  var flight=storage.getItemCopy('vv_rules_flight');
-  if(flight && flight.url===url && flight.attempt===attempt) storage.setItemCopy('vv_rules_flight',null);
+  var flight=storage.getItemCopy(flightKey);
+  if(flight && flight.url===url && flight.attempt===attempt) storage.setItemCopy(flightKey,null);
 }
-function fallback(background,unsupported) {
+function retiredFlight(background,latest) {
+  if(background) return undefined;
+  var t=require('getTimestampMillis')();
+  var ready=latest && latest.url===url && latest.rules && t-latest.at<86400000 && usableRules(latest.rules);
+  cached=latest;
+  // Release only this evaluation; never pin a fallback over an active successor.
+  return publish(ready ? latest.rules : empty,!!ready,undefined,t);
+}
+function fallback(background,unsupported,retry) {
   settleFlight();
-  var latest=storage.getItemCopy('vv_rules_v1');
+  var latest=storage.getItemCopy(rulesKey);
+  if(latest && latest.attempt!==attempt) return retiredFlight(background,latest);
   if(latest && latest.url!==url) return background ? undefined : finish(usable ? cached.rules : empty,!!usable);
   var current=latest && latest.url===url && latest.rules && now-latest.at<86400000 && usableRules(latest.rules);
-  if(current && latest.attempt!==attempt) return background ? undefined : finish(latest.rules,true);
-  var keep=current ? latest : (usable ? cached : {url:url,at:0});
+  var keep=current ? latest : (usable ? cached : {url:url,at:0,errors:latest && latest.errors || cached && cached.errors || 0});
   if(unsupported) keep.unsupported=true;
-  keep.refreshFailed=true;keep.retryAt=require('getTimestampMillis')()+(data.flagSpoofed || keep.forceRefresh || keep.unsupported ? 600000 : 300000);
-  storage.setItemCopy('vv_rules_v1',keep);cached=keep;
+  keep.refreshFailed=true;
+  keep.errors=(keep.errors || 0)+1;
+  var delay=keep.rules ? (data.flagSpoofed || keep.forceRefresh || keep.unsupported ? 600000 : 300000) : Math.min(300000,15000*Math.pow(2,Math.min(keep.errors-1,5)));
+  if(retry>0 && retry%1===0) delay=Math.max(delay,retry*1000);
+  keep.retryAt=require('getTimestampMillis')()+delay;
+  storage.setItemCopy(rulesKey,keep);cached=keep;
   return background ? undefined : finish(keep.rules || empty,!!keep.rules);
 }
 var attempt;
 function refresh(background) {
   var headers={'X-VV-Template':TEMPLATE_VERSION};if(cached && cached.etag) headers['If-None-Match']=cached.etag;
   return sendHttpGet(url,{timeout:800,headers:headers}).then(function(response) {
-    var latest=storage.getItemCopy('vv_rules_v1');
+    var latest=storage.getItemCopy(rulesKey);
     // Both success and failure must own the reservation. Late old URLs cannot evict a newer slot.
     var owned=latest && latest.url===url && latest.attempt===attempt;
     var t=require('getTimestampMillis')();
     debug('get_done status='+response.statusCode+' ms='+(t-now));
+    if(!owned) return retiredFlight(background,latest);
     var rules;
     if(response.statusCode===304 && cached && cached.rules) rules=cached.rules;
     else {
-      if(response.statusCode!==200 || getType(response.body)!=='string' || response.body.length>200000) return fallback(background);
+      if(response.statusCode!==200 || getType(response.body)!=='string' || response.body.length>200000) return fallback(background,false,retrySeconds(((response.headers || {})['retry-after'] || (response.headers || {})['Retry-After'])));
       rules=JSON.parse(response.body);
       if(rules && getType(rules.schema)==='number' && rules.schema!==2 && rules.schema!==1) {
-        if(owned) {latest.unsupported=true;latest.retryAt=t+600000;storage.setItemCopy('vv_rules_v1',latest);}
+        if(owned) {latest.unsupported=true;latest.retryAt=t+600000;storage.setItemCopy(rulesKey,latest);}
         debug('200 unsupported_rules_schema');
         return fallback(background,true);
       }
@@ -808,7 +866,7 @@ function refresh(background) {
     var etag=(response.headers || {}).etag || (response.headers || {}).ETag || (cached && cached.etag);
     var next={url:url,rules:rules,at:t,retryAt:0,refreshFailed:false,etag:etag,version:etag || rules.generated_at_ms,
       nextFetchAt:t+(data.flagSpoofed ? 600000 : 60000),unknownAt:latest && latest.url===url ? latest.unknownAt : cached && cached.unknownAt};
-    if(owned) storage.setItemCopy('vv_rules_v1',next);
+    if(owned) storage.setItemCopy(rulesKey,next);
     settleFlight();
     cached=next;
     return background ? undefined : finish(rules,true);
@@ -829,9 +887,9 @@ function begin(background) {
   var next=cached || {url:url,at:0};
   next.attempt=attempt;
   if(next.forceRefresh) next.forcedAt=now;
-  next.retryAt=now+(data.flagSpoofed || next.forceRefresh ? 600000 : 300000);
-  storage.setItemCopy('vv_rules_v1',next);
-  storage.setItemCopy('vv_rules_flight',{url:url,attempt:attempt,until:now+2000});
+  next.retryAt=now+2000;
+  storage.setItemCopy(rulesKey,next);
+  storage.setItemCopy(flightKey,{url:url,attempt:attempt,until:now+2000});
   return refresh(background);
 }
 // Every successful GET, even an unchanged/still-incomplete feed, has a minimum interval.
@@ -842,27 +900,45 @@ if(usable) {
   if(due && (!cached.forceRefresh || cached.forcedAt===undefined || now-cached.forcedAt>=600000) && now>=(cached.retryAt || 0) && now>=(cached.nextFetchAt || 0)) begin(true);
   return finish(cached.rules,true);
 }
-// Followers wait for the cold owner; no empty pair can win the result slot.
-// callLater is the documented asynchronous scheduler. Only a small marker is
-// polled, with a wall-clock deadline below the sandbox Promise timeout.
-var flight=storage.getItemCopy('vv_rules_flight');
-if(flight && flight.url===url && now<flight.until) {
+// callLater has no delay argument. Bound callbacks, and exponentially space
+// storage reads (4..32 ms); never pretend a second argument provides a timer.
+var flight=storage.getItemCopy(flightKey);
+if(flight && flight.url===url) {
+  var callLater=require('callLater'), timestamp=require('getTimestampMillis');
+  var polls=0, checkAt=0, step=4;
   return require('Promise').create(function(resolve) {
     function settled() {
-      var current=storage.getItemCopy('vv_rules_flight');
-      if(current && current.url===url && current.attempt===flight.attempt && require('getTimestampMillis')()<flight.until) {
-        require('callLater')(settled);return;
+      var t=timestamp();polls++;
+      if(t<flight.until && polls<2048 && t<checkAt && polls%8!==0) {callLater(settled);return;}
+      var current=storage.getItemCopy(flightKey);
+      if(current && current.attempt===flight.attempt && t<flight.until && polls<2048) {
+        checkAt=t+step;step=Math.min(32,step*2);callLater(settled);return;
       }
-      if(current && current.url===url && current.attempt===flight.attempt) {
-        debug('cold_join_deadline');
-        resolve(select({vv_type:'pending',vv_detail:'none|pair_unavailable|unknown|none|-|-'}));return;
-      }
-      cached=storage.getItemCopy('vv_rules_v1');
-      var ready=cached && cached.url===url && cached.rules && require('getTimestampMillis')()-cached.at<86400000 && usableRules(cached.rules);
-      debug(ready ? 'cold_join_ready' : 'cold_join_unavailable');
-      resolve(finish(ready ? cached.rules : empty,!!ready));
+      if(current && current.attempt===flight.attempt) {resolve('deadline');return;}
+      resolve('settled');
     }
-    require('callLater')(settled);
+    callLater(settled);
+  }).then(function(state) {
+    if(state==='deadline') {
+      debug('cold_join_deadline');
+      var current=storage.getItemCopy(flightKey);
+      if(current && current.attempt===flight.attempt) {
+        // Settle the abandoned generation for every active reader, including a
+        // late owner. Its callback cannot publish stronger evidence to one side.
+        storage.setItemCopy(flightKey,null);
+        cached=storage.getItemCopy(rulesKey);
+        if(cached && cached.attempt===flight.attempt) {
+          cached.attempt=0;cached.refreshFailed=true;cached.errors=(cached.errors || 0)+1;
+          cached.retryAt=timestamp()+Math.min(300000,15000*Math.pow(2,Math.min(cached.errors-1,5)));
+          storage.setItemCopy(rulesKey,cached);
+        }
+      }
+      return publish(empty,false);
+    }
+    cached=storage.getItemCopy(rulesKey);
+    var ready=cached && cached.url===url && cached.rules && timestamp()-cached.at<86400000 && usableRules(cached.rules);
+    debug(ready ? 'cold_join_ready' : 'cold_join_unavailable');
+    return finish(ready ? cached.rules : empty,!!ready);
   });
 }
 if(cached && now<cached.retryAt) return finish(empty,false);

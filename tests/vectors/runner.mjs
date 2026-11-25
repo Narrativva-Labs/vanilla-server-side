@@ -5,13 +5,13 @@ import vm from 'node:vm';
 export const corpus=JSON.parse(await readFile(new URL('./corpus.json',import.meta.url),'utf8'));
 const code=await readFile(new URL(process.env.VV_GTM_SEMANTICS ? './sandbox-gtm.js' : './sandbox.js',import.meta.url),'utf8');
 const sha=s=>createHash('sha256').update(s).digest('hex');
-export function sandbox(v,post){
+export function sandbox(v,post,runtime=code){
  const store=new Map(),logs=[],requests=[];
  const api={getType:v=>v===null?'null':Array.isArray(v)?'array':typeof v,JSON:{stringify:JSON.stringify,parse:s=>{try{return JSON.parse(s);}catch{return undefined;}}},Math,makeNumber:Number,
  getTimestampMillis:()=>corpus.start,getRemoteAddress:()=>v.ip,getRequestHeader:k=>v.headers[k],getRequestMethod:()=>v.method,getRequestPath:()=>v.path,getEventData:k=>v.event[k],logToConsole:s=>logs.push(s),sha256Sync:sha,
  templateDataStorage:{getItemCopy:k=>structuredClone(store.get(k) ?? null),setItemCopy:(k,x)=>store.set(k,structuredClone(x))},sendHttpGet:async()=>({statusCode:200,body:JSON.stringify(v.feed)}),
  sendHttpRequest:async(url,opts,raw)=>{requests.push(JSON.parse(raw));if(v.axes.response==='timeout')throw Error('fixture timeout');if(v.axes.response==='tolerated')return {statusCode:200,body:'{"v":2}'};if(v.axes.response!=='200')return {statusCode:Number(v.axes.response),body:'{"error":"fixture"}'};return post(JSON.parse(raw),v);}};
- return {logs,requests,run:async()=>JSON.parse(JSON.stringify(await vm.runInNewContext('(function(data){'+code+'\n})(data)',{data:{apiKey:'corpus-key',...v.config},require:k=>{assert.ok(k in api,k);return api[k];}})))};
+ return {logs,requests,run:async()=>JSON.parse(JSON.stringify(await vm.runInNewContext('(function(data){'+runtime+'\n})(data)',{data:{apiKey:'corpus-key',...v.config},require:k=>{assert.ok(k in api,k);return api[k];}})))};
 }
 export async function runCorpus({packageUrl,post,onlySandbox=false}={}){
  let lib,AgentCache,compilePrefixes;
@@ -56,7 +56,7 @@ export async function runCorpus({packageUrl,post,onlySandbox=false}={}){
     const body={signature:v.headers.signature,signature_input:v.headers['signature-input'],signature_agent:v.headers['signature-agent'],...(pathOk?{path:(v.config.pathMode==='prefix'?'/metrics':'')+v.path}:{})};
     const verdict=await core(body,false);
     const diagnostic=tpl.requests.length ? (v.axes.response==='200'&&v.axes.crypto==='config_suspect'?'config_suspect':['400','401','403','429'].includes(v.axes.response)?'rejected':['500','timeout'].includes(v.axes.response)?'service_unavailable':undefined) : undefined;
-    const pair=lib.visitorLabels({verdict,diagnostic,browserClass:v.event.traffic_class,browserAgent:v.event.traffic_agent,browserAgentClaim:v.event.traffic_agent_claim});
+    const pair=lib.visitorLabels({verdict,diagnostic,browserClass:v.event.traffic_class,browserPhase:v.event.traffic_phase,browserAgent:v.event.traffic_agent,browserAgentClaim:v.event.traffic_agent_claim});
     assert.deepEqual(pair,v.expected,'library '+v.id+' '+JSON.stringify(v.axes)+' reason='+verdict.reason);
    }
    if(!['none','custom'].includes(v.axes.proxy) && v.expected.vv_detail.includes('|ip_mismatch|') && v.expected.vv_type==='bot_spoofed')throw Error('uncertain IP invariant');
