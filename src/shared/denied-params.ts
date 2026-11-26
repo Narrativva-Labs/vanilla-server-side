@@ -7,6 +7,7 @@ const allowed = new Set([
   "currency",
   "traffic_class",
   "traffic_phase",
+  "traffic_replay",
   "traffic_agent",
   "traffic_agent_claim",
 ]);
@@ -17,6 +18,7 @@ export function deniedParams(params: Record<string, unknown>): Record<string, un
         allowed.has(key) &&
         (key !== "value" || (typeof value === "number" && Number.isFinite(value))) &&
         (key !== "currency" || (typeof value === "string" && /^[A-Z]{3}$/.test(value))) &&
+        (key !== "traffic_replay" || ["consent", "late"].includes(value as string)) &&
         (key !== "traffic_agent_claim" || ["dom_marker", "dom_host"].includes(value as string)) &&
         (typeof value === "string" || (typeof value === "number" && Number.isFinite(value))),
     ),

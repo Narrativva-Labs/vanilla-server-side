@@ -184,18 +184,20 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 for (const denied of [false, true])
-  for (const [value, phase, type] of [
+  for (const [value, phase, type, replay] of [
     ["suspicious", "final", "bot_suspicious"],
+    ["suspicious", "final", "bot_suspicious", "late"],
+    ["suspicious", "final", "bot_suspicious", "invalid"],
     ["declared_agent", "agent", "agent_unverified"],
   ])
-    it(`forwards the dedicated event and updates ${denied ? "page" : "session"} memory for ${value} with a server whitelist`, async () => {
+    it(`forwards the dedicated event and updates ${denied ? "page" : "session"} memory for ${value}/${replay ?? "original"} with a server whitelist`, async () => {
       const google = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
       const app = createApp(
         {
           cookieSecret: "s".repeat(64),
           measurementId: "G-TEST",
           siteOrigin: "https://shop.example",
-          allowedEvents: ["generate_lead"],
+          allowedEvents: ["generate_lead", "add_to_cart", "begin_checkout"],
         },
         google,
       );
@@ -242,6 +244,7 @@ for (const denied of [false, true])
             "traffic_class",
             {
               ...publication(value, phase),
+              traffic_replay: replay,
               vv_type: "agent_verified",
               page_location:
                 "https://shop.example/product?email=private&gclid=secret&utm_source=test#secret",
@@ -263,6 +266,7 @@ for (const denied of [false, true])
       expect(last().get("ep.traffic_class")).toBe(value);
       expect(last().get("ep.traffic_phase")).toBe(phase);
       expect(last().get("ep.traffic_agent")).toBe(value === "declared_agent" ? "openai" : null);
+      expect(last().get("ep.traffic_replay")).toBe(replay === "late" ? "late" : null);
       expect(last().get("ep.vv_type")).toBe(type);
       for (const name of [
         "private",
@@ -275,17 +279,27 @@ for (const denied of [false, true])
       ])
         expect(last().has("ep." + name)).toBe(false);
       expect(
-        (await post("generate_lead", { traffic_class: "human", traffic_phase: "initial" }, 3))
-          .statusCode,
+        (
+          await post(
+            "generate_lead",
+            { traffic_class: "human", traffic_phase: "initial", traffic_replay: "invalid" },
+            3,
+          )
+        ).statusCode,
       ).toBe(204);
       expect(last().get("ep.vv_type")).toBe(type);
       expect(last().has("ep.traffic_class")).toBe(false);
+      expect(last().has("ep.traffic_replay")).toBe(false);
       expect(
         (await post("traffic_class", { traffic_class: "robot", traffic_phase: "final" }, 4))
           .statusCode,
       ).toBe(400);
       for (const params of [undefined, null, [], "invalid", 1, true])
         expect((await post("traffic_class", params, 5)).statusCode).toBe(400);
+      for (const [index, name] of ["add_to_cart", "begin_checkout"].entries()) {
+        expect((await post(name, {}, 6 + index)).statusCode).toBe(204);
+        expect(last().get("ep.vv_type")).toBe(type);
+      }
       if (denied) expect(cookie).toBeUndefined();
     });
 
@@ -490,3 +504,164 @@ it("rejects non-object dedicated update params without throwing", () => {
   for (const params of [null, undefined, [], "human", 1, true])
     expect(trafficUpdateFields(params)).toBeUndefined();
 });
+
+const late = (value = "suspicious") => ({ ...publication(value), traffic_replay: "late" });
+for (const consent of ["granted", "denied"])
+  for (const waiting of [false, true])
+    it(`accepts one late escalation with ${consent} consent, waiting=${waiting}, and retains it on ecommerce`, async () => {
+      const p = page([], {
+        setup(host) {
+          host.__visitorVerdict = Object.freeze({ class: "human", phase: "initial" });
+        },
+      });
+      if (!waiting) {
+        p.command("consent", "update", { analytics_storage: consent });
+        await settle();
+      }
+      p.host.dataLayer.push(publication("human"));
+      p.host.dataLayer.push({ ...publication("human"), traffic_replay: "consent" });
+      p.host.dataLayer.push(late(), late());
+      p.host.dataLayer.push({ ...late(), traffic_replay: "consent" });
+      if (waiting) p.command("consent", "update", { analytics_storage: consent });
+      await settle();
+      p.host.dataLayer.push({ event: "add_to_cart", ecommerce: { value: 10, currency: "CZK" } });
+      p.host.dataLayer.push({ event: "begin_checkout" });
+      p.host.history.pushState({}, "", "https://shop.example/next");
+      p.host.dataLayer.push(late());
+      p.host.dispatchEvent(new Event("pagehide"));
+      await settle();
+      const sent = hits(p, consent === "granted" ? "/e" : "/d");
+      const updates = sent.filter(({ body }) => body.name === "traffic_class");
+      expect(updates.filter(({ body }) => body.params.traffic_replay === "late")).toHaveLength(1);
+      expect(updates.filter(({ body }) => body.params.traffic_replay === "consent")).toHaveLength(
+        0,
+      );
+      for (const name of ["add_to_cart", "begin_checkout"])
+        expect(sent.find(({ body }) => body.name === name)?.body.params).toMatchObject({
+          traffic_class: "suspicious",
+          traffic_phase: "final",
+        });
+    });
+
+for (const previous of ["human", "suspicious", "automated", "declared_agent"])
+  for (const waiting of [false, true])
+    it(`rejects late same/lower classes after ${previous}, waiting=${waiting}`, async () => {
+      const p = page([], {
+        setup(host) {
+          host.__visitorVerdict = Object.freeze({
+            class: previous,
+            phase: "final",
+            agent: "openai",
+          });
+        },
+      });
+      if (!waiting) {
+        p.command("consent", "update", { analytics_storage: "granted" });
+        await settle();
+      }
+      p.host.dataLayer.push(
+        publication(previous, previous === "declared_agent" ? "agent" : "final"),
+      );
+      p.host.dataLayer.push(late("human"), late("automated"), late("declared_agent"));
+      if (previous !== "human") p.host.dataLayer.push(late());
+      if (waiting) p.command("consent", "update", { analytics_storage: "granted" });
+      await settle();
+      expect(
+        hits(p, "/e").filter(({ body }) => body.params.traffic_replay === "late"),
+      ).toHaveLength(0);
+    });
+
+it("drops unknown replay values and accepts only final suspicious late publications", () => {
+  expect(trafficUpdateFields({ ...publication(), traffic_replay: "arbitrary" })).not.toHaveProperty(
+    "traffic_replay",
+  );
+  expect(trafficUpdateFields({ ...publication(), traffic_replay: "consent" })).toHaveProperty(
+    "traffic_replay",
+    "consent",
+  );
+  expect(trafficUpdateFields({ ...late(), traffic_phase: "agent" })).toBeUndefined();
+});
+
+it("deduplicates late publications queued behind a slow first consented request", async () => {
+  let respond!: (response: Response) => void;
+  const requests: { name: string; params: Record<string, unknown> }[] = [];
+  const tracker = createTracker(
+    "https://tracker.example/e",
+    {
+      href: () => "https://shop.example/",
+      referrer: () => "",
+      now: Date.now,
+      uuid: () => crypto.randomUUID(),
+      warn: vi.fn(),
+      traffic: () => ({ traffic_class: "human", traffic_phase: "initial" }),
+      fetch: vi.fn<typeof fetch>((_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        requests.push(body);
+        return body.name === "page_view"
+          ? new Promise((resolve) => {
+              respond = resolve;
+            })
+          : Promise.resolve(new Response(null, { status: 204 }));
+      }),
+    },
+    new Set(["add_to_cart"]),
+  );
+  tracker.update({ analytics_storage: "granted" });
+  tracker.track("traffic_class", publication("human"));
+  tracker.track("traffic_class", late());
+  tracker.track("traffic_class", late());
+  tracker.track("add_to_cart");
+  respond(new Response(null, { status: 204 }));
+  await settle();
+  expect(requests.filter((hit) => hit.params.traffic_replay === "late")).toHaveLength(1);
+  expect(requests.find((hit) => hit.name === "add_to_cart")?.params.traffic_class).toBe(
+    "suspicious",
+  );
+});
+
+it("accepts the late event after its updated frozen snapshot, while preserving stronger future classes", async () => {
+  const p = page([], {
+    setup(host) {
+      host.__visitorVerdict = Object.freeze({ class: "human", phase: "initial" });
+    },
+  });
+  p.command("consent", "update", { analytics_storage: "granted" });
+  await settle();
+  const host = p.host as unknown as Record<string, unknown>;
+  host.__visitorVerdict = Object.freeze({ class: "suspicious", phase: "final" });
+  p.host.dataLayer.push(late(), { event: "add_to_cart" });
+  await settle();
+  expect(hits(p, "/e").filter(({ body }) => body.params.traffic_replay === "late")).toHaveLength(1);
+  expect(
+    hits(p, "/e").find(({ body }) => body.name === "add_to_cart")?.body.params.traffic_class,
+  ).toBe("suspicious");
+  host.__visitorVerdict = Object.freeze({
+    class: "declared_agent",
+    phase: "agent",
+    agent: "openai",
+  });
+  p.host.dataLayer.push({ event: "begin_checkout" });
+  await settle();
+  expect(
+    hits(p, "/e").find(({ body }) => body.name === "begin_checkout")?.body.params,
+  ).toMatchObject({
+    traffic_class: "declared_agent",
+    traffic_agent: "openai",
+  });
+});
+
+for (const consent of ["granted", "denied"])
+  it(`sends late final independently after an already delivered human final with ${consent} consent`, async () => {
+    const p = page();
+    p.command("consent", "update", { analytics_storage: consent });
+    await settle();
+    p.host.dataLayer.push(publication("human"));
+    await settle();
+    const path = consent === "granted" ? "/e" : "/d";
+    expect(hits(p, path).filter(({ body }) => body.name === "traffic_class")).toHaveLength(1);
+    p.host.dataLayer.push(late(), late());
+    await settle();
+    const updates = hits(p, path).filter(({ body }) => body.name === "traffic_class");
+    expect(updates.map(({ body }) => body.params.traffic_class)).toEqual(["human", "suspicious"]);
+    expect(updates[1]!.body.params.traffic_replay).toBe("late");
+  });

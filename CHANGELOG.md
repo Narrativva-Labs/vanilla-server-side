@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-11-26
+
+- Support Visitor Verdict 1.6.0 late human → suspicious escalation once per document, independently of the original final update, across consent waiting and denied ping queues. Consent replays remain deduplicated.
+- Retain the escalated browser class on subsequent events, including ecommerce; existing server label retention and B7 verified-agent priority remain unchanged.
+- Forward only allowlisted `traffic_replay` values (`consent`, `late`) on dedicated updates, including denied pings; strip the field from ordinary GA4 events.
+- Remain compatible with older detectors. No .env changes; update the collector before the browser bundle.
+
 ## 0.5.0 — 2026-11-25
 
 - Bundle `visitor-verdict-server` 0.8.0 (see `vendor/README.md` for SHA-512) and synchronize the 998-vector differential corpus and `CONTRACT.md`.

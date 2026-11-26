@@ -12,6 +12,7 @@ const reserved = new Set([
   "agent_claim",
   "traffic_class",
   "traffic_phase",
+  "traffic_replay",
   "traffic_agent",
   "traffic_agent_claim",
 ]);

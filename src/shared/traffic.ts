@@ -41,6 +41,13 @@ export function trafficUpdateFields(params: unknown) {
     (fields.traffic_class !== "declared_agent" || !fields.traffic_agent)
   )
     return;
+  if (["consent", "late"].includes(input.traffic_replay as string))
+    fields.traffic_replay = input.traffic_replay as string;
+  if (
+    fields.traffic_replay === "late" &&
+    (fields.traffic_phase !== "final" || fields.traffic_class !== "suspicious")
+  )
+    return;
   for (const key of ["page_location", "page_title", "page_referrer"])
     if (typeof input[key] === "string") fields[key] = input[key];
   return fields;

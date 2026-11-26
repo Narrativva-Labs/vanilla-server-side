@@ -343,14 +343,21 @@ declared_agent. `openai` comes from OpenAI's agent overlay (confirmed in the Cha
 plugin); `anthropic` only from older Claude in Chrome versions. The current extension
 (1.0.107, checked 22 November 2026) keeps its UI in a closed shadow root and is not
 detected, so those visits stay `human` unless other evidence exists.
-Vanilla also subscribes to the detector's traffic_class pushes. It sends up to two lightweight
+Vanilla also subscribes to the detector's traffic_class pushes. Vanilla 0.6.0 sends up to three lightweight
 updates per document: one `final` if the final class differs from the class on the first ordinary
 hit, or if final is not `human`; and one `agent` whenever the detector publishes that phase.
 Human → human sends no extra event. The phase slots are independent in either order, with no
-priority filter. Duplicate phases do not send again. SPA routes and BFCache restores retain the
+priority filter. Visitor Verdict 1.6.0 additionally supports one late human → suspicious
+escalation (`traffic_phase: 'final'`, `traffic_replay: 'late'`), with its own document slot.
+It must raise the last sent or pending class. Duplicates and same/lower classes are dropped;
+all following hits retain the higher class, including ecommerce. Verified server agents keep
+priority (B7), and consent replays remain deduplicated. Older detectors remain compatible.
+No .env change is required. Update the collector before refreshing s.js.
+Duplicate phases do not send again. SPA routes and BFCache restores retain the
 limits. `initial` and unphased legacy publications remain passive, even if manually listed.
 
-Parameters are limited to traffic_class, traffic_phase, optional whitelisted traffic_agent, and
+Parameters are limited to traffic_class, traffic_phase, optional whitelisted traffic_agent,
+traffic_agent_claim, traffic_replay (`consent` or `late`; unknown values are stripped), and
 page_location/page_title/page_referrer using the same URL sanitation and consent/redaction
 rules as ordinary events. Score, version, signal codes, arbitrary payload, ecommerce, user_data
 and agent_* fields are excluded. Standard request identity/consent metadata remains.

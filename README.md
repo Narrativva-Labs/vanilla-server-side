@@ -223,12 +223,17 @@ later hits in a bounded memory-only session (denied pings: page only); no delays
 | declared_agent | agent_unverified |
 | none / missing | unclassified |
 
-With the optional browser detector, Vanilla sends up to two `traffic_class` updates per document:
+With the optional browser detector, Vanilla 0.6.0 sends up to three `traffic_class` updates per document:
 one `final` when its class differs from the first ordinary hit's class or is not `human`, and
 one `agent` whenever the detector publishes that phase. A plain human → human page sends no
-extra event. Both updates use keepalive fetch, wait behind the first ordinary request and its
+extra event. Visitor Verdict 1.6.0 can additionally send one late human → suspicious
+escalation (`traffic_phase: 'final'`, `traffic_replay: 'late'`). It has a separate document
+slot and must raise the last sent or pending class; duplicates and weaker updates are dropped.
+Subsequent hits retain the higher class; verified server evidence still takes priority (B7).
+Older detectors remain compatible and consent replays remain deduplicated.
+All updates use keepalive fetch, wait behind the first ordinary request and its
 session bootstrap, and are never retried. No `TRACKED_EVENTS` entry is needed. Only validated
-traffic_class/traffic_phase/traffic_agent and the usual sanitized page location, title and referrer
+traffic_class/traffic_phase/traffic_agent, optional traffic_replay (`consent` or `late`), and the usual sanitized page location, title and referrer
 are forwarded beside server-derived vv_type/vv_detail. Ordinary events keep the vv labels.
 Updates refresh session label memory (denied pings: page memory), without backfill.
 Consent and `DENIED_PINGS` apply as for other events: an undecided banner can send `/d`,

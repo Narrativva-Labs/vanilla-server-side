@@ -311,3 +311,17 @@ for (const agentVerification of [false, true])
           expect(hit.has(`ep.${name}`)).toBe(false);
       }
   });
+
+it("keeps B7 verified agent evidence above a late suspicious escalation", () => {
+  const sticky = { memory: createLabelMemory(10, 60_000, () => 1_000_000), key: "session" };
+  const late = { traffic_class: "suspicious", traffic_phase: "final", traffic_replay: "late" };
+  expect(withLabels(late, verified, sticky, undefined, true)).toMatchObject({
+    vv_type: "agent_verified",
+    traffic_class: "suspicious",
+    traffic_replay: "late",
+  });
+  expect(withLabels(late, undefined, sticky, undefined, true)).toMatchObject({
+    vv_type: "agent_verified",
+    traffic_replay: "late",
+  });
+});

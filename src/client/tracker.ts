@@ -110,22 +110,41 @@ export function createTracker(
       ordinaryClass === "human"
     );
   }
-  function phasePending(phase: unknown) {
+  const trafficRank = (value: unknown) =>
+    ["human", "suspicious", "automated", "declared_agent"].indexOf(String(value));
+  const trafficKey = (params: Record<string, unknown>) =>
+    params.traffic_replay === "late" ? "final:late" : String(params.traffic_phase);
+  let highestClass: string | undefined;
+  let lateTraffic: Record<string, string> | undefined;
+  function rememberTraffic(params: Record<string, unknown>) {
+    if (trafficRank(params.traffic_class) > trafficRank(highestClass))
+      highestClass = params.traffic_class as string;
+  }
+  function currentTraffic() {
+    const fields = runtime.traffic?.() ?? {};
+    const current =
+      lateTraffic && trafficRank(lateTraffic.traffic_class) > trafficRank(fields.traffic_class)
+        ? lateTraffic
+        : fields;
+    rememberTraffic(current);
+    return current;
+  }
+  function phasePending(key: string) {
     return (
       waiting.some(
         (item) =>
           item.name === "traffic_class" &&
           item.timestamp <= runtime.now() + 5000 &&
           runtime.now() - item.timestamp <= MAX_EVENT_AGE_MS &&
-          item.params.traffic_phase === phase,
+          trafficKey(item.params) === key,
       ) ||
       queue.some(
         (item) =>
           item.event.name === "traffic_class" &&
           timely(item.event, runtime.now()) &&
-          item.event.params.traffic_phase === phase,
+          trafficKey(item.event.params) === key,
       ) ||
-      pingQueue.some((item) => item.name === "traffic_class" && item.params.traffic_phase === phase)
+      pingQueue.some((item) => item.name === "traffic_class" && trafficKey(item.params) === key)
     );
   }
   function held() {
@@ -236,10 +255,17 @@ export function createTracker(
       const fields = trafficUpdateFields(params);
       if (
         !fields ||
-        phasePending(fields.traffic_phase) ||
-        trafficSent.has(String(fields.traffic_phase))
+        (fields.traffic_replay === "consent" && fields.traffic_phase === "final" && lateTraffic) ||
+        phasePending(trafficKey(fields)) ||
+        trafficSent.has(trafficKey(fields))
       )
         return;
+      if (fields.traffic_replay === "late") {
+        // Compare with observations already sent or accepted into any waiting queue.
+        if (trafficRank(fields.traffic_class) <= trafficRank(highestClass)) return;
+        lateTraffic = { traffic_class: fields.traffic_class!, traffic_phase: "final" };
+      }
+      rememberTraffic(fields);
       params = fields;
     }
     const automaticPage = name === "page_view" && automatic;
@@ -374,7 +400,7 @@ export function createTracker(
     const epoch = generation;
     const body = requestBody(event);
     if (body) {
-      if (event.name === "traffic_class") trafficSent.add(String(event.params.traffic_phase));
+      if (event.name === "traffic_class") trafficSent.add(trafficKey(event.params));
       if (event.name === "page_view") pageSent = true;
       void runtime
         .fetch(endpoint, {
@@ -397,9 +423,7 @@ export function createTracker(
     const event = {
       ...queued,
       params:
-        queued.name === "traffic_class"
-          ? queued.params
-          : { ...queued.params, ...runtime.traffic?.() },
+        queued.name === "traffic_class" ? queued.params : { ...queued.params, ...currentTraffic() },
     };
     // Consent may have narrowed while the event waited in the queue.
     const body = JSON.stringify(
@@ -444,7 +468,7 @@ export function createTracker(
           : undefined;
       if (
         item.name === "traffic_class" &&
-        (redundant(item.params) || trafficSent.has(String(item.params.traffic_phase)))
+        (redundant(item.params) || trafficSent.has(trafficKey(item.params)))
       )
         continue;
       if (transaction && pingPurchases.has(transaction)) continue;
@@ -466,7 +490,7 @@ export function createTracker(
                 jsonSnapshot({
                   ...pageFields(),
                   ...item.params,
-                  ...runtime.traffic?.(),
+                  ...currentTraffic(),
                 }),
               ),
             ) as Record<string, unknown>);
@@ -484,7 +508,7 @@ export function createTracker(
         ordinaryStarted = true;
         ordinaryClass = params.traffic_class as string | undefined;
       }
-      if (item.name === "traffic_class") trafficSent.add(String(item.params.traffic_phase));
+      if (item.name === "traffic_class") trafficSent.add(trafficKey(item.params));
       void runtime
         .fetch(new URL("./d", endpoint).href, {
           method: "POST",
@@ -614,7 +638,7 @@ export function createTracker(
         }
         if (item.event.name === "traffic_class") {
           queue.splice(queue.indexOf(item), 1);
-          const key = String(item.event.params.traffic_phase);
+          const key = trafficKey(item.event.params);
           if (!trafficSent.has(key) && !redundant(item.event.params)) {
             sendImmediate({ ...item.event, consent: effective });
           }
@@ -674,7 +698,7 @@ export function createTracker(
         if (!canTrack(effective) || !timely(item.event, runtime.now())) continue;
         if (
           item.event.name === "traffic_class" &&
-          (trafficSent.has(String(item.event.params.traffic_phase)) || redundant(item.event.params))
+          (trafficSent.has(trafficKey(item.event.params)) || redundant(item.event.params))
         )
           continue;
         if (item.event.name === "traffic_class") {

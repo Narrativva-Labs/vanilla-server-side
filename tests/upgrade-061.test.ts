@@ -225,7 +225,7 @@ it("pins vendor bytes, package version and npm integrity", () => {
   );
   const lock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
-  expect(pkg.version).toBe("0.5.0");
+  expect(pkg.version).toBe("0.6.0");
   expect(lock.packages["node_modules/visitor-verdict-server"].version).toBe("0.8.0");
   expect(lock.version).toBe(pkg.version);
   expect(lock.packages[""].version).toBe(pkg.version);
